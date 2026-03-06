@@ -54,8 +54,12 @@ test/benchmarks/results
 # Fixtures
 test/fixtures/
 
-# Research
-/research/
+# Research — track scripts/code, ignore generated artifacts
+/research/data/
+/research/cache/
+/research/results/
+/research/debug/
+/research/__pycache__/
 
 # Built genfix binary
 genfix
