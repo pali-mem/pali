@@ -258,6 +258,19 @@ check_ollama_ready() {
   fi
 }
 
+file_sha256() {
+  local path="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+    return
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+    return
+  fi
+  printf 'unavailable\n'
+}
+
 timestamp_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 fixture_name="$(basename "$FIXTURE")"
@@ -269,6 +282,12 @@ if [[ "$START_SERVER" -eq 1 ]]; then
     check_ollama_ready "$OLLAMA_BASE_URL" "$OLLAMA_MODEL"
   fi
   BASE_URL="http://${HOST}:${PORT}"
+  if curl -sS -f "$BASE_URL/health" >/dev/null 2>&1; then
+    echo "ERROR: refusing to start a new server because ${BASE_URL}/health is already responding."
+    echo "  This usually means a stale server is running and would contaminate this run."
+    echo "  Stop that server or use --base-url to target it intentionally."
+    exit 1
+  fi
   db_path="$tmp_dir/retrieval_eval.sqlite"
   cfg_path="$tmp_dir/retrieval_eval.yaml"
   cat > "$cfg_path" <<EOF
@@ -315,6 +334,11 @@ if [[ "$fixture_count" -le 0 ]]; then
   echo "ERROR: fixture is empty: $FIXTURE"
   exit 1
 fi
+fixture_sha256="$(file_sha256 "$FIXTURE")"
+eval_set_sha256=""
+if [[ -n "$EVAL_SET" ]]; then
+  eval_set_sha256="$(file_sha256 "$EVAL_SET")"
+fi
 
 jq -c 'to_entries[] | {idx:(.key|tonumber), tenant_id:.value.tenant_id, content:(.value.content | gsub("\\s+";" ")), payload:.value}' "$FIXTURE" > "$tmp_fixture_entries"
 jq -r '.[].tenant_id' "$FIXTURE" | sort -u > "$tmp_tenants"
@@ -322,6 +346,7 @@ tenant_count="$(wc -l < "$tmp_tenants" | tr -d ' ')"
 
 echo "==> Retrieval quality run"
 echo "    fixture      : $FIXTURE (${fixture_count} memories, ${tenant_count} tenants)"
+echo "    fixture sha  : $fixture_sha256"
 echo "    backend      : $BACKEND"
 echo "    embedder     : $EMBEDDING_PROVIDER"
 if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
@@ -331,6 +356,7 @@ echo "    top_k        : $TOP_K"
 echo "    max_queries  : $MAX_QUERIES"
 if [[ -n "$EVAL_SET" ]]; then
   echo "    eval set     : $EVAL_SET"
+  echo "    eval set sha : $eval_set_sha256"
 else
   echo "    eval set     : auto-generated (grouped by tenant+query with multi-relevant IDs)"
 fi
@@ -580,6 +606,7 @@ cat > "$result_json" <<EOF
   "timestamp_utc": "$timestamp_utc",
   "backend": "$BACKEND",
   "fixture": "$FIXTURE",
+  "fixture_sha256": "$fixture_sha256",
   "fixture_count": $fixture_count,
   "tenant_count": $tenant_count,
   "base_url": "$BASE_URL",
@@ -593,6 +620,7 @@ cat > "$result_json" <<EOF
   "eval_mode": "$eval_mode",
   "auto_ambiguous_cases": $auto_ambiguous_cases,
   "eval_set": "${EVAL_SET}",
+  "eval_set_sha256": "${eval_set_sha256}",
   "eval_cases_total": $eval_case_count,
   "eval_cases_selected": $selected_queries,
   "eval_success": $eval_ok,
@@ -618,6 +646,7 @@ Backend        : $BACKEND
 Embedder       : $EMBEDDING_PROVIDER
 Embed model    : $OLLAMA_MODEL
 Fixture        : $FIXTURE
+Fixture SHA256 : $fixture_sha256
 Fixture count  : $fixture_count
 Tenant count   : $tenant_count
 Base URL       : $BASE_URL
@@ -631,6 +660,7 @@ query_words    : $QUERY_WORDS
 sample_seed    : $SAMPLE_SEED
 eval_mode      : $eval_mode
 eval_set       : ${EVAL_SET:-"(auto-generated from fixture)"}
+eval_set_sha256: ${eval_set_sha256:-"(n/a)"}
 Cases (total)  : $eval_case_count
 Cases (run)    : $selected_queries
 Success/Fail   : $eval_ok / $eval_fail

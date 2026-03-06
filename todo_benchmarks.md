@@ -1,4 +1,4 @@
-# TODO Benchmarks: DeepSeek Precision Recovery (LOCOMO)
+# TODO Benchmarks: Qwen Precision Recovery (LOCOMO)
 
 Make sure we turn off any old pali servers pid before we run new ones!
 
@@ -133,7 +133,7 @@ Tests:
 - [ ] No regression for temporal query latency guardrails.
 
 Run gate:
-- [ ] Deepseek 120q run (M1+M2+M3 combined).
+- [ ] Qwen 120q run (M1+M2+M3 combined).
 - [ ] Multi-hop F1 and MRR improve vs baseline or M1+M2-only run.
 - [ ] Temporal F1 does not regress.
 
@@ -160,13 +160,13 @@ Tests:
 - [x] high-signal short facts from allowlist still accepted.
 
 Run gate:
-- [ ] Deepseek 120q run.
+- [ ] Qwen 120q run.
 - [ ] Top1 repetition share decreases; non-temporal F1 improves.
 
-## DeepSeek-Only Standard Profile (default for future LOCOMO)
+## Qwen Standard Profile (default for future LOCOMO)
 
 ### Model + parser defaults
-- Answer model: `deepseek-r1:7b`
+- Answer model: `qwen2.5:7b`
 - Parser: `enabled=true`, `provider=heuristic`, `store_raw_turn=true`
 - Parser thresholds: `max_facts=5`, `dedupe=0.88`, `update=0.94`
 - Retrieval: `top_k=60`, `kind_routing=true`, `prefer_extractive_for_temporal=true`
@@ -179,7 +179,7 @@ Run gate:
   - `Store fallbacks`
 
 ### Config/flag sanity checklist before each run
-- [ ] `answer_model` is `deepseek-r1:7b`.
+- [ ] `answer_model` is `qwen2.5:7b`.
 - [ ] Parser block is present in generated eval YAML.
 - [ ] Structured dual-write flags remain OFF when parser is enabled.
 - [ ] `store_diagnostics.mode` is `batch` or `reuse_existing_store` (not accidental single).
@@ -190,7 +190,7 @@ Run gate:
 - Use one of:
   - single-tenant fixture/eval subset (for exact query behavior checks)
   - `--max-queries 10..30` with `--reuse-existing-store` (for quick metric direction)
-- If the targeted check matches expectations, run the full DeepSeek 120q benchmark only for milestone/major changes (M1/M2/M3/M4/M5 gates).
+- If the targeted check matches expectations, run the full Qwen 120q benchmark only for milestone/major changes (M1/M2/M3/M4/M5 gates).
 - If store-path logic changed (parser/store/routing affecting stored text), do one clean rebuild run with `--reset-db`, then iterate fast with `--reuse-existing-store`.
 
 ## Accountable Feedback Template (fill every milestone)

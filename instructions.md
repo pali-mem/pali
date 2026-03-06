@@ -109,7 +109,7 @@ embedding:
 
 ollama:
   base_url: http://127.0.0.1:11434
-  model: deepseek-r1:7b
+  model: qwen2.5:7b
   timeout_ms: 2000
 
 auth:

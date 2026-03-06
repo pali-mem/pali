@@ -171,7 +171,7 @@ parser:
   enabled: false
   provider: heuristic # heuristic | ollama
   ollama_base_url: http://127.0.0.1:11434
-  ollama_model: deepseek-r1:7b
+  ollama_model: qwen2.5:7b
   ollama_timeout_ms: 20000
   store_raw_turn: true
   max_facts: 4
@@ -193,7 +193,7 @@ embedding:
 
 ollama:
   base_url: http://127.0.0.1:11434
-  model: deepseek-r1:7b
+  model: qwen2.5:7b
   timeout_ms: 2000
 ```
 
