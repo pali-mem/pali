@@ -56,3 +56,6 @@ test/fixtures/
 
 # Research
 /research/
+
+# Built genfix binary
+genfix
