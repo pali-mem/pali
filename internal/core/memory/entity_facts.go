@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/vein05/pali/internal/domain"
@@ -12,12 +13,13 @@ var (
 	factLeadingDatePattern  = regexp.MustCompile(`(?i)^on\s+[^,]{3,80},\s*`)
 	factEntityPrefixPattern = regexp.MustCompile(`^([A-Z][A-Za-z0-9'\-]*(?:\s+[A-Z][A-Za-z0-9'\-]*){0,2})\b`)
 
-	factActivityValuePattern = regexp.MustCompile(`(?i)\b(?:enjoys?|likes?|loves?|practices?|plays?|does|doing|did|interested in|hobbies?\s+include)\s+([^.,;]+)`)
+	factActivityValuePattern = regexp.MustCompile(`(?i)\b(?:enjoys?|likes?|loves?|practices?|plays?|does|doing|did|interested in|hobbies?\s+include|chooses?|prefer(?:s)?)\s+([^.,;]+)`)
 	factEventValuePattern    = regexp.MustCompile(`(?i)\b(?:attended|participated in|joined|went to|visited)\s+([^.,;]+)`)
 	factBookValuePattern     = regexp.MustCompile(`(?i)\b(?:read(?:ing)?|reads?|book(?:s)?)\s+([^.,;]+)`)
 	factPlaceValuePattern    = regexp.MustCompile(`(?i)\b(?:lives? in|moved to|went to|visited)\s+([^.,;]+)`)
-	factLeadingVerbPattern   = regexp.MustCompile(`(?i)^(?:is|was|attended|participated in|joined|went to|visited|likes?|loves?|enjoys?|practices?|plays?|does)\s+`)
-	factValueStopPattern     = regexp.MustCompile(`(?i)\b(?:because|since|while|although|but)\b`)
+	factPlanValuePattern     = regexp.MustCompile(`(?i)\b(?:plans? to|planning to|going to|will)\s+([^.,;]+)`)
+	factLeadingVerbPattern   = regexp.MustCompile(`(?i)^(?:is|was|attended|participated in|joined|went to|visited|likes?|loves?|enjoys?|practices?|plays?|does|chooses?|prefers?)\s+`)
+	factValueStopPattern     = regexp.MustCompile(`(?i)\b(?:because|since|while|although|but|and\s+(?:it|that|this)\b)\b`)
 )
 
 func inferEntityRelationValue(content string, kind domain.MemoryKind) (string, string, string) {
@@ -58,9 +60,15 @@ func inferRelationFromFact(content string, kind domain.MemoryKind) string {
 		return "book"
 	case strings.Contains(l, "place"), strings.Contains(l, "lives in"), strings.Contains(l, "moved to"), strings.Contains(l, "visited"):
 		return "place"
+	case strings.Contains(l, "plan to"), strings.Contains(l, "planning to"), strings.Contains(l, "going to"), strings.Contains(l, " will "):
+		return "plan"
+	case identityValuePattern.MatchString(l):
+		return "identity"
+	case strings.Contains(l, "works as"), strings.Contains(l, "job"), roleValuePattern.MatchString(l):
+		return "role"
 	case strings.Contains(l, "activit"), strings.Contains(l, "hobb"), strings.Contains(l, "interest"):
 		return "activity"
-	case strings.Contains(l, "enjoy"), strings.Contains(l, "like "), strings.Contains(l, "likes "), strings.Contains(l, "love "), strings.Contains(l, "practice"), strings.Contains(l, "play "):
+	case strings.Contains(l, "enjoy"), strings.Contains(l, "like "), strings.Contains(l, "likes "), strings.Contains(l, "love "), strings.Contains(l, "practice"), strings.Contains(l, "play "), strings.Contains(l, "choose "), strings.Contains(l, "chooses "), strings.Contains(l, "prefer "):
 		return "activity"
 	default:
 		return ""
@@ -76,6 +84,8 @@ func inferValueFromFact(content, relation, entity string) string {
 		selector = factBookValuePattern
 	case "place":
 		selector = factPlaceValuePattern
+	case "plan":
+		selector = factPlanValuePattern
 	}
 
 	if m := selector.FindStringSubmatch(content); len(m) >= 2 {
@@ -148,6 +158,77 @@ func buildEntityFactRecord(memory domain.Memory, fact ParsedFact) (domain.Entity
 		Value:    value,
 		MemoryID: memory.ID,
 	}, true
+}
+
+func normalizedRelationTupleKey(fact ParsedFact) (string, bool) {
+	entity := normalizeEntityFactEntity(fact.Entity)
+	relation := normalizeEntityFactRelation(fact.Relation)
+	value := normalizeEntityFactValue(fact.Value)
+	if entity == "" || relation == "" || value == "" {
+		return "", false
+	}
+	return entity + "|" + relation + "|" + value, true
+}
+
+func (s *Service) findMemoryByRelationTuple(
+	ctx context.Context,
+	tenantID string,
+	fact ParsedFact,
+) (*domain.Memory, error) {
+	if s == nil || s.entityRepo == nil {
+		return nil, nil
+	}
+	entity := normalizeEntityFactEntity(fact.Entity)
+	relation := normalizeEntityFactRelation(fact.Relation)
+	value := normalizeEntityFactValue(fact.Value)
+	if entity == "" || relation == "" || value == "" {
+		return nil, nil
+	}
+
+	records, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, 16)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(records))
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		if normalizeEntityFactValue(record.Value) != value {
+			continue
+		}
+		memoryID := strings.TrimSpace(record.MemoryID)
+		if memoryID == "" {
+			continue
+		}
+		if _, ok := seen[memoryID]; ok {
+			continue
+		}
+		seen[memoryID] = struct{}{}
+		ids = append(ids, memoryID)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	memories, err := s.repo.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) == 0 {
+		return nil, nil
+	}
+	slices.SortFunc(memories, func(a, b domain.Memory) int {
+		switch {
+		case a.UpdatedAt.After(b.UpdatedAt):
+			return -1
+		case a.UpdatedAt.Before(b.UpdatedAt):
+			return 1
+		default:
+			return 0
+		}
+	})
+	memory := memories[0]
+	return &memory, nil
 }
 
 func (s *Service) storeEntityFacts(ctx context.Context, facts []domain.EntityFact) error {

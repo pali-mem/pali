@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"github.com/vein05/pali/internal/domain"
@@ -19,6 +20,9 @@ type Service struct {
 	ranking    RankingOptions
 	parser     ParserOptions
 	infoParser InfoParser
+	logger     *log.Logger
+	devVerbose bool
+	progress   bool
 }
 
 type StructuredMemoryOptions struct {
@@ -52,6 +56,7 @@ type MatchWeights struct {
 type ParserOptions struct {
 	Enabled         bool
 	Provider        string
+	Model           string
 	StoreRawTurn    bool
 	MaxFacts        int
 	DedupeThreshold float64
@@ -59,12 +64,13 @@ type ParserOptions struct {
 }
 
 type ParsedFact struct {
-	Content  string
-	Kind     domain.MemoryKind
-	Tags     []string
-	Entity   string
-	Relation string
-	Value    string
+	Content       string
+	QueryViewText string
+	Kind          domain.MemoryKind
+	Tags          []string
+	Entity        string
+	Relation      string
+	Value         string
 }
 
 type InfoParser interface {
@@ -81,6 +87,15 @@ type parserImplOption struct {
 
 type entityFactRepoOption struct {
 	repo domain.EntityFactRepository
+}
+
+type loggerOption struct {
+	logger *log.Logger
+}
+
+type debugOptions struct {
+	verbose  bool
+	progress bool
 }
 
 func (o StructuredMemoryOptions) apply(s *Service) {
@@ -121,12 +136,38 @@ func (o entityFactRepoOption) apply(s *Service) {
 	s.entityRepo = o.repo
 }
 
+func (o loggerOption) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.logger = o.logger
+}
+
+func (o debugOptions) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.devVerbose = o.verbose
+	s.progress = o.progress
+}
+
 func WithInfoParser(parser InfoParser) ServiceOption {
 	return parserImplOption{parser: parser}
 }
 
 func WithEntityFactRepository(repo domain.EntityFactRepository) ServiceOption {
 	return entityFactRepoOption{repo: repo}
+}
+
+func WithLogger(logger *log.Logger) ServiceOption {
+	return loggerOption{logger: logger}
+}
+
+func WithDebug(verbose bool, progress bool) ServiceOption {
+	return debugOptions{
+		verbose:  verbose,
+		progress: progress,
+	}
 }
 
 func defaultStructuredMemoryOptions() StructuredMemoryOptions {
@@ -161,6 +202,7 @@ func defaultParserOptions() ParserOptions {
 	return ParserOptions{
 		Enabled:         false,
 		Provider:        "heuristic",
+		Model:           "",
 		StoreRawTurn:    true,
 		MaxFacts:        4,
 		DedupeThreshold: 0.88,
@@ -192,6 +234,7 @@ func normalizeParserOptions(in ParserOptions) ParserOptions {
 	if out.Provider == "" {
 		out.Provider = defaultParserOptions().Provider
 	}
+	out.Model = strings.TrimSpace(out.Model)
 	if out.MaxFacts <= 0 {
 		out.MaxFacts = defaultParserOptions().MaxFacts
 	}

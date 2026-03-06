@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -23,9 +24,11 @@ type ollamaInfoParser struct {
 	baseURL string
 	model   string
 	http    *http.Client
+	logger  *log.Logger
+	verbose bool
 }
 
-func NewOllamaInfoParser(baseURL, model string, timeout time.Duration) (InfoParser, error) {
+func NewOllamaInfoParser(baseURL, model string, timeout time.Duration, logger *log.Logger, verbose bool) (InfoParser, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		baseURL = defaultParserOllamaBaseURL
@@ -43,6 +46,8 @@ func NewOllamaInfoParser(baseURL, model string, timeout time.Duration) (InfoPars
 		baseURL: baseURL,
 		model:   model,
 		http:    &http.Client{Timeout: timeout},
+		logger:  logger,
+		verbose: verbose,
 	}
 	if err := p.preflight(context.Background()); err != nil {
 		return nil, err
@@ -60,12 +65,15 @@ func (p *ollamaInfoParser) Parse(ctx context.Context, content string, maxFacts i
 	}
 
 	prompt := buildOllamaParserPrompt(content, maxFacts)
+	start := time.Now()
 	raw, err := p.generate(ctx, prompt)
 	if err != nil {
+		p.debugf("[pali-parser] model=%s status=error ms=%d err=%v", p.model, time.Since(start).Milliseconds(), err)
 		return nil, err
 	}
 	parsed, err := decodeParserJSON(raw)
 	if err != nil {
+		p.debugf("[pali-parser] model=%s PARSE_ERROR raw_response=%q err=%v", p.model, sanitizeLogSnippet(raw, 260), err)
 		return nil, err
 	}
 
@@ -100,7 +108,15 @@ func (p *ollamaInfoParser) Parse(ctx context.Context, content string, maxFacts i
 			break
 		}
 	}
+	p.debugf("[pali-parser] model=%s status=ok ms=%d facts=%d", p.model, time.Since(start).Milliseconds(), len(out))
 	return out, nil
+}
+
+func (p *ollamaInfoParser) debugf(format string, args ...any) {
+	if p == nil || p.logger == nil || !p.verbose {
+		return
+	}
+	p.logger.Printf(format, args...)
 }
 
 func normalizeFactKind(kind string) domain.MemoryKind {
@@ -127,15 +143,18 @@ func buildOllamaParserPrompt(content string, maxFacts int) string {
 		"Extract high-signal factual memories from one dialogue turn.\n"+
 			"Rules:\n"+
 			"1) Return JSON only, matching the schema exactly.\n"+
-			"2) Exclude greetings, acknowledgements, chit-chat, and style-only text.\n"+
+			"2) Exclude greetings, acknowledgements, compliments, chit-chat, standalone questions, and style-only text.\n"+
 			"3) Keep each fact standalone, explicit, and non-ambiguous.\n"+
-			"4) Preserve negation and constraints (e.g., 'does not', 'avoids').\n"+
-			"5) Prefer concrete entities, preferences, commitments, plans, and dated events.\n"+
-			"6) Do not invent or infer facts not present in the turn.\n"+
-			"7) Output at most %d facts.\n"+
-			"8) kind must be either observation or event.\n"+
-			"9) If available, include entity/relation/value fields for aggregation lookups.\n"+
-			"10) If no high-signal fact exists, return {\"facts\":[]}.\n"+
+			"4) Resolve the subject whenever possible; avoid dangling pronouns like 'it', 'that', or 'do that'.\n"+
+			"5) Prefer facts with a specific predicate and object/value.\n"+
+			"6) If a fact is temporal, anchor it to an absolute or clearly provided time.\n"+
+			"7) Preserve negation and constraints (e.g., 'does not', 'avoids').\n"+
+			"8) Prefer concrete entities, preferences, commitments, plans, motivations, possessions, relationships, and dated events.\n"+
+			"9) Do not invent or infer facts not present in the turn.\n"+
+			"10) Output at most %d facts.\n"+
+			"11) kind must be either observation or event.\n"+
+			"12) If available, include entity/relation/value fields for aggregation lookups.\n"+
+			"13) If no high-signal fact exists, return {\"facts\":[]}.\n"+
 			"\n"+
 			"JSON schema:\n"+
 			"{\"facts\":[{\"content\":\"...\",\"kind\":\"observation|event\",\"tags\":[\"...\"],\"entity\":\"...\",\"relation\":\"...\",\"value\":\"...\"}]}\n"+

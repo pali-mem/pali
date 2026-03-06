@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,6 +48,12 @@ func (p parserStub) Parse(_ context.Context, _ string, maxFacts int) ([]ParsedFa
 		return append([]ParsedFact{}, p.facts...), nil
 	}
 	return append([]ParsedFact{}, p.facts[:maxFacts]...), nil
+}
+
+type parserFuncStub func(context.Context, string, int) ([]ParsedFact, error)
+
+func (f parserFuncStub) Parse(ctx context.Context, content string, maxFacts int) ([]ParsedFact, error) {
+	return f(ctx, content, maxFacts)
 }
 
 type countingSearchRepoStub struct {
@@ -173,6 +180,59 @@ func TestStoreWithParserWritesEntityFacts(t *testing.T) {
 	require.NotEmpty(t, entityRepo.stored[0].MemoryID)
 }
 
+func TestStoreWithParserPersistsSourceGroundedIdentity(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			Provider:        "ollama",
+			Model:           "qwen3:4b",
+			StoreRawTurn:    true,
+			MaxFacts:        4,
+			DedupeThreshold: 0.88,
+			UpdateThreshold: 0.94,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content:  "Melanie enjoys camping.",
+					Kind:     domain.MemoryKindObservation,
+					Entity:   "Melanie",
+					Relation: "activity",
+					Value:    "camping",
+				},
+			},
+		}),
+	)
+
+	_, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "Melanie: I enjoy camping.",
+	})
+	require.NoError(t, err)
+	require.Len(t, repo.stored, 2)
+
+	rawTurn := repo.stored[0]
+	fact := repo.stored[1]
+	require.NotEmpty(t, rawTurn.CanonicalKey)
+	require.NotEmpty(t, rawTurn.SourceTurnHash)
+	require.Equal(t, -1, rawTurn.SourceFactIndex)
+	require.Equal(t, rawTurnExtractorName, rawTurn.Extractor)
+	require.Equal(t, rawTurnExtractorVersion, rawTurn.ExtractorVersion)
+
+	require.NotEmpty(t, fact.CanonicalKey)
+	require.Equal(t, rawTurn.SourceTurnHash, fact.SourceTurnHash)
+	require.Equal(t, 0, fact.SourceFactIndex)
+	require.Equal(t, "ollama", fact.Extractor)
+	require.Equal(t, "qwen3:4b", fact.ExtractorVersion)
+}
+
 func TestStoreBatchWithParserWritesEntityFacts(t *testing.T) {
 	repo := &structuredRepoStub{}
 	vector := &structuredVectorStub{}
@@ -252,6 +312,51 @@ func TestStoreWithParserDedupesExistingFact(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, repo.stored, 1)
+}
+
+func TestStoreWithParserUsesCanonicalLookupBeforeSecondLexicalDedupe(t *testing.T) {
+	repo := &countingSearchRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			Provider:        "ollama",
+			Model:           "qwen3:4b",
+			StoreRawTurn:    false,
+			MaxFacts:        4,
+			DedupeThreshold: 0.60,
+			UpdateThreshold: 0.90,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content: "Alice avoids dairy products.",
+					Kind:    domain.MemoryKindObservation,
+					Tags:    []string{"preference"},
+				},
+			},
+		}),
+	)
+
+	_, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "Alice: I avoid dairy products.",
+	})
+	require.NoError(t, err)
+	_, err = svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "Alice: I avoid dairy products.",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, 0, repo.searchCalls)
+	require.NotEmpty(t, repo.stored[0].CanonicalKey)
 }
 
 func TestStoreWithParserSkipsLegacyStructuredDualWrite(t *testing.T) {
@@ -514,52 +619,67 @@ func TestStoreBatchWithParserUsesSingleBatchEmbedAcrossTurns(t *testing.T) {
 	require.Equal(t, 1, vector.batchCalls)
 }
 
-func TestStoreBatchWithParserSkipsRepoDedupeForSmallTenant(t *testing.T) {
+func TestStoreWithParserDedupesByRelationTupleWithoutLexicalSearch(t *testing.T) {
 	repo := &countingSearchRepoStub{}
 	vector := &structuredVectorStub{}
-	embedder := &countingBatchEmbedder{}
+	entityRepo := &parserEntityFactRepoStub{}
 	svc := NewService(
 		repo,
-		tenantRepoStub{
-			existsByID:      map[string]bool{"tenant_1": true},
-			memoryCountByID: map[string]int64{"tenant_1": 0},
-		},
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
 		vector,
-		embedder,
+		embedderStub{},
 		scorerStub{},
 		ParserOptions{
 			Enabled:         true,
-			StoreRawTurn:    true,
+			StoreRawTurn:    false,
 			MaxFacts:        5,
 			DedupeThreshold: 0.88,
 			UpdateThreshold: 0.94,
 		},
-		WithInfoParser(parserStub{
-			facts: []ParsedFact{
-				{Content: "Alice likes tea.", Kind: domain.MemoryKindObservation},
-				{Content: "Alice moved to Austin.", Kind: domain.MemoryKindEvent},
-			},
-		}),
+		WithInfoParser(parserFuncStub(func(_ context.Context, content string, maxFacts int) ([]ParsedFact, error) {
+			if strings.Contains(content, "relocated") {
+				return []ParsedFact{{
+					Content:  "Alice relocated to Austin.",
+					Kind:     domain.MemoryKindEvent,
+					Entity:   "Alice",
+					Relation: "place",
+					Value:    "Austin",
+				}}, nil
+			}
+			return []ParsedFact{{
+				Content:  "Alice moved to Austin.",
+				Kind:     domain.MemoryKindEvent,
+				Entity:   "Alice",
+				Relation: "place",
+				Value:    "Austin",
+			}}, nil
+		})),
+		WithEntityFactRepository(entityRepo),
 	)
 
-	_, err := svc.StoreBatch(context.Background(), []StoreInput{
-		{TenantID: "tenant_1", Content: "turn one", Kind: domain.MemoryKindRawTurn},
-		{TenantID: "tenant_1", Content: "turn two", Kind: domain.MemoryKindRawTurn},
+	_, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "Alice: I moved to Austin.",
 	})
 	require.NoError(t, err)
+	_, err = svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "Alice: I relocated to Austin.",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.stored, 1)
 	require.Equal(t, 0, repo.searchCalls)
 }
 
-func TestStoreBatchWithParserRunsRepoDedupeForLargeTenant(t *testing.T) {
-	repo := &countingSearchRepoStub{}
+func TestStoreBatchWithParserDedupesByRelationTupleWithinPendingBatch(t *testing.T) {
+	repo := &structuredRepoStub{}
 	vector := &structuredVectorStub{}
 	embedder := &countingBatchEmbedder{}
+	entityRepo := &parserEntityFactRepoStub{}
 	svc := NewService(
 		repo,
-		tenantRepoStub{
-			existsByID:      map[string]bool{"tenant_1": true},
-			memoryCountByID: map[string]int64{"tenant_1": parserBatchRepoDedupeMinTenantRows},
-		},
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
 		vector,
 		embedder,
 		scorerStub{},
@@ -570,20 +690,35 @@ func TestStoreBatchWithParserRunsRepoDedupeForLargeTenant(t *testing.T) {
 			DedupeThreshold: 0.88,
 			UpdateThreshold: 0.94,
 		},
-		WithInfoParser(parserStub{
-			facts: []ParsedFact{
-				{Content: "Alice likes tea.", Kind: domain.MemoryKindObservation},
-				{Content: "Alice moved to Austin.", Kind: domain.MemoryKindEvent},
-			},
-		}),
+		WithInfoParser(parserFuncStub(func(_ context.Context, content string, maxFacts int) ([]ParsedFact, error) {
+			if strings.Contains(content, "relocated") {
+				return []ParsedFact{{
+					Content:  "Alice relocated to Austin.",
+					Kind:     domain.MemoryKindEvent,
+					Entity:   "Alice",
+					Relation: "place",
+					Value:    "Austin",
+				}}, nil
+			}
+			return []ParsedFact{{
+				Content:  "Alice moved to Austin.",
+				Kind:     domain.MemoryKindEvent,
+				Entity:   "Alice",
+				Relation: "place",
+				Value:    "Austin",
+			}}, nil
+		})),
+		WithEntityFactRepository(entityRepo),
 	)
 
 	_, err := svc.StoreBatch(context.Background(), []StoreInput{
-		{TenantID: "tenant_1", Content: "turn one", Kind: domain.MemoryKindRawTurn},
-		{TenantID: "tenant_1", Content: "turn two", Kind: domain.MemoryKindRawTurn},
+		{TenantID: "tenant_1", Content: "Alice: I moved to Austin.", Kind: domain.MemoryKindRawTurn},
+		{TenantID: "tenant_1", Content: "Alice: I relocated to Austin.", Kind: domain.MemoryKindRawTurn},
 	})
 	require.NoError(t, err)
-	require.Greater(t, repo.searchCalls, 0)
+	require.Len(t, repo.stored, 3)
+	require.Equal(t, 2, countKind(repo.stored, domain.MemoryKindRawTurn))
+	require.Equal(t, 1, countKind(repo.stored, domain.MemoryKindEvent))
 }
 
 func TestStoreWithParserInjectsNormalizedTimeAnchorIntoParsedFacts(t *testing.T) {
@@ -649,7 +784,7 @@ func TestStoreWithHeuristicParserCanonicalizesAnnotatedTurnFacts(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, stored.Content)
-	require.Len(t, repo.stored, 2)
+	require.Len(t, repo.stored, 1)
 	for _, memory := range repo.stored {
 		require.Contains(t, memory.Content, "On 8 May 2023,")
 		require.NotContains(t, memory.Content, "1:56 pm on 8 May, 2023")
@@ -722,7 +857,7 @@ func TestStoreWithParserRejectsShortLowSignalFact(t *testing.T) {
 	require.Equal(t, domain.MemoryKindRawTurn, repo.stored[0].Kind)
 }
 
-func TestStoreWithParserAllowsShortHighSignalFact(t *testing.T) {
+func TestStoreWithParserRejectsVagueAnchoredFact(t *testing.T) {
 	repo := &structuredRepoStub{}
 	vector := &structuredVectorStub{}
 	svc := NewService(
@@ -741,7 +876,190 @@ func TestStoreWithParserAllowsShortHighSignalFact(t *testing.T) {
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
 				{
-					Content: "teacher",
+					Content: "Melanie will do that.",
+					Kind:    domain.MemoryKindObservation,
+				},
+			},
+		}),
+	)
+
+	stored, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:1:12 pm on 13 Oct, 2023] Melanie: I'll do that.",
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.MemoryKindRawTurn, stored.Kind)
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, domain.MemoryKindRawTurn, repo.stored[0].Kind)
+}
+
+func TestStoreWithParserRejectsBareEmotionFact(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			StoreRawTurn:    false,
+			MaxFacts:        4,
+			DedupeThreshold: 0.88,
+			UpdateThreshold: 0.94,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content: "Caroline is so excited and thankful.",
+					Kind:    domain.MemoryKindObservation,
+				},
+			},
+		}),
+	)
+
+	stored, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:1:56 pm on 22 Oct, 2023] Caroline: I'm so excited and thankful.",
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.MemoryKindRawTurn, stored.Kind)
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, domain.MemoryKindRawTurn, repo.stored[0].Kind)
+}
+
+func TestStoreWithParserKeepsEmotionFactWithConcreteTarget(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			StoreRawTurn:    false,
+			MaxFacts:        4,
+			DedupeThreshold: 0.88,
+			UpdateThreshold: 0.94,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content:  "Caroline is excited about the adoption process.",
+					Kind:     domain.MemoryKindObservation,
+					Entity:   "Caroline",
+					Relation: "identity",
+					Value:    "excited about the adoption process",
+				},
+			},
+		}),
+	)
+
+	stored, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:1:56 pm on 22 Oct, 2023] Caroline: I'm excited about the adoption process.",
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.MemoryKindObservation, stored.Kind)
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, "On 22 Oct 2023, Caroline is excited about the adoption process.", repo.stored[0].Content)
+}
+
+func TestStoreWithParserRejectsSpeechReactionFact(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			StoreRawTurn:    false,
+			MaxFacts:        4,
+			DedupeThreshold: 0.88,
+			UpdateThreshold: 0.94,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content: "Caroline said that that sounds like fun.",
+					Kind:    domain.MemoryKindObservation,
+				},
+			},
+		}),
+	)
+
+	stored, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:1:56 pm on 13 Sep, 2023] Caroline: That sounds like fun.",
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.MemoryKindRawTurn, stored.Kind)
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, domain.MemoryKindRawTurn, repo.stored[0].Kind)
+}
+
+func TestStoreWithParserRejectsVisualCommentaryFact(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			StoreRawTurn:    false,
+			MaxFacts:        4,
+			DedupeThreshold: 0.88,
+			UpdateThreshold: 0.94,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content: "Melanie said that love the red and blue.",
+					Kind:    domain.MemoryKindObservation,
+				},
+			},
+		}),
+	)
+
+	stored, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:1:56 pm on 13 Sep, 2023] Melanie: Love the red and blue.",
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.MemoryKindRawTurn, stored.Kind)
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, domain.MemoryKindRawTurn, repo.stored[0].Kind)
+}
+
+func TestStoreWithParserAllowsSelfContainedHighSignalFact(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:         true,
+			StoreRawTurn:    false,
+			MaxFacts:        4,
+			DedupeThreshold: 0.88,
+			UpdateThreshold: 0.94,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content: "Alice is a teacher.",
 					Kind:    domain.MemoryKindObservation,
 				},
 			},
@@ -755,7 +1073,7 @@ func TestStoreWithParserAllowsShortHighSignalFact(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.MemoryKindObservation, stored.Kind)
 	require.Len(t, repo.stored, 1)
-	require.Equal(t, "teacher", repo.stored[0].Content)
+	require.Equal(t, "Alice is a teacher.", repo.stored[0].Content)
 }
 
 func TestStoreBatchWithParserRejectsShortFactsInBatchPath(t *testing.T) {

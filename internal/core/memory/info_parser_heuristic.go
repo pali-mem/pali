@@ -10,7 +10,9 @@ import (
 )
 
 var (
-	lowSignalFactPattern = regexp.MustCompile(`(?i)^(hi|hello|hey|thanks|thank you|ok|okay|cool|great|nice|wow|got it|sure|sounds good|no problem)[.!]?$`)
+	lowSignalFactPattern    = regexp.MustCompile(`(?i)^(hi|hello|hey|thanks|thank you|ok|okay|cool|great|nice|wow|got it|sure|sounds good|no problem)[.!]?$`)
+	questionLikeFactPattern = regexp.MustCompile(`(?i)^(what|who|when|where|why|how|which|whose|did|does|do|is|are|was|were|can|could|would|should|have|has|had|will)\b`)
+	shortChatterFactPattern = regexp.MustCompile(`(?i)^(phew|wow|woah|whoa|awesome|amazing|lovely|beautiful|gorgeous|super stoked|so excited|really appreciate it|appreciate it|love it|glad you agree|totally agree|absolutely|yeah(?:,)?(?: definitely| that's true| for sure)?|wow,? great pic.*|thank goodness.*)$`)
 
 	shortNumericPattern             = regexp.MustCompile(`(?i)^\d+(?:\.\d+)?(?:%|k|m|bn)?$`)
 	shortDurationPattern            = regexp.MustCompile(`(?i)^\d+\s*(?:year|month|week|day|hour)s?$`)
@@ -114,6 +116,12 @@ func isInformativeFact(text string) bool {
 		return false
 	}
 	normalized := strings.ToLower(text)
+	if strings.HasSuffix(normalized, "?") || questionLikeFactPattern.MatchString(normalized) {
+		return false
+	}
+	if len(strings.Fields(normalized)) <= 6 && shortChatterFactPattern.MatchString(normalized) {
+		return false
+	}
 	tokens := strings.Fields(normalized)
 	if len(tokens) >= 3 {
 		return true

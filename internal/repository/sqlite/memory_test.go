@@ -23,14 +23,20 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	stored, err := memRepo.Store(ctx, domain.Memory{
-		TenantID:   "tenant_1",
-		Content:    "User prefers Go for backend systems",
-		Tier:       domain.MemoryTierSemantic,
-		Tags:       []string{"preferences", "golang"},
-		Source:     "seed",
-		CreatedBy:  domain.MemoryCreatedByUser,
-		Kind:       domain.MemoryKindObservation,
-		Importance: 0.77,
+		TenantID:         "tenant_1",
+		Content:          "User prefers Go for backend systems",
+		QueryViewText:    "what stack does the user like for backend work",
+		Tier:             domain.MemoryTierSemantic,
+		Tags:             []string{"preferences", "golang"},
+		Source:           "seed",
+		CreatedBy:        domain.MemoryCreatedByUser,
+		Kind:             domain.MemoryKindObservation,
+		CanonicalKey:     "canon_1",
+		SourceTurnHash:   "turn_hash_1",
+		SourceFactIndex:  2,
+		Extractor:        "ollama",
+		ExtractorVersion: "qwen3:4b",
+		Importance:       0.77,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, stored.ID)
@@ -43,6 +49,11 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Equal(t, "seed", results[0].Source)
 	require.Equal(t, domain.MemoryCreatedByUser, results[0].CreatedBy)
 	require.Equal(t, domain.MemoryKindObservation, results[0].Kind)
+	require.Equal(t, "canon_1", results[0].CanonicalKey)
+	require.Equal(t, "turn_hash_1", results[0].SourceTurnHash)
+	require.Equal(t, 2, results[0].SourceFactIndex)
+	require.Equal(t, "ollama", results[0].Extractor)
+	require.Equal(t, "qwen3:4b", results[0].ExtractorVersion)
 	require.Equal(t, 0, results[0].RecallCount)
 
 	byID, err := memRepo.GetByIDs(ctx, "tenant_1", []string{stored.ID})
@@ -52,7 +63,27 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Equal(t, "seed", byID[0].Source)
 	require.Equal(t, domain.MemoryCreatedByUser, byID[0].CreatedBy)
 	require.Equal(t, domain.MemoryKindObservation, byID[0].Kind)
+	require.Equal(t, "canon_1", byID[0].CanonicalKey)
+	require.Equal(t, "turn_hash_1", byID[0].SourceTurnHash)
+	require.Equal(t, 2, byID[0].SourceFactIndex)
+	require.Equal(t, "ollama", byID[0].Extractor)
+	require.Equal(t, "qwen3:4b", byID[0].ExtractorVersion)
 	require.Equal(t, 0, byID[0].RecallCount)
+
+	byCanonicalKey, err := memRepo.FindByCanonicalKey(ctx, "tenant_1", "canon_1")
+	require.NoError(t, err)
+	require.NotNil(t, byCanonicalKey)
+	require.Equal(t, stored.ID, byCanonicalKey.ID)
+
+	bySourceTurn, err := memRepo.ListBySourceTurnHash(ctx, "tenant_1", "turn_hash_1", 10)
+	require.NoError(t, err)
+	require.Len(t, bySourceTurn, 1)
+	require.Equal(t, stored.ID, bySourceTurn[0].ID)
+
+	aliasResults, err := memRepo.Search(ctx, "tenant_1", "stack backend work like", 10)
+	require.NoError(t, err)
+	require.Len(t, aliasResults, 1)
+	require.Equal(t, stored.ID, aliasResults[0].ID)
 
 	before := byID[0].LastAccessedAt
 	beforeRecalled := byID[0].LastRecalledAt

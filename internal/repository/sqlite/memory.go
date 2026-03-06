@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -145,67 +146,10 @@ func (r *MemoryRepository) Search(ctx context.Context, tenantID, query string, t
 
 	memories := make([]domain.Memory, 0, topK)
 	for rows.Next() {
-		var (
-			m            domain.Memory
-			tier         string
-			tagsJSON     string
-			createdBy    string
-			kind         string
-			importance   float64
-			recallCount  int
-			createdAtRaw string
-			updatedAtRaw string
-			accessedAt   string
-			recalledAt   string
-		)
-
-		if err := rows.Scan(
-			&m.ID,
-			&m.TenantID,
-			&m.Content,
-			&tier,
-			&tagsJSON,
-			&m.Source,
-			&createdBy,
-			&kind,
-			&importance,
-			&recallCount,
-			&createdAtRaw,
-			&updatedAtRaw,
-			&accessedAt,
-			&recalledAt,
-		); err != nil {
+		m, err := scanMemory(rows.Scan)
+		if err != nil {
 			return nil, fmt.Errorf("scan memory row: %w", err)
 		}
-
-		m.Tier = domain.MemoryTier(tier)
-		m.CreatedBy = domain.MemoryCreatedBy(createdBy)
-		m.Kind = domain.MemoryKind(kind)
-		m.Importance = importance
-		m.RecallCount = recallCount
-		if tagsJSON == "" {
-			m.Tags = []string{}
-		} else if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
-			return nil, fmt.Errorf("unmarshal memory tags: %w", err)
-		}
-
-		m.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtRaw)
-		if err != nil {
-			return nil, fmt.Errorf("parse created_at: %w", err)
-		}
-		m.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAtRaw)
-		if err != nil {
-			return nil, fmt.Errorf("parse updated_at: %w", err)
-		}
-		m.LastAccessedAt, err = time.Parse(time.RFC3339Nano, accessedAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse last_accessed_at: %w", err)
-		}
-		m.LastRecalledAt, err = time.Parse(time.RFC3339Nano, recalledAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse last_recalled_at: %w", err)
-		}
-
 		memories = append(memories, m)
 	}
 
@@ -258,66 +202,10 @@ func (r *MemoryRepository) GetByIDs(ctx context.Context, tenantID string, ids []
 
 	memories := make([]domain.Memory, 0, len(uniqueIDs))
 	for rows.Next() {
-		var (
-			m            domain.Memory
-			tier         string
-			tagsJSON     string
-			createdBy    string
-			kind         string
-			importance   float64
-			recallCount  int
-			createdAtRaw string
-			updatedAtRaw string
-			accessedAt   string
-			recalledAt   string
-		)
-		if err := rows.Scan(
-			&m.ID,
-			&m.TenantID,
-			&m.Content,
-			&tier,
-			&tagsJSON,
-			&m.Source,
-			&createdBy,
-			&kind,
-			&importance,
-			&recallCount,
-			&createdAtRaw,
-			&updatedAtRaw,
-			&accessedAt,
-			&recalledAt,
-		); err != nil {
+		m, err := scanMemory(rows.Scan)
+		if err != nil {
 			return nil, fmt.Errorf("scan memory by ids: %w", err)
 		}
-		m.Tier = domain.MemoryTier(tier)
-		m.CreatedBy = domain.MemoryCreatedBy(createdBy)
-		m.Kind = domain.MemoryKind(kind)
-		m.Importance = importance
-		m.RecallCount = recallCount
-
-		if tagsJSON == "" {
-			m.Tags = []string{}
-		} else if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
-			return nil, fmt.Errorf("unmarshal memory tags by ids: %w", err)
-		}
-
-		m.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtRaw)
-		if err != nil {
-			return nil, fmt.Errorf("parse created_at by ids: %w", err)
-		}
-		m.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAtRaw)
-		if err != nil {
-			return nil, fmt.Errorf("parse updated_at by ids: %w", err)
-		}
-		m.LastAccessedAt, err = time.Parse(time.RFC3339Nano, accessedAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse last_accessed_at by ids: %w", err)
-		}
-		m.LastRecalledAt, err = time.Parse(time.RFC3339Nano, recalledAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse last_recalled_at by ids: %w", err)
-		}
-
 		memories = append(memories, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -329,6 +217,57 @@ func (r *MemoryRepository) GetByIDs(ctx context.Context, tenantID string, ids []
 		return cmpIndex(uniqueIDs, a.ID) - cmpIndex(uniqueIDs, b.ID)
 	})
 
+	return memories, nil
+}
+
+func (r *MemoryRepository) FindByCanonicalKey(
+	ctx context.Context,
+	tenantID, canonicalKey string,
+) (*domain.Memory, error) {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(canonicalKey) == "" {
+		return nil, nil
+	}
+
+	row := r.db.QueryRowContext(ctx, FindMemoryByCanonicalKeySQL, tenantID, canonicalKey)
+	memory, err := scanMemory(row.Scan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find memory by canonical key: %w", err)
+	}
+	return &memory, nil
+}
+
+func (r *MemoryRepository) ListBySourceTurnHash(
+	ctx context.Context,
+	tenantID, sourceTurnHash string,
+	limit int,
+) ([]domain.Memory, error) {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(sourceTurnHash) == "" {
+		return []domain.Memory{}, nil
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := r.db.QueryContext(ctx, ListMemoriesBySourceTurnHashSQL, tenantID, sourceTurnHash, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list memories by source turn hash: %w", err)
+	}
+	defer rows.Close()
+
+	memories := make([]domain.Memory, 0, limit)
+	for rows.Next() {
+		m, err := scanMemory(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("scan memory by source turn hash: %w", err)
+		}
+		memories = append(memories, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memories by source turn hash: %w", err)
+	}
 	return memories, nil
 }
 
@@ -401,6 +340,9 @@ func prepareMemoryForStore(m *domain.Memory, now time.Time) error {
 	if m.Kind == "" {
 		m.Kind = domain.MemoryKindRawTurn
 	}
+	if m.SourceFactIndex == 0 && strings.TrimSpace(m.CanonicalKey) == "" {
+		m.SourceFactIndex = -1
+	}
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = now
 	}
@@ -432,6 +374,11 @@ func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON s
 		m.Source,
 		string(m.CreatedBy),
 		string(m.Kind),
+		m.CanonicalKey,
+		m.SourceTurnHash,
+		m.SourceFactIndex,
+		m.Extractor,
+		m.ExtractorVersion,
 		m.Importance,
 		m.RecallCount,
 		m.CreatedAt.Format(time.RFC3339Nano),
@@ -441,10 +388,90 @@ func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON s
 	); err != nil {
 		return fmt.Errorf("insert memory: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, InsertMemoryFTSSQL, m.Content, m.TenantID, m.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, InsertMemoryFTSSQL, buildIndexedMemoryText(m), m.TenantID, m.ID); err != nil {
 		return fmt.Errorf("insert memory fts row: %w", err)
 	}
 	return nil
+}
+
+func buildIndexedMemoryText(m domain.Memory) string {
+	content := strings.Join(strings.Fields(strings.TrimSpace(m.Content)), " ")
+	queryView := strings.Join(strings.Fields(strings.TrimSpace(m.QueryViewText)), " ")
+	if queryView == "" {
+		return content
+	}
+	return content + "\n" + queryView
+}
+
+func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
+	var (
+		m               domain.Memory
+		tier            string
+		tagsJSON        string
+		createdBy       string
+		kind            string
+		sourceFactIndex int
+		importance      float64
+		recallCount     int
+		createdAtRaw    string
+		updatedAtRaw    string
+		accessedAtRaw   string
+		recalledAtRaw   string
+	)
+	if err := scan(
+		&m.ID,
+		&m.TenantID,
+		&m.Content,
+		&tier,
+		&tagsJSON,
+		&m.Source,
+		&createdBy,
+		&kind,
+		&m.CanonicalKey,
+		&m.SourceTurnHash,
+		&sourceFactIndex,
+		&m.Extractor,
+		&m.ExtractorVersion,
+		&importance,
+		&recallCount,
+		&createdAtRaw,
+		&updatedAtRaw,
+		&accessedAtRaw,
+		&recalledAtRaw,
+	); err != nil {
+		return domain.Memory{}, err
+	}
+
+	m.Tier = domain.MemoryTier(tier)
+	m.CreatedBy = domain.MemoryCreatedBy(createdBy)
+	m.Kind = domain.MemoryKind(kind)
+	m.SourceFactIndex = sourceFactIndex
+	m.Importance = importance
+	m.RecallCount = recallCount
+	if tagsJSON == "" {
+		m.Tags = []string{}
+	} else if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
+		return domain.Memory{}, fmt.Errorf("unmarshal memory tags: %w", err)
+	}
+
+	var err error
+	m.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtRaw)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("parse created_at: %w", err)
+	}
+	m.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAtRaw)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("parse updated_at: %w", err)
+	}
+	m.LastAccessedAt, err = time.Parse(time.RFC3339Nano, accessedAtRaw)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("parse last_accessed_at: %w", err)
+	}
+	m.LastRecalledAt, err = time.Parse(time.RFC3339Nano, recalledAtRaw)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("parse last_recalled_at: %w", err)
+	}
+	return m, nil
 }
 
 func newID(prefix string) string {

@@ -29,20 +29,26 @@ const (
 )
 
 type Memory struct {
-	ID             string
-	TenantID       string
-	Content        string
-	Tier           MemoryTier
-	Tags           []string
-	Source         string
-	CreatedBy      MemoryCreatedBy
-	Kind           MemoryKind
-	Importance     float64
-	RecallCount    int
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	LastAccessedAt time.Time
-	LastRecalledAt time.Time
+	ID               string
+	TenantID         string
+	Content          string
+	QueryViewText    string
+	Tier             MemoryTier
+	Tags             []string
+	Source           string
+	CreatedBy        MemoryCreatedBy
+	Kind             MemoryKind
+	CanonicalKey     string
+	SourceTurnHash   string
+	SourceFactIndex  int
+	Extractor        string
+	ExtractorVersion string
+	Importance       float64
+	RecallCount      int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	LastAccessedAt   time.Time
+	LastRecalledAt   time.Time
 }
 
 type EntityFact struct {

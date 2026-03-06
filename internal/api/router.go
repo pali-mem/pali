@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vein05/pali/internal/api/handlers"
@@ -79,11 +82,14 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 		corememory.ParserOptions{
 			Enabled:         cfg.Parser.Enabled,
 			Provider:        cfg.Parser.Provider,
+			Model:           cfg.Parser.OllamaModel,
 			StoreRawTurn:    cfg.Parser.StoreRawTurn,
 			MaxFacts:        cfg.Parser.MaxFacts,
 			DedupeThreshold: cfg.Parser.DedupeThreshold,
 			UpdateThreshold: cfg.Parser.UpdateThreshold,
 		},
+		corememory.WithLogger(log.Default()),
+		corememory.WithDebug(cfg.Logging.DevVerbose, cfg.Logging.Progress),
 	}
 	if infoParser != nil {
 		serviceOptions = append(serviceOptions, corememory.WithInfoParser(infoParser))
@@ -91,6 +97,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	serviceOptions = append(serviceOptions, corememory.WithEntityFactRepository(entityFactRepo))
 	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
 	tenantService := coretenant.NewService(tenantRepo)
+	logStartup(cfg, db)
 
 	r := gin.New()
 	r.Use(apimiddleware.Logging())
@@ -136,4 +143,26 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	}
 
 	return r, cleanup, nil
+}
+
+func logStartup(cfg config.Config, db *sql.DB) {
+	logger := log.Default()
+	logger.Printf("[pali-startup] pid=%d port=%d db=%s", os.Getpid(), cfg.Server.Port, cfg.Database.SQLiteDSN)
+	logger.Printf(
+		"[pali-startup] embedder=%s model=%s provider=%s",
+		cfg.Embedding.Provider,
+		cfg.Embedding.OllamaModel,
+		cfg.Embedding.OllamaBaseURL,
+	)
+	var tenantCount int64
+	var memoryCount int64
+	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tenants").Scan(&tenantCount); err != nil {
+		logger.Printf("[pali-startup] tenant_count_error=%v", err)
+		return
+	}
+	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM memories").Scan(&memoryCount); err != nil {
+		logger.Printf("[pali-startup] memory_count_error=%v", err)
+		return
+	}
+	logger.Printf("[pali-startup] tenant_count=%d memory_count=%d", tenantCount, memoryCount)
 }

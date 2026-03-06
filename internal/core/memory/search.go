@@ -49,6 +49,14 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		topK = 10
 	}
 	candidateTopK := candidateWindow(topK)
+	profile := classifyQuery(query)
+	searchQueries := buildSearchQueries(query, profile)
+	var (
+		embedDur  time.Duration
+		bm25Dur   time.Duration
+		vectorDur time.Duration
+		fuseDur   time.Duration
+	)
 
 	if s.structured.QueryRoutingEnabled && s.entityRepo != nil {
 		aggregated, handled, err := s.searchByEntityFacts(ctx, tenantID, query, topK, opts, tierFilter, kindFilter)
@@ -60,28 +68,47 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		}
 	}
 
-	lexicalCandidates, err := s.repo.Search(ctx, tenantID, query, candidateTopK)
-	if err != nil {
-		return nil, err
+	lexicalCandidates := make([]domain.Memory, 0, len(searchQueries)*candidateTopK)
+	bm25Start := time.Now()
+	for _, searchQuery := range searchQueries {
+		candidates, err := s.repo.Search(ctx, tenantID, searchQuery, candidateTopK)
+		if err != nil {
+			return nil, err
+		}
+		lexicalCandidates = append(lexicalCandidates, candidates...)
 	}
+	bm25Dur = time.Since(bm25Start)
 
 	var denseCandidates []domain.VectorstoreCandidate
 	if s.vector != nil && s.embedder != nil {
-		queryEmbedding, err := s.embedder.Embed(ctx, query)
-		if err != nil {
-			return nil, err
+		embedStart := time.Now()
+		embeddings := make([][]float32, 0, len(searchQueries))
+		for _, searchQuery := range searchQueries {
+			queryEmbedding, err := s.embedder.Embed(ctx, searchQuery)
+			if err != nil {
+				return nil, err
+			}
+			embeddings = append(embeddings, queryEmbedding)
 		}
-		denseCandidates, err = s.vector.Search(ctx, tenantID, queryEmbedding, candidateTopK)
-		if err != nil {
-			return nil, err
+		embedDur = time.Since(embedStart)
+		vectorStart := time.Now()
+		for _, queryEmbedding := range embeddings {
+			candidates, err := s.vector.Search(ctx, tenantID, queryEmbedding, candidateTopK)
+			if err != nil {
+				return nil, err
+			}
+			denseCandidates = append(denseCandidates, candidates...)
 		}
+		vectorDur = time.Since(vectorStart)
 	}
 
 	if len(lexicalCandidates) == 0 && len(denseCandidates) == 0 {
 		return []domain.Memory{}, nil
 	}
 
+	fuseStart := time.Now()
 	ids, similarityByID := fuseCandidatesByRRF(denseCandidates, lexicalCandidates, candidateTopK)
+	fuseDur = time.Since(fuseStart)
 	if len(ids) == 0 {
 		return []domain.Memory{}, nil
 	}
@@ -94,11 +121,11 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		return []domain.Memory{}, nil
 	}
 
-	profile := queryProfile{}
+	rankingProfile := queryProfile{}
 	if s.structured.QueryRoutingEnabled {
-		profile = classifyQuery(query)
+		rankingProfile = profile
 	}
-	scored := rankMemories(memories, similarityByID, query, profile, s.ranking)
+	scored := rankMemories(memories, similarityByID, query, rankingProfile, s.ranking)
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -127,19 +154,44 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		}
 		filtered = append(filtered, item)
 	}
-
-	if len(filtered) > topK {
-		filtered = filtered[:topK]
+	if len(kindFilter) == 0 {
+		filtered = preferCanonicalUnits(filtered)
 	}
 
 	out := make([]domain.Memory, 0, len(filtered))
-	orderedIDs := make([]string, 0, len(filtered))
 	for _, item := range filtered {
 		out = append(out, item.Memory)
-		orderedIDs = append(orderedIDs, item.Memory.ID)
+	}
+	if len(kindFilter) == 0 {
+		out, err = s.expandGroundedContextMemories(ctx, tenantID, out, topK)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(out) > topK {
+		out = out[:topK]
+	}
+	orderedIDs := make([]string, 0, len(out))
+	for _, memory := range out {
+		orderedIDs = append(orderedIDs, memory.ID)
 	}
 	if !opts.DisableTouch && len(orderedIDs) > 0 {
 		_ = s.repo.Touch(ctx, tenantID, orderedIDs)
+	}
+	s.logInfof(
+		"[pali-search] tenant=%s embed_ms=%d bm25_ms=%d vector_ms=%d fuse_ms=%d queried_k=%d returned=%d",
+		tenantID,
+		embedDur.Milliseconds(),
+		bm25Dur.Milliseconds(),
+		vectorDur.Milliseconds(),
+		fuseDur.Milliseconds(),
+		candidateTopK,
+		len(out),
+	)
+	if memoryCount, err := s.tenantRepo.MemoryCount(ctx, tenantID); err == nil {
+		s.logInfof("[pali-search] tenant=%s memories=%d queried_k=%d", tenantID, memoryCount, candidateTopK)
+	} else {
+		s.logDebugf("[pali-search] tenant=%s memory_count_error=%v", tenantID, err)
 	}
 
 	return out, nil
@@ -155,8 +207,10 @@ func (s *Service) searchByEntityFacts(
 ) ([]domain.Memory, bool, error) {
 	route, ok := classifyAggregationQuery(query)
 	if !ok {
+		s.logDebugf("[pali-search] aggregation_detected=false query=%q", sanitizeLogSnippet(query, 120))
 		return nil, false, nil
 	}
+	s.logDebugf("[pali-search] aggregation_detected=true entity=%q relation=%q", route.Entity, route.Relation)
 
 	lookupLimit := topK * 6
 	if lookupLimit < 20 {
@@ -215,7 +269,26 @@ func (s *Service) searchByEntityFacts(
 	if len(filtered) == 0 {
 		return nil, false, nil
 	}
+	if len(kindFilter) == 0 {
+		promoted := make([]domain.Memory, 0, len(filtered))
+		raw := make([]domain.Memory, 0, len(filtered))
+		for _, memory := range filtered {
+			if memory.Kind == domain.MemoryKindRawTurn {
+				raw = append(raw, memory)
+				continue
+			}
+			promoted = append(promoted, memory)
+		}
+		filtered = append(promoted, raw...)
+	}
 
+	if len(kindFilter) == 0 {
+		expanded, err := s.expandGroundedContextMemories(ctx, tenantID, filtered, topK)
+		if err != nil {
+			return nil, false, err
+		}
+		filtered = expanded
+	}
 	if len(filtered) > topK {
 		filtered = filtered[:topK]
 	}
@@ -453,6 +526,91 @@ func candidateWindow(topK int) int {
 		n = 200
 	}
 	return n
+}
+
+func preferCanonicalUnits(items []scoredMemory) []scoredMemory {
+	if len(items) == 0 {
+		return items
+	}
+	promoted := make([]scoredMemory, 0, len(items))
+	raw := make([]scoredMemory, 0, len(items))
+	for _, item := range items {
+		if item.Memory.Kind == domain.MemoryKindRawTurn {
+			raw = append(raw, item)
+			continue
+		}
+		promoted = append(promoted, item)
+	}
+	if len(promoted) == 0 || len(raw) == 0 {
+		return items
+	}
+	return append(promoted, raw...)
+}
+
+func (s *Service) expandGroundedContextMemories(
+	ctx context.Context,
+	tenantID string,
+	memories []domain.Memory,
+	topK int,
+) ([]domain.Memory, error) {
+	repo, ok := s.repo.(domain.MemorySourceTurnRepository)
+	if !ok || repo == nil || len(memories) == 0 {
+		return memories, nil
+	}
+
+	out := make([]domain.Memory, 0, len(memories)+min(len(memories), 4))
+	seen := make(map[string]struct{}, len(memories)+4)
+	appendMemory := func(memory domain.Memory) {
+		if strings.TrimSpace(memory.ID) == "" {
+			return
+		}
+		if _, ok := seen[memory.ID]; ok {
+			return
+		}
+		seen[memory.ID] = struct{}{}
+		out = append(out, memory)
+	}
+
+	for _, memory := range memories {
+		appendMemory(memory)
+		if topK > 0 && len(out) >= topK {
+			continue
+		}
+		if memory.Kind == domain.MemoryKindRawTurn || strings.TrimSpace(memory.SourceTurnHash) == "" {
+			continue
+		}
+		siblings, err := repo.ListBySourceTurnHash(ctx, tenantID, memory.SourceTurnHash, 4)
+		if err != nil {
+			return nil, err
+		}
+		var rawTurn *domain.Memory
+		var supportingFact *domain.Memory
+		for i := range siblings {
+			sibling := siblings[i]
+			if sibling.ID == memory.ID {
+				continue
+			}
+			switch sibling.Kind {
+			case domain.MemoryKindRawTurn:
+				if rawTurn == nil {
+					candidate := sibling
+					rawTurn = &candidate
+				}
+			case domain.MemoryKindEvent, domain.MemoryKindObservation:
+				if supportingFact == nil {
+					candidate := sibling
+					supportingFact = &candidate
+				}
+			}
+		}
+		if rawTurn != nil {
+			appendMemory(*rawTurn)
+		}
+		if supportingFact != nil {
+			appendMemory(*supportingFact)
+		}
+	}
+	return out, nil
 }
 
 func fuseCandidatesByRRF(

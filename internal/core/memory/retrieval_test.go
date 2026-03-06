@@ -10,9 +10,11 @@ import (
 )
 
 type retrievalRepoStub struct {
-	memoriesByID  map[string]domain.Memory
-	searchResults []domain.Memory
-	touched       []string
+	memoriesByID         map[string]domain.Memory
+	searchResults        []domain.Memory
+	searchResultsByQuery map[string][]domain.Memory
+	searchedQueries      []string
+	touched              []string
 }
 
 func (r *retrievalRepoStub) Store(ctx context.Context, m domain.Memory) (domain.Memory, error) {
@@ -22,6 +24,15 @@ func (r *retrievalRepoStub) Delete(ctx context.Context, tenantID, memoryID strin
 	return nil
 }
 func (r *retrievalRepoStub) Search(ctx context.Context, tenantID, query string, topK int) ([]domain.Memory, error) {
+	r.searchedQueries = append(r.searchedQueries, query)
+	if r.searchResultsByQuery != nil {
+		if results, ok := r.searchResultsByQuery[query]; ok {
+			if len(results) <= topK {
+				return results, nil
+			}
+			return results[:topK], nil
+		}
+	}
 	if len(r.searchResults) <= topK {
 		return r.searchResults, nil
 	}
@@ -39,6 +50,24 @@ func (r *retrievalRepoStub) GetByIDs(ctx context.Context, tenantID string, ids [
 func (r *retrievalRepoStub) Touch(ctx context.Context, tenantID string, ids []string) error {
 	r.touched = append([]string{}, ids...)
 	return nil
+}
+
+func (r *retrievalRepoStub) ListBySourceTurnHash(
+	ctx context.Context,
+	tenantID, sourceTurnHash string,
+	limit int,
+) ([]domain.Memory, error) {
+	out := make([]domain.Memory, 0, limit)
+	for _, memory := range r.memoriesByID {
+		if memory.TenantID != tenantID || memory.SourceTurnHash != sourceTurnHash {
+			continue
+		}
+		out = append(out, memory)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 type retrievalTenantRepoStub struct{}
@@ -290,6 +319,43 @@ func TestSearchWithFiltersAppliesKindFilter(t *testing.T) {
 	require.Equal(t, "m2", results[0].ID)
 }
 
+func TestSearchPrefersCanonicalUnitsOverRawTurnsByDefault(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"raw": {
+				ID:             "raw",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindRawTurn,
+				Content:        "Alex: I live in Austin.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+			"obs": {
+				ID:             "obs",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Alex lives in Austin.",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{
+			{MemoryID: "raw", Similarity: 0.95},
+			{MemoryID: "obs", Similarity: 0.95},
+		},
+	}
+
+	svc := NewService(repo, retrievalTenantRepoStub{}, vector, retrievalEmbedderStub{}, retrievalScorerStub{})
+	results, err := svc.Search(context.Background(), "tenant_1", "where does Alex live?", 2)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	require.Equal(t, "obs", results[0].ID)
+	require.Equal(t, "raw", results[1].ID)
+}
+
 func TestSearchWithQueryRoutingBoostsTemporalKinds(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &retrievalRepoStub{
@@ -438,4 +504,66 @@ func TestSearchAggregationRouteUsesEntityFactsWhenAvailable(t *testing.T) {
 	require.Equal(t, "activity_1", results[0].ID)
 	require.Equal(t, "activity_2", results[1].ID)
 	require.Equal(t, []string{"activity_1", "activity_2"}, repo.touched)
+}
+
+func TestSearchExpandsGroundedRawTurnContextAfterFactHit(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"fact": {
+				ID:             "fact",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "On 8 May 2023, Caroline attended an LGBTQ support group.",
+				SourceTurnHash: "turn_1",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+			"raw": {
+				ID:             "raw",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindRawTurn,
+				Content:        "[time:1:56 pm on 8 May, 2023] Caroline: I went to an LGBTQ support group yesterday and it was powerful.",
+				SourceTurnHash: "turn_1",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{
+			{MemoryID: "fact", Similarity: 0.95},
+		},
+	}
+
+	svc := NewService(repo, retrievalTenantRepoStub{}, vector, retrievalEmbedderStub{}, retrievalScorerStub{})
+	results, err := svc.Search(context.Background(), "tenant_1", "when did Caroline go to the LGBTQ support group", 2)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	require.Equal(t, "fact", results[0].ID)
+	require.Equal(t, "raw", results[1].ID)
+}
+
+func TestSearchBuildsMultipleQueriesForTemporalQuestion(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"m1": {
+				ID:             "m1",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Alex moved to Austin in 2024.",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{
+			{ID: "m1", TenantID: "tenant_1"},
+		},
+	}
+
+	svc := NewService(repo, retrievalTenantRepoStub{}, nil, nil, retrievalScorerStub{})
+	_, err := svc.Search(context.Background(), "tenant_1", "when did Alex move to Austin?", 3)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(repo.searchedQueries), 2)
 }

@@ -3,27 +3,29 @@ package memory
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
+	"github.com/mattn/go-isatty"
+	"github.com/schollz/progressbar/v2"
 	"github.com/vein05/pali/internal/domain"
 )
 
-// parserBatchRepoDedupeMinTenantRows gates parser dedupe FTS probes.
-// For small tenant corpora, pending-batch dedupe is usually enough and avoids
-// O(facts) repo.Search calls behind SQLite's single-writer/read connection cap.
-const parserBatchRepoDedupeMinTenantRows int64 = 1000
-
 type parserBatchItem struct {
-	item     preparedStoreInput
-	facts    []ParsedFact
-	parseErr error
+	item             preparedStoreInput
+	facts            []ParsedFact
+	extractor        string
+	extractorVersion string
+	parseErr         error
 }
 
 type parserPendingWrite struct {
-	memory     domain.Memory
-	embedding  []float32
-	dropped    bool
-	replacedBy int
+	memory           domain.Memory
+	embedding        []float32
+	relationTupleKey string
+	dropped          bool
+	replacedBy       int
 }
 
 type parserBatchResultRef struct {
@@ -44,23 +46,31 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		return []domain.Memory{}, nil
 	}
 	if len(items) == 1 {
+		s.logDebugf("[pali-store] batch=1 fallback=sequential reason=single_item")
 		return s.storeBatchWithParserSequential(ctx, items)
 	}
 
 	batchEmbedder, ok := s.embedder.(domain.BatchEmbedder)
 	if !ok || batchEmbedder == nil {
+		s.logInfof("[pali-store] batch=%d FALLBACK code=500 reason=batch_embedder_unavailable", len(items))
 		return s.storeBatchWithParserSequential(ctx, items)
 	}
-
-	repoDedupeEnabledByTenant, err := s.parserBatchRepoDedupeFlags(ctx, items)
-	if err != nil {
-		return nil, err
-	}
-	repoNoHit := make(map[string]struct{}, len(items))
 
 	parsed := make([]parserBatchItem, 0, len(items))
 	uniqueTexts := make([]string, 0, len(items)*(s.parser.MaxFacts+1))
 	seenTexts := make(map[string]struct{}, len(uniqueTexts))
+	var parseProgress *progressbar.ProgressBar
+	if s.devVerbose && s.progress && len(items) > 1 && isatty.IsTerminal(os.Stdout.Fd()) {
+		parseProgress = progressbar.NewOptions(
+			len(items),
+			progressbar.OptionSetWriter(os.Stdout),
+			progressbar.OptionSetDescription("[pali-store] parse"),
+			progressbar.OptionSetWidth(18),
+			progressbar.OptionShowCount(),
+			progressbar.OptionShowIts(),
+			progressbar.OptionClearOnFinish(),
+		)
+	}
 	pushText := func(text string) {
 		if text == "" {
 			return
@@ -72,36 +82,60 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		uniqueTexts = append(uniqueTexts, text)
 	}
 
-	for _, item := range items {
-		facts, parseErr := s.parseFactsWithFallback(ctx, item.input.Content)
-		if parseErr == nil {
-			// Apply same date-injection and content preparation as the non-batch path.
-			// prepareParsedFactsForStore normalizes content, prepends "On <date>, " when
-			// the source turn carries a time anchor, filters low-quality facts, and
-			// infers entity/relation/value triples. Skipping this was causing facts to
-			// be embedded and stored without temporal anchors even when M1 was "on".
-			facts = prepareParsedFactsForStore(item.input.Content, facts)
+	for i, item := range items {
+		parseStart := time.Now()
+		parseResult, parseErr := s.parseFactsWithFallback(ctx, item.input.Content, i+1)
+		parserMS := time.Since(parseStart).Milliseconds()
+		facts := parseResult.Facts
+		entityTriples := 0
+		for _, fact := range facts {
+			if parsedFactHasEntityTriple(fact) {
+				entityTriples++
+			}
+		}
+		s.logInfof(
+			"[pali-store] turn=%d raw_turns=1 facts=%d entity_triples=%d",
+			i+1,
+			len(facts),
+			entityTriples,
+		)
+		s.logDebugf("[pali-store] turn=%d parser_ms=%d facts=%d", i+1, parserMS, len(facts))
+		for _, fact := range facts {
+			s.logDebugf("[pali-parser] turn=%d fact=%q", i+1, sanitizeLogSnippet(fact.Content, 220))
+		}
+		if parseProgress != nil {
+			_ = parseProgress.Add(1)
 		}
 		parsed = append(parsed, parserBatchItem{
-			item:     item,
-			facts:    facts,
-			parseErr: parseErr,
+			item:             item,
+			facts:            facts,
+			extractor:        parseResult.Extractor,
+			extractorVersion: parseResult.ExtractorVersion,
+			parseErr:         parseErr,
 		})
 		pushText(item.input.Content)
 		if parseErr != nil {
 			continue
 		}
 		for _, fact := range facts {
-			// fact.Content is already normalized by prepareParsedFactsForStore above.
-			pushText(fact.Content)
+			pushText(embeddingTextForParsedFact(fact))
 		}
 	}
 
+	embedStart := time.Now()
 	embeddings, err := batchEmbedder.BatchEmbed(ctx, uniqueTexts)
+	embedDur := time.Since(embedStart)
 	if err != nil {
+		s.logInfof("[pali-store] batch=%d FALLBACK code=500 reason=batch_embed_error err=%v", len(items), err)
 		return s.storeBatchWithParserSequential(ctx, items)
 	}
 	if len(embeddings) != len(uniqueTexts) {
+		s.logInfof(
+			"[pali-store] batch=%d FALLBACK code=500 reason=batch_embed_mismatch embeddings=%d texts=%d",
+			len(items),
+			len(embeddings),
+			len(uniqueTexts),
+		)
 		return s.storeBatchWithParserSequential(ctx, items)
 	}
 
@@ -134,7 +168,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	}
 
 	stageRawMemory := func(item preparedStoreInput) (int, error) {
-		return stageMemory(domain.Memory{
+		return stageMemory(applyIdentityToMemory(domain.Memory{
 			TenantID:  item.input.TenantID,
 			Content:   item.input.Content,
 			Tier:      item.resolvedTier,
@@ -142,7 +176,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 			Tags:      item.input.Tags,
 			Source:    item.input.Source,
 			CreatedBy: item.input.CreatedBy,
-		})
+		}, buildRawTurnIdentity(item.input.Content)))
 	}
 
 	for i := range parsed {
@@ -167,18 +201,19 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		firstFound := false
 		firstPendingIdx := -1
 		var firstExisting domain.Memory
-		allowRepoDedupe := repoDedupeEnabledByTenant[current.item.input.TenantID]
-		for _, fact := range current.facts {
+		for factIdx, fact := range current.facts {
 			memory, pendingIdx, err := s.applyParsedFactWithPending(
 				ctx,
 				current.item.input.TenantID,
+				current.item.input.Content,
 				current.item.input.Tags,
 				current.item.input.Source,
 				fact,
+				factIdx,
+				current.extractor,
+				current.extractorVersion,
 				embeddingByContent,
 				&pending,
-				allowRepoDedupe,
-				repoNoHit,
 			)
 			if err != nil {
 				return nil, err
@@ -240,6 +275,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	memoriesToStore := make([]domain.Memory, 0, len(pending))
 	embeddingsToStore := make([][]float32, 0, len(pending))
 	pendingToStoreIdx := make(map[int]int, len(pending))
+	writeStart := time.Now()
 	for i := range pending {
 		if pending[i].dropped {
 			continue
@@ -257,6 +293,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	if len(memoriesToStore) > 0 {
 		stored, err := s.storeInRepo(ctx, memoriesToStore)
 		if err != nil {
+			s.logInfof("[pali-store] batch=%d FALLBACK code=500 reason=repo_store_error err=%v", len(items), err)
 			return nil, err
 		}
 		if len(stored) != len(embeddingsToStore) {
@@ -269,6 +306,12 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 			pendingToStored[pendingIdx] = stored[storedIdx]
 		}
 	}
+	s.logInfof(
+		"[pali-store] batch=%d embed_ms=%d write_ms=%d",
+		len(items),
+		embedDur.Milliseconds(),
+		time.Since(writeStart).Milliseconds(),
+	)
 
 	entityFacts := make([]domain.EntityFact, 0, len(pendingEntityFacts))
 	for _, pendingFact := range pendingEntityFacts {
@@ -330,97 +373,18 @@ func (s *Service) storeBatchWithParserSequential(ctx context.Context, items []pr
 	return out, nil
 }
 
-func (s *Service) parserBatchRepoDedupeFlags(
-	ctx context.Context,
-	items []preparedStoreInput,
-) (map[string]bool, error) {
-	out := make(map[string]bool, len(items))
-	for _, item := range items {
-		tenantID := item.input.TenantID
-		if _, ok := out[tenantID]; ok {
-			continue
-		}
-		count, err := s.tenantRepo.MemoryCount(ctx, tenantID)
-		if err != nil {
-			return nil, err
-		}
-		out[tenantID] = count >= parserBatchRepoDedupeMinTenantRows
-	}
-	return out, nil
-}
-
-func (s *Service) findSimilarMemoryWithPending(
-	ctx context.Context,
-	tenantID, content string,
-	kind domain.MemoryKind,
-	pending []parserPendingWrite,
-	allowRepoSearch bool,
-	repoNoHit map[string]struct{},
-) (*domain.Memory, float64, int, error) {
-	var pendingMatch *domain.Memory
-	pendingScore := 0.0
-	pendingIdx := -1
-
-	for i := len(pending) - 1; i >= 0; i-- {
-		if pending[i].dropped {
-			continue
-		}
-		if pending[i].memory.TenantID != tenantID || pending[i].memory.Kind != kind {
-			continue
-		}
-		score := lexicalSimilarity(content, pending[i].memory.Content)
-		if score <= pendingScore {
-			continue
-		}
-		pendingScore = score
-		pendingIdx = i
-		candidate := pending[i].memory
-		pendingMatch = &candidate
-	}
-
-	// Pending hit already exceeds dedupe threshold; no need for extra FTS probe.
-	if pendingMatch != nil && pendingScore >= s.parser.DedupeThreshold {
-		return pendingMatch, pendingScore, pendingIdx, nil
-	}
-
-	if !allowRepoSearch {
-		if pendingMatch != nil {
-			return pendingMatch, pendingScore, pendingIdx, nil
-		}
-		return nil, 0, -1, nil
-	}
-
-	repoKey := parserBatchRepoNoHitKey(tenantID, content, kind)
-	if _, skip := repoNoHit[repoKey]; skip {
-		if pendingMatch != nil {
-			return pendingMatch, pendingScore, pendingIdx, nil
-		}
-		return nil, 0, -1, nil
-	}
-
-	repoMatch, repoScore, err := s.findSimilarMemory(ctx, tenantID, content, kind)
-	if err != nil {
-		return nil, 0, -1, err
-	}
-	if repoMatch == nil {
-		repoNoHit[repoKey] = struct{}{}
-	}
-	if repoScore >= pendingScore {
-		return repoMatch, repoScore, -1, nil
-	}
-	return pendingMatch, pendingScore, pendingIdx, nil
-}
-
 func (s *Service) applyParsedFactWithPending(
 	ctx context.Context,
 	tenantID string,
+	sourceContent string,
 	baseTags []string,
 	baseSource string,
 	fact ParsedFact,
+	factIndex int,
+	extractor string,
+	extractorVersion string,
 	embeddingByContent map[string][]float32,
 	pending *[]parserPendingWrite,
-	allowRepoSearch bool,
-	repoNoHit map[string]struct{},
 ) (*domain.Memory, int, error) {
 	content := normalizeFactContent(fact.Content)
 	if !shouldStoreParsedFactContent(content) {
@@ -430,60 +394,95 @@ func (s *Service) applyParsedFactWithPending(
 	if kind != domain.MemoryKindEvent && kind != domain.MemoryKindObservation {
 		kind = domain.MemoryKindObservation
 	}
+	identity := buildParsedFactIdentity(sourceContent, factIndex, fact, extractor, extractorVersion)
 
-	existing, similarity, pendingIdx, err := s.findSimilarMemoryWithPending(
-		ctx,
-		tenantID,
-		content,
-		kind,
-		*pending,
-		allowRepoSearch,
-		repoNoHit,
-	)
+	if exactMatch, pendingIdx := findPendingMemoryByCanonicalKey(*pending, tenantID, identity.CanonicalKey); exactMatch != nil {
+		return exactMatch, pendingIdx, nil
+	}
+	if tupleKey, ok := normalizedRelationTupleKey(fact); ok {
+		if exactMatch, pendingIdx := findPendingMemoryByRelationTuple(*pending, tenantID, tupleKey); exactMatch != nil {
+			return exactMatch, pendingIdx, nil
+		}
+	}
+	exactMatch, err := s.findMemoryByCanonicalKey(ctx, tenantID, identity.CanonicalKey)
 	if err != nil {
 		return nil, -1, err
 	}
-
-	replacedPendingIdx := -1
-	if existing != nil {
-		if similarity >= s.parser.UpdateThreshold && shouldReplaceMemory(*existing, content) {
-			if pendingIdx >= 0 {
-				(*pending)[pendingIdx].dropped = true
-				replacedPendingIdx = pendingIdx
-			} else {
-				if err := s.deleteForReplacement(ctx, tenantID, existing.ID); err != nil {
-					return nil, -1, err
-				}
-			}
-		} else if similarity >= s.parser.DedupeThreshold {
-			return existing, pendingIdx, nil
-		}
+	if exactMatch != nil {
+		return exactMatch, -1, nil
+	}
+	exactMatch, err = s.findMemoryByRelationTuple(ctx, tenantID, fact)
+	if err != nil {
+		return nil, -1, err
+	}
+	if exactMatch != nil {
+		return exactMatch, -1, nil
 	}
 
-	embedding, ok := embeddingByContent[content]
+	embedding, ok := embeddingByContent[embeddingTextForParsedFact(fact)]
 	if !ok || len(embedding) == 0 {
 		return nil, -1, fmt.Errorf("missing precomputed embedding for parsed fact content")
 	}
 
+	tupleKey, _ := normalizedRelationTupleKey(fact)
 	*pending = append(*pending, parserPendingWrite{
-		memory: domain.Memory{
-			TenantID:  tenantID,
-			Content:   content,
-			Tier:      domain.MemoryTierSemantic,
-			Kind:      kind,
-			Tags:      mergeTags(baseTags, fact.Tags...),
-			Source:    appendDerivedSource(baseSource, "parser"),
-			CreatedBy: domain.MemoryCreatedBySystem,
-		},
-		embedding:  append([]float32{}, embedding...),
-		replacedBy: -1,
+		memory: applyIdentityToMemory(domain.Memory{
+			TenantID:      tenantID,
+			Content:       content,
+			QueryViewText: fact.QueryViewText,
+			Tier:          domain.MemoryTierSemantic,
+			Kind:          kind,
+			Tags:          mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
+			Source:        appendDerivedSource(baseSource, "parser"),
+			CreatedBy:     domain.MemoryCreatedBySystem,
+		}, identity),
+		embedding:        append([]float32{}, embedding...),
+		relationTupleKey: tupleKey,
+		replacedBy:       -1,
 	})
 	newPendingIdx := len(*pending) - 1
-	if replacedPendingIdx >= 0 {
-		(*pending)[replacedPendingIdx].replacedBy = newPendingIdx
-	}
 	staged := (*pending)[newPendingIdx].memory
 	return &staged, newPendingIdx, nil
+}
+
+func findPendingMemoryByCanonicalKey(
+	pending []parserPendingWrite,
+	tenantID, canonicalKey string,
+) (*domain.Memory, int) {
+	if strings.TrimSpace(canonicalKey) == "" {
+		return nil, -1
+	}
+	for i := len(pending) - 1; i >= 0; i-- {
+		if pending[i].dropped {
+			continue
+		}
+		if pending[i].memory.TenantID != tenantID || pending[i].memory.CanonicalKey != canonicalKey {
+			continue
+		}
+		memory := pending[i].memory
+		return &memory, i
+	}
+	return nil, -1
+}
+
+func findPendingMemoryByRelationTuple(
+	pending []parserPendingWrite,
+	tenantID, tupleKey string,
+) (*domain.Memory, int) {
+	if strings.TrimSpace(tupleKey) == "" {
+		return nil, -1
+	}
+	for i := len(pending) - 1; i >= 0; i-- {
+		if pending[i].dropped {
+			continue
+		}
+		if pending[i].memory.TenantID != tenantID || pending[i].relationTupleKey != tupleKey {
+			continue
+		}
+		memory := pending[i].memory
+		return &memory, i
+	}
+	return nil, -1
 }
 
 func resolveParserPendingIndex(pending []parserPendingWrite, idx int) int {
@@ -497,8 +496,4 @@ func resolveParserPendingIndex(pending []parserPendingWrite, idx int) int {
 		idx = pending[idx].replacedBy
 	}
 	return -1
-}
-
-func parserBatchRepoNoHitKey(tenantID, content string, kind domain.MemoryKind) string {
-	return strings.TrimSpace(tenantID) + "|" + string(kind) + "|" + content
 }

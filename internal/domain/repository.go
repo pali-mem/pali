@@ -16,6 +16,18 @@ type MemoryBatchRepository interface {
 	StoreBatch(ctx context.Context, memories []Memory) ([]Memory, error)
 }
 
+// MemoryCanonicalKeyRepository is an optional extension for repositories that
+// can look up a memory by a deterministic canonical identity.
+type MemoryCanonicalKeyRepository interface {
+	FindByCanonicalKey(ctx context.Context, tenantID, canonicalKey string) (*Memory, error)
+}
+
+// MemorySourceTurnRepository is an optional extension for repositories that
+// can list memories grounded to the same source turn.
+type MemorySourceTurnRepository interface {
+	ListBySourceTurnHash(ctx context.Context, tenantID, sourceTurnHash string, limit int) ([]Memory, error)
+}
+
 type EntityFactRepository interface {
 	Store(ctx context.Context, fact EntityFact) (EntityFact, error)
 	ListByEntityRelation(ctx context.Context, tenantID, entity, relation string, limit int) ([]EntityFact, error)

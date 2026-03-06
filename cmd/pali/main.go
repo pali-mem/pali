@@ -63,7 +63,7 @@ func runAPI(cfg config.Config) {
 	}()
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("starting pali server on http://localhost:%d", cfg.Server.Port)
+	log.Printf("[pali-startup] starting pali server on http://localhost:%d", cfg.Server.Port)
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
@@ -125,11 +125,14 @@ func runMCP(cfg config.Config) {
 		corememory.ParserOptions{
 			Enabled:         cfg.Parser.Enabled,
 			Provider:        cfg.Parser.Provider,
+			Model:           cfg.Parser.OllamaModel,
 			StoreRawTurn:    cfg.Parser.StoreRawTurn,
 			MaxFacts:        cfg.Parser.MaxFacts,
 			DedupeThreshold: cfg.Parser.DedupeThreshold,
 			UpdateThreshold: cfg.Parser.UpdateThreshold,
 		},
+		corememory.WithLogger(log.Default()),
+		corememory.WithDebug(cfg.Logging.DevVerbose, cfg.Logging.Progress),
 	}
 	if infoParser != nil {
 		serviceOptions = append(serviceOptions, corememory.WithInfoParser(infoParser))
@@ -150,6 +153,20 @@ func runMCP(cfg config.Config) {
 		log.Fatalf("build mcp server: %v", err)
 	}
 
+	log.Printf("[pali-startup] pid=%d port=%d db=%s", os.Getpid(), cfg.Server.Port, cfg.Database.SQLiteDSN)
+	log.Printf(
+		"[pali-startup] embedder=%s model=%s provider=%s",
+		cfg.Embedding.Provider,
+		cfg.Embedding.OllamaModel,
+		cfg.Embedding.OllamaBaseURL,
+	)
+	var tenantCount int64
+	var memoryCount int64
+	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tenants").Scan(&tenantCount); err == nil {
+		if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM memories").Scan(&memoryCount); err == nil {
+			log.Printf("[pali-startup] tenant_count=%d memory_count=%d", tenantCount, memoryCount)
+		}
+	}
 	log.Printf("starting pali mcp server over stdio")
 	if err := server.RunStdio(context.Background()); err != nil {
 		log.Fatalf("mcp server exited: %v", err)

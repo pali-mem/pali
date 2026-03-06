@@ -64,3 +64,7 @@ auth:
   enabled: false
   jwt_secret: "change-me"
   issuer: "pali"
+
+logging:
+  dev_verbose: false # true => detailed parser/store/search internals
+  progress: true     # true => show live parser batch progress in verbose mode

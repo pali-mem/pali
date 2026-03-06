@@ -20,6 +20,7 @@ type Config struct {
 	Embedding        Embedding              `yaml:"embedding"`
 	Ollama           OllamaConfig           `yaml:"ollama"`
 	Auth             AuthConfig             `yaml:"auth"`
+	Logging          LoggingConfig          `yaml:"logging"`
 }
 
 type ServerConfig struct {
@@ -102,6 +103,11 @@ type ParserConfig struct {
 	MaxFacts        int     `yaml:"max_facts"`
 	DedupeThreshold float64 `yaml:"dedupe_threshold"`
 	UpdateThreshold float64 `yaml:"update_threshold"`
+}
+
+type LoggingConfig struct {
+	DevVerbose bool `yaml:"dev_verbose"`
+	Progress   bool `yaml:"progress"`
 }
 
 func Load(path string) (Config, error) {

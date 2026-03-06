@@ -72,5 +72,9 @@ func Defaults() Config {
 			JWTSecret: "",
 			Issuer:    "pali",
 		},
+		Logging: LoggingConfig{
+			DevVerbose: false,
+			Progress:   true,
+		},
 	}
 }

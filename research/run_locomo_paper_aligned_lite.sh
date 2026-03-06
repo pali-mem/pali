@@ -36,6 +36,9 @@ CACHE_INDEX_MAP="research/cache/paperlite_structured_ollama_idx_map.json"
 REUSE_CACHE=false
 RESET_CACHE=false
 SERVER_START_TIMEOUT=300
+OLLAMA_PORT=18086
+LEXICAL_PORT=18087
+KILL_STALE_SERVERS=true
 
 usage() {
   cat <<'EOF'
@@ -70,6 +73,9 @@ Flags:
   --reset-cache             Delete existing --cache-db before ollama run
   --num-convs <n>           Limit to first N conversations for fast dev-loop (0 = all 10, default: 0)
                             e.g. --num-convs 3 → ~1800 rows, ~45 min parse, ~36 queries
+  --ollama-port <n>         Port for ollama eval server (default: 18086)
+  --lexical-port <n>        Port for lexical eval server (default: 18087)
+  --no-kill-stale           Do not pkill existing pali processes before run
   --server-start-timeout <s> Server startup timeout seconds (default: 300)
   --help                    Show help
 
@@ -134,6 +140,12 @@ while [[ $# -gt 0 ]]; do
       RESET_CACHE=true; shift ;;
     --num-convs)
       NUM_CONVS="$2"; shift 2 ;;
+    --ollama-port)
+      OLLAMA_PORT="$2"; shift 2 ;;
+    --lexical-port)
+      LEXICAL_PORT="$2"; shift 2 ;;
+    --no-kill-stale)
+      KILL_STALE_SERVERS=false; shift ;;
     --server-start-timeout)
       SERVER_START_TIMEOUT="$2"; shift 2 ;;
     --help|-h)
@@ -164,10 +176,12 @@ if [[ "$PARSER_PROVIDER" == "ollama" ]]; then
   fi
 fi
 
-# Kill any stale pali server processes from previous interrupted runs.
-pkill -f "go run ./cmd/pali" 2>/dev/null || true
-pkill -f "pali -config" 2>/dev/null || true
-sleep 0.5
+# Kill stale pali server processes from previous interrupted runs unless disabled.
+if [[ "$KILL_STALE_SERVERS" == "true" ]]; then
+  pkill -f "go run ./cmd/pali" 2>/dev/null || true
+  pkill -f "pali -config" 2>/dev/null || true
+  sleep 0.5
+fi
 
 mkdir -p "$(dirname "$LOCOMO_JSON")" "$OUT_DIR"
 mkdir -p "$(dirname "$CACHE_DB")" "$(dirname "$CACHE_INDEX_MAP")"
@@ -251,8 +265,10 @@ echo "==> Store ingest settings"
 echo "    batch size    : $STORE_BATCH_SIZE"
 echo "    batch timeout : ${STORE_BATCH_TIMEOUT_SECONDS}s"
 echo "    single timeout: ${STORE_SINGLE_TIMEOUT_SECONDS}s"
+echo "    ollama port   : $OLLAMA_PORT"
+echo "    lexical port  : $LEXICAL_PORT"
 
-echo "==> Running hybrid (embedding-provider=ollama)"
+echo "==> Running answer-mode=${ANSWER_MODE} (embedding-provider=ollama, parser-provider=${PARSER_PROVIDER})"
 python3 research/eval_locomo_f1_bleu.py \
   --fixture "$FIXTURE_OUT" \
   --eval-set "$EVAL_OUT" \
@@ -262,7 +278,7 @@ python3 research/eval_locomo_f1_bleu.py \
   --top-k "$TOP_K" \
   --max-queries "$MAX_QUERIES" \
   --host 127.0.0.1 \
-  --port 18086 \
+  --port "$OLLAMA_PORT" \
   --server-start-timeout-seconds "$SERVER_START_TIMEOUT" \
   --answer-mode "$ANSWER_MODE" \
   --answer-model "$ANSWER_MODEL" \
@@ -271,6 +287,7 @@ python3 research/eval_locomo_f1_bleu.py \
   --answer-timeout-seconds "$ANSWER_TIMEOUT" \
   --extractive-confidence-threshold "$EXTRACTIVE_THRESHOLD" \
   --prefer-extractive-for-temporal \
+  --retrieval-kind-routing \
   --evidence-max-lines "$EVIDENCE_MAX_LINES" \
   --structured-memory-enabled \
   --structured-query-routing-enabled \
@@ -284,7 +301,7 @@ python3 research/eval_locomo_f1_bleu.py \
   --out-json "$ollama_json" \
   --out-summary "$ollama_txt"
 
-echo "==> Running lexical-only"
+echo "==> Running answer-mode=${ANSWER_MODE} (embedding-provider=lexical, parser-provider=${PARSER_PROVIDER})"
 python3 research/eval_locomo_f1_bleu.py \
   --fixture "$FIXTURE_OUT" \
   --eval-set "$EVAL_OUT" \
@@ -293,7 +310,7 @@ python3 research/eval_locomo_f1_bleu.py \
   --top-k "$TOP_K" \
   --max-queries "$MAX_QUERIES" \
   --host 127.0.0.1 \
-  --port 18087 \
+  --port "$LEXICAL_PORT" \
   --server-start-timeout-seconds "$SERVER_START_TIMEOUT" \
   --answer-mode "$ANSWER_MODE" \
   --answer-model "$ANSWER_MODEL" \
@@ -302,6 +319,7 @@ python3 research/eval_locomo_f1_bleu.py \
   --answer-timeout-seconds "$ANSWER_TIMEOUT" \
   --extractive-confidence-threshold "$EXTRACTIVE_THRESHOLD" \
   --prefer-extractive-for-temporal \
+  --retrieval-kind-routing \
   --evidence-max-lines "$EVIDENCE_MAX_LINES" \
   --structured-memory-enabled \
   --structured-query-routing-enabled \

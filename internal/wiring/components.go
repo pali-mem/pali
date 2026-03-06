@@ -3,6 +3,7 @@ package wiring
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -72,7 +73,13 @@ func BuildInfoParser(cfg config.Config) (corememory.InfoParser, error) {
 		return corememory.NewHeuristicInfoParser(), nil
 	case "ollama":
 		timeout := time.Duration(cfg.Parser.OllamaTimeoutMS) * time.Millisecond
-		parser, err := corememory.NewOllamaInfoParser(cfg.Parser.OllamaBaseURL, cfg.Parser.OllamaModel, timeout)
+		parser, err := corememory.NewOllamaInfoParser(
+			cfg.Parser.OllamaBaseURL,
+			cfg.Parser.OllamaModel,
+			timeout,
+			log.Default(),
+			cfg.Logging.DevVerbose,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("initialize parser ollama client: %w", err)
 		}

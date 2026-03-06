@@ -26,6 +26,11 @@ func TestIsInformativeFact_RejectsLowSignalShortFacts(t *testing.T) {
 		"hmm",
 		"oh",
 		"thanks",
+		"What's the band",
+		"What made you paint it?",
+		"Phew",
+		"Wow, great pic",
+		"Totally agree",
 	}
 	for _, tc := range cases {
 		require.False(t, isInformativeFact(tc), tc)

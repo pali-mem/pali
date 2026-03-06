@@ -61,5 +61,6 @@ test/fixtures/
 /research/debug/
 /research/__pycache__/
 
-# Built genfix binary
+# Built binaries (root-level)
 genfix
+/pali

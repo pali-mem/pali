@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/vein05/pali/internal/domain"
 )
@@ -169,7 +170,7 @@ func (s *Service) storeBatchWithoutParser(ctx context.Context, items []preparedS
 	}
 
 	for _, memory := range stored {
-		if err := s.writeLegacyStructuredDerived(ctx, memory); err != nil {
+		if err := s.writeCanonicalStructuredDerived(ctx, memory); err != nil {
 			return nil, err
 		}
 	}
@@ -182,7 +183,7 @@ func (s *Service) storeWithParser(
 	resolvedTier domain.MemoryTier,
 	resolvedKind domain.MemoryKind,
 ) (domain.Memory, error) {
-	facts, err := s.parseFactsWithFallback(ctx, in.Content)
+	parsed, err := s.parseFactsWithFallback(ctx, in.Content, 1)
 	if err != nil {
 		if s.parser.StoreRawTurn {
 			return s.storeOne(ctx, domain.Memory{
@@ -206,8 +207,18 @@ func (s *Service) storeWithParser(
 			CreatedBy: in.CreatedBy,
 		})
 	}
+	entityTriples := 0
+	for _, fact := range parsed.Facts {
+		if parsedFactHasEntityTriple(fact) {
+			entityTriples++
+		}
+	}
+	s.logInfof("[pali-store] turn=1 raw_turns=1 facts=%d entity_triples=%d", len(parsed.Facts), entityTriples)
+	for _, fact := range parsed.Facts {
+		s.logDebugf("[pali-parser] turn=1 fact=%q", sanitizeLogSnippet(fact.Content, 220))
+	}
 
-	embeddingByContent, err := s.precomputeParserEmbeddings(ctx, in.Content, facts)
+	embeddingByContent, err := s.precomputeParserEmbeddings(ctx, in.Content, parsed.Facts)
 	if err != nil {
 		// Batch precompute is an optimization; fallback preserves existing behavior.
 		embeddingByContent = nil
@@ -215,7 +226,7 @@ func (s *Service) storeWithParser(
 
 	var storedRaw domain.Memory
 	if s.parser.StoreRawTurn {
-		storedRaw, err = s.storeOneWithOptionalEmbedding(ctx, domain.Memory{
+		storedRaw, err = s.storeOneWithOptionalEmbedding(ctx, applyIdentityToMemory(domain.Memory{
 			TenantID:  in.TenantID,
 			Content:   in.Content,
 			Tier:      resolvedTier,
@@ -223,15 +234,26 @@ func (s *Service) storeWithParser(
 			Tags:      in.Tags,
 			Source:    in.Source,
 			CreatedBy: in.CreatedBy,
-		}, embeddingByContent)
+		}, buildRawTurnIdentity(in.Content)), embeddingByContent)
 		if err != nil {
 			return domain.Memory{}, err
 		}
 	}
 
 	var firstParsed *domain.Memory
-	for _, fact := range facts {
-		m, err := s.applyParsedFact(ctx, in.TenantID, in.Tags, in.Source, fact, embeddingByContent)
+	for factIdx, fact := range parsed.Facts {
+		m, err := s.applyParsedFact(
+			ctx,
+			in.TenantID,
+			in.Content,
+			in.Tags,
+			in.Source,
+			fact,
+			factIdx,
+			parsed.Extractor,
+			parsed.ExtractorVersion,
+			embeddingByContent,
+		)
 		if err != nil {
 			return domain.Memory{}, err
 		}
@@ -265,12 +287,25 @@ func (s *Service) storeWithParser(
 	}, embeddingByContent)
 }
 
-func (s *Service) parseFactsWithFallback(ctx context.Context, content string) ([]ParsedFact, error) {
+func (s *Service) parseFactsWithFallback(ctx context.Context, content string, turn int) (parserParseResult, error) {
+	parserStart := time.Now()
 	primaryFacts, primaryErr := s.infoParser.Parse(ctx, content, s.parser.MaxFacts)
 	if primaryErr == nil && len(primaryFacts) > 0 {
 		prepared := prepareParsedFactsForStore(content, primaryFacts)
 		if len(prepared) > 0 {
-			return prepared, nil
+			s.logDebugf(
+				"[pali-parser] turn=%d provider=%s model=%s status=ok ms=%d facts=%d",
+				turn,
+				s.parser.Provider,
+				s.parser.Model,
+				time.Since(parserStart).Milliseconds(),
+				len(prepared),
+			)
+			return parserParseResult{
+				Facts:            prepared,
+				Extractor:        s.parser.Provider,
+				ExtractorVersion: s.parser.Model,
+			}, nil
 		}
 	}
 
@@ -279,17 +314,56 @@ func (s *Service) parseFactsWithFallback(ctx context.Context, content string) ([
 	if fallbackErr == nil && len(fallbackFacts) > 0 {
 		prepared := prepareParsedFactsForStore(content, fallbackFacts)
 		if len(prepared) > 0 {
-			return prepared, nil
+			s.logDebugf(
+				"[pali-parser] turn=%d provider=%s model=%s status=fallback_heuristic ms=%d facts=%d",
+				turn,
+				s.parser.Provider,
+				s.parser.Model,
+				time.Since(parserStart).Milliseconds(),
+				len(prepared),
+			)
+			return parserParseResult{
+				Facts:            prepared,
+				Extractor:        heuristicExtractorName,
+				ExtractorVersion: heuristicExtractorVersion,
+			}, nil
 		}
 	}
 
 	if primaryErr != nil {
-		return nil, primaryErr
+		s.logDebugf(
+			"[pali-parser] turn=%d provider=%s model=%s status=error ms=%d err=%v",
+			turn,
+			s.parser.Provider,
+			s.parser.Model,
+			time.Since(parserStart).Milliseconds(),
+			primaryErr,
+		)
+		return parserParseResult{}, primaryErr
 	}
 	if fallbackErr != nil {
-		return nil, fallbackErr
+		s.logDebugf(
+			"[pali-parser] turn=%d provider=%s model=%s status=fallback_error ms=%d err=%v",
+			turn,
+			s.parser.Provider,
+			s.parser.Model,
+			time.Since(parserStart).Milliseconds(),
+			fallbackErr,
+		)
+		return parserParseResult{}, fallbackErr
 	}
-	return []ParsedFact{}, nil
+	s.logDebugf(
+		"[pali-parser] turn=%d provider=%s model=%s status=empty ms=%d facts=0",
+		turn,
+		s.parser.Provider,
+		s.parser.Model,
+		time.Since(parserStart).Milliseconds(),
+	)
+	return parserParseResult{
+		Facts:            []ParsedFact{},
+		Extractor:        s.parser.Provider,
+		ExtractorVersion: s.parser.Model,
+	}, nil
 }
 
 func (s *Service) precomputeParserEmbeddings(
@@ -317,7 +391,7 @@ func (s *Service) precomputeParserEmbeddings(
 
 	push(rawContent)
 	for _, fact := range facts {
-		push(normalizeFactContent(fact.Content))
+		push(embeddingTextForParsedFact(fact))
 	}
 	if len(texts) == 0 {
 		return nil, nil
@@ -341,6 +415,24 @@ func (s *Service) precomputeParserEmbeddings(
 	return out, nil
 }
 
+func embeddingTextForParsedFact(fact ParsedFact) string {
+	content := normalizeFactContent(fact.Content)
+	queryView := normalizeFactContent(fact.QueryViewText)
+	if queryView == "" {
+		return content
+	}
+	return content + "\n" + queryView
+}
+
+func embeddingLookupTextForMemory(m domain.Memory) string {
+	content := normalizeFactContent(m.Content)
+	queryView := normalizeFactContent(m.QueryViewText)
+	if queryView == "" {
+		return content
+	}
+	return content + "\n" + queryView
+}
+
 func normalizeFactContent(content string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
 }
@@ -348,9 +440,13 @@ func normalizeFactContent(content string) string {
 func (s *Service) applyParsedFact(
 	ctx context.Context,
 	tenantID string,
+	sourceContent string,
 	baseTags []string,
 	baseSource string,
 	fact ParsedFact,
+	factIndex int,
+	extractor string,
+	extractorVersion string,
 	embeddingByContent map[string][]float32,
 ) (*domain.Memory, error) {
 	content := normalizeFactContent(fact.Content)
@@ -361,30 +457,33 @@ func (s *Service) applyParsedFact(
 	if kind != domain.MemoryKindEvent && kind != domain.MemoryKindObservation {
 		kind = domain.MemoryKindObservation
 	}
+	identity := buildParsedFactIdentity(sourceContent, factIndex, fact, extractor, extractorVersion)
 
-	existing, similarity, err := s.findSimilarMemory(ctx, tenantID, content, kind)
+	exactMatch, err := s.findMemoryByCanonicalKey(ctx, tenantID, identity.CanonicalKey)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		if similarity >= s.parser.UpdateThreshold && shouldReplaceMemory(*existing, content) {
-			if err := s.deleteForReplacement(ctx, tenantID, existing.ID); err != nil {
-				return nil, err
-			}
-		} else if similarity >= s.parser.DedupeThreshold {
-			return existing, nil
-		}
+	if exactMatch != nil {
+		return exactMatch, nil
+	}
+	exactMatch, err = s.findMemoryByRelationTuple(ctx, tenantID, fact)
+	if err != nil {
+		return nil, err
+	}
+	if exactMatch != nil {
+		return exactMatch, nil
 	}
 
-	stored, err := s.storeOneWithOptionalEmbedding(ctx, domain.Memory{
-		TenantID:  tenantID,
-		Content:   content,
-		Tier:      domain.MemoryTierSemantic,
-		Kind:      kind,
-		Tags:      mergeTags(baseTags, fact.Tags...),
-		Source:    appendDerivedSource(baseSource, "parser"),
-		CreatedBy: domain.MemoryCreatedBySystem,
-	}, embeddingByContent)
+	stored, err := s.storeOneWithOptionalEmbedding(ctx, applyIdentityToMemory(domain.Memory{
+		TenantID:      tenantID,
+		Content:       content,
+		QueryViewText: fact.QueryViewText,
+		Tier:          domain.MemoryTierSemantic,
+		Kind:          kind,
+		Tags:          mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
+		Source:        appendDerivedSource(baseSource, "parser"),
+		CreatedBy:     domain.MemoryCreatedBySystem,
+	}, identity), embeddingByContent)
 	if err != nil {
 		return nil, err
 	}
@@ -461,40 +560,48 @@ func (s *Service) deleteForReplacement(ctx context.Context, tenantID, memoryID s
 	return nil
 }
 
-func (s *Service) writeLegacyStructuredDerived(ctx context.Context, stored domain.Memory) error {
+func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored domain.Memory) error {
 	if !s.structured.Enabled || stored.Kind != domain.MemoryKindRawTurn {
 		return nil
 	}
-	if s.structured.DualWriteObservations {
-		derived, err := deriveObservations(stored.Content, s.structured.MaxObservations)
+	if !s.structured.DualWriteObservations && !s.structured.DualWriteEvents {
+		return nil
+	}
+	heuristic := NewHeuristicInfoParser()
+	facts, err := heuristic.Parse(ctx, stored.Content, structuredCanonicalParseLimit(s.structured))
+	if err != nil {
+		return err
+	}
+	facts = filterCanonicalStructuredFacts(prepareParsedFactsForStore(stored.Content, facts), s.structured)
+	if len(facts) == 0 {
+		return nil
+	}
+	embeddingByContent, err := s.precomputeParserEmbeddings(ctx, stored.Content, facts)
+	if err != nil {
+		embeddingByContent = nil
+	}
+
+	for factIdx, fact := range facts {
+		memory, err := s.applyParsedFact(
+			ctx,
+			stored.TenantID,
+			stored.Content,
+			stored.Tags,
+			stored.Source,
+			fact,
+			factIdx,
+			heuristicExtractorName,
+			heuristicExtractorVersion,
+			embeddingByContent,
+		)
 		if err != nil {
 			return err
 		}
-		for _, obs := range derived {
-			err := s.storeLegacyDerivedFact(
-				ctx,
-				stored.TenantID,
-				obs,
-				domain.MemoryKindObservation,
-				mergeTags(stored.Tags, "observation", "derived"),
-				appendDerivedSource(stored.Source, "observation"),
-			)
-			if err != nil {
-				return err
-			}
+		if memory == nil {
+			continue
 		}
-	}
-	if s.structured.DualWriteEvents {
-		if eventText, ok := deriveEvent(stored.Content); ok {
-			err := s.storeLegacyDerivedFact(
-				ctx,
-				stored.TenantID,
-				eventText,
-				domain.MemoryKindEvent,
-				mergeTags(stored.Tags, "event", "derived"),
-				appendDerivedSource(stored.Source, "event"),
-			)
-			if err != nil {
+		if entityFact, ok := buildEntityFactRecord(*memory, fact); ok {
+			if err := s.storeEntityFacts(ctx, []domain.EntityFact{entityFact}); err != nil {
 				return err
 			}
 		}
@@ -502,132 +609,51 @@ func (s *Service) writeLegacyStructuredDerived(ctx context.Context, stored domai
 	return nil
 }
 
-func (s *Service) storeLegacyDerivedFact(
-	ctx context.Context,
-	tenantID string,
-	content string,
-	kind domain.MemoryKind,
-	tags []string,
-	source string,
-) error {
-	content = strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
-	if content == "" {
-		return nil
+func filterCanonicalStructuredFacts(facts []ParsedFact, opts StructuredMemoryOptions) []ParsedFact {
+	if len(facts) == 0 {
+		return []ParsedFact{}
 	}
-	skip, err := s.shouldSkipLegacyDerived(ctx, tenantID, content, kind)
-	if err != nil {
-		return err
+	out := make([]ParsedFact, 0, len(facts))
+	observations := 0
+	events := 0
+	maxObservations := max(1, opts.MaxObservations)
+	for _, fact := range facts {
+		switch fact.Kind {
+		case domain.MemoryKindEvent:
+			if !opts.DualWriteEvents {
+				continue
+			}
+			if events >= 1 {
+				continue
+			}
+			events++
+		default:
+			if !opts.DualWriteObservations {
+				continue
+			}
+			if observations >= maxObservations {
+				continue
+			}
+			observations++
+		}
+		out = append(out, fact)
 	}
-	if skip {
-		return nil
-	}
-	_, err = s.storeOne(ctx, domain.Memory{
-		TenantID:  tenantID,
-		Content:   content,
-		Tier:      domain.MemoryTierSemantic,
-		Kind:      kind,
-		Tags:      tags,
-		Source:    source,
-		CreatedBy: domain.MemoryCreatedBySystem,
-	})
-	return err
+	return out
 }
 
-func (s *Service) shouldSkipLegacyDerived(
-	ctx context.Context,
-	tenantID string,
-	content string,
-	kind domain.MemoryKind,
-) (bool, error) {
-	if s.embedder == nil || s.vector == nil {
-		return false, nil
+func structuredCanonicalParseLimit(opts StructuredMemoryOptions) int {
+	limit := max(1, opts.MaxObservations)
+	if opts.DualWriteObservations {
+		limit += max(1, opts.MaxObservations)
 	}
-	embedding, err := s.embedder.Embed(ctx, content)
-	if err != nil {
-		return false, err
+	if opts.DualWriteEvents {
+		limit++
 	}
-	candidates, err := s.vector.Search(ctx, tenantID, embedding, dualWriteCandidateTopK)
-	if err != nil {
-		return false, err
-	}
-	if len(candidates) == 0 {
-		return false, nil
-	}
-	ids := make([]string, 0, len(candidates))
-	seen := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		memoryID := strings.TrimSpace(candidate.MemoryID)
-		if memoryID == "" {
-			continue
-		}
-		if _, ok := seen[memoryID]; ok {
-			continue
-		}
-		seen[memoryID] = struct{}{}
-		ids = append(ids, memoryID)
-	}
-	if len(ids) == 0 {
-		return false, nil
-	}
-	memories, err := s.repo.GetByIDs(ctx, tenantID, ids)
-	if err != nil {
-		return false, err
-	}
-	memoryByID := make(map[string]domain.Memory, len(memories))
-	for _, memory := range memories {
-		memoryByID[memory.ID] = memory
-	}
-	for _, candidate := range candidates {
-		if candidate.Similarity < DualWriteDedupeThreshold {
-			continue
-		}
-		existing, ok := memoryByID[candidate.MemoryID]
-		if !ok || existing.Kind != kind {
-			continue
-		}
-		if hasNegationConflict(content, existing.Content) {
-			continue
-		}
-		if lexicalSimilarity(content, existing.Content) < dualWriteLexicalSafetyThreshold {
-			continue
-		}
-		return true, nil
-	}
-	return false, nil
-}
-
-func hasNegationConflict(a, b string) bool {
-	ta := normalizedRankingTokens(a)
-	tb := normalizedRankingTokens(b)
-	if len(ta) == 0 || len(tb) == 0 {
-		return false
-	}
-	aHasNegation := false
-	bHasNegation := false
-	sharedNonNegation := false
-	for token := range ta {
-		if _, neg := dualWriteNegationTokens[token]; neg {
-			aHasNegation = true
-			continue
-		}
-		if _, ok := tb[token]; ok {
-			sharedNonNegation = true
-		}
-	}
-	for token := range tb {
-		if _, neg := dualWriteNegationTokens[token]; neg {
-			bHasNegation = true
-			break
-		}
-	}
-	if aHasNegation == bHasNegation {
-		return false
-	}
-	return sharedNonNegation
+	return limit
 }
 
 func (s *Service) storeOne(ctx context.Context, m domain.Memory) (domain.Memory, error) {
-	embedding, err := s.embedder.Embed(ctx, m.Content)
+	embedding, err := s.embedder.Embed(ctx, embeddingLookupTextForMemory(m))
 	if err != nil {
 		return domain.Memory{}, err
 	}
@@ -640,7 +666,7 @@ func (s *Service) storeOneWithOptionalEmbedding(
 	embeddingByContent map[string][]float32,
 ) (domain.Memory, error) {
 	if len(embeddingByContent) > 0 {
-		if embedding, ok := embeddingByContent[m.Content]; ok && len(embedding) > 0 {
+		if embedding, ok := embeddingByContent[embeddingLookupTextForMemory(m)]; ok && len(embedding) > 0 {
 			return s.storeOnePrecomputed(ctx, m, embedding)
 		}
 	}
@@ -701,9 +727,38 @@ func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact) []Pars
 				fact.Value = value
 			}
 		}
+		if !passesCanonicalFactAdmission(sourceContent, fact) {
+			continue
+		}
+		fact.QueryViewText = buildFactQuestionView(fact)
 		prepared = append(prepared, fact)
 	}
-	return prepared
+	return dedupePreparedFacts(prepared)
+}
+
+func dedupePreparedFacts(facts []ParsedFact) []ParsedFact {
+	if len(facts) == 0 {
+		return []ParsedFact{}
+	}
+	out := make([]ParsedFact, 0, len(facts))
+	seen := make(map[string]struct{}, len(facts))
+	for _, fact := range facts {
+		key := preparedFactDedupeKey(fact)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, fact)
+	}
+	return out
+}
+
+func preparedFactDedupeKey(fact ParsedFact) string {
+	content := strings.ToLower(strings.Trim(strings.TrimSpace(fact.Content), " \t\r\n.,;:!?\"'"))
+	if tupleKey, ok := normalizedRelationTupleKey(fact); ok {
+		return content + "|" + tupleKey
+	}
+	return content
 }
 
 func shouldStoreParsedFactContent(content string) bool {
@@ -721,12 +776,16 @@ func (s *Service) storeInRepo(ctx context.Context, memories []domain.Memory) ([]
 	if len(memories) == 0 {
 		return []domain.Memory{}, nil
 	}
+	prepared := make([]domain.Memory, len(memories))
+	for i := range memories {
+		prepared[i] = applyImplicitMemoryIdentity(memories[i])
+	}
 	if batchRepo, ok := s.repo.(domain.MemoryBatchRepository); ok && batchRepo != nil {
-		return batchRepo.StoreBatch(ctx, memories)
+		return batchRepo.StoreBatch(ctx, prepared)
 	}
 
-	stored := make([]domain.Memory, 0, len(memories))
-	for _, memory := range memories {
+	stored := make([]domain.Memory, 0, len(prepared))
+	for _, memory := range prepared {
 		m, err := s.repo.Store(ctx, memory)
 		if err != nil {
 			return nil, err
@@ -734,6 +793,33 @@ func (s *Service) storeInRepo(ctx context.Context, memories []domain.Memory) ([]
 		stored = append(stored, m)
 	}
 	return stored, nil
+}
+
+func applyImplicitMemoryIdentity(memory domain.Memory) domain.Memory {
+	if memory.Kind != domain.MemoryKindRawTurn {
+		return memory
+	}
+	if strings.TrimSpace(memory.CanonicalKey) != "" {
+		if memory.SourceFactIndex == 0 {
+			memory.SourceFactIndex = -1
+		}
+		return memory
+	}
+	return applyIdentityToMemory(memory, buildRawTurnIdentity(memory.Content))
+}
+
+func (s *Service) findMemoryByCanonicalKey(
+	ctx context.Context,
+	tenantID, canonicalKey string,
+) (*domain.Memory, error) {
+	if strings.TrimSpace(canonicalKey) == "" {
+		return nil, nil
+	}
+	repo, ok := s.repo.(domain.MemoryCanonicalKeyRepository)
+	if !ok || repo == nil {
+		return nil, nil
+	}
+	return repo.FindByCanonicalKey(ctx, tenantID, canonicalKey)
 }
 
 func (s *Service) embedContents(ctx context.Context, contents []string) ([][]float32, error) {

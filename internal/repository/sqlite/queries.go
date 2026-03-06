@@ -22,8 +22,8 @@ LIMIT ?
 `
 
 	InsertMemorySQL = `
-INSERT INTO memories(id, tenant_id, content, tier, tags_json, source, created_by, kind, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO memories(id, tenant_id, content, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 	DeleteMemorySQL = `
@@ -32,7 +32,7 @@ WHERE tenant_id = ? AND id = ?
 `
 
 	SearchMemoriesSQL = `
-SELECT m.id, m.tenant_id, m.content, m.tier, m.tags_json, m.source, m.created_by, m.kind, m.importance_score, m.recall_count, m.created_at, m.updated_at, m.last_accessed_at, m.last_recalled_at
+SELECT m.id, m.tenant_id, m.content, m.tier, m.tags_json, m.source, m.created_by, m.kind, m.canonical_key, m.source_turn_hash, m.source_fact_index, m.extractor, m.extractor_version, m.importance_score, m.recall_count, m.created_at, m.updated_at, m.last_accessed_at, m.last_recalled_at
 FROM memory_fts f
 JOIN memories m
   ON m.id = f.memory_id
@@ -44,7 +44,7 @@ LIMIT ?
 `
 
 	ListMemoriesRecentSQL = `
-SELECT id, tenant_id, content, tier, tags_json, source, created_by, kind, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+SELECT id, tenant_id, content, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories
 WHERE tenant_id = ?
 ORDER BY updated_at DESC
@@ -62,9 +62,33 @@ WHERE tenant_id = ? AND memory_id = ?
 `
 
 	GetMemoriesByIDsBaseSQL = `
-SELECT id, tenant_id, content, tier, tags_json, source, created_by, kind, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+SELECT id, tenant_id, content, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories
 WHERE tenant_id = ?
+`
+
+	FindMemoryByCanonicalKeySQL = `
+SELECT id, tenant_id, content, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+FROM memories
+WHERE tenant_id = ?
+  AND canonical_key = ?
+LIMIT 1
+`
+
+	ListMemoriesBySourceTurnHashSQL = `
+SELECT id, tenant_id, content, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+FROM memories
+WHERE tenant_id = ?
+  AND source_turn_hash = ?
+ORDER BY
+  CASE kind
+    WHEN 'raw_turn' THEN 0
+    WHEN 'event' THEN 1
+    WHEN 'observation' THEN 2
+    ELSE 3
+  END,
+  updated_at DESC
+LIMIT ?
 `
 
 	InsertEntityFactSQL = `

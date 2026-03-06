@@ -83,6 +83,20 @@ func (r *structuredRepoStub) GetByIDs(ctx context.Context, tenantID string, ids 
 	return out, nil
 }
 
+func (r *structuredRepoStub) FindByCanonicalKey(
+	ctx context.Context,
+	tenantID, canonicalKey string,
+) (*domain.Memory, error) {
+	for i := len(r.stored) - 1; i >= 0; i-- {
+		memory := r.stored[i]
+		if memory.TenantID != tenantID || memory.CanonicalKey != canonicalKey {
+			continue
+		}
+		return &memory, nil
+	}
+	return nil, nil
+}
+
 func (*structuredRepoStub) Touch(ctx context.Context, tenantID string, ids []string) error {
 	return nil
 }
@@ -241,7 +255,9 @@ func TestStoreStructuredMemoryDualWrite(t *testing.T) {
 	require.Equal(t, domain.MemoryKindObservation, repo.stored[2].Kind)
 	require.Equal(t, domain.MemoryCreatedBySystem, repo.stored[1].CreatedBy)
 	require.Contains(t, repo.stored[1].Tags, "observation")
-	require.Equal(t, "user_session:observation", repo.stored[1].Source)
+	require.Contains(t, repo.stored[1].Tags, "parser")
+	require.Equal(t, "user_session:parser", repo.stored[1].Source)
+	require.NotEmpty(t, repo.stored[1].CanonicalKey)
 	require.Len(t, vector.upserted, 3)
 }
 
@@ -266,8 +282,10 @@ func TestStoreStructuredMemoryNoDerivedForSingleSentence(t *testing.T) {
 		Content:  "User prefers concise replies.",
 	})
 	require.NoError(t, err)
-	require.Len(t, repo.stored, 1)
-	require.Len(t, vector.upserted, 1)
+	require.Len(t, repo.stored, 2)
+	require.Len(t, vector.upserted, 2)
+	require.Equal(t, domain.MemoryKindObservation, repo.stored[1].Kind)
+	require.Equal(t, "parser", repo.stored[1].Source)
 }
 
 func TestStoreStructuredMemoryDualWriteEvent(t *testing.T) {
@@ -294,10 +312,11 @@ func TestStoreStructuredMemoryDualWriteEvent(t *testing.T) {
 	require.Len(t, repo.stored, 2)
 	require.Equal(t, domain.MemoryKindRawTurn, repo.stored[0].Kind)
 	require.Equal(t, domain.MemoryKindEvent, repo.stored[1].Kind)
-	require.Contains(t, repo.stored[1].Content, "1:56 pm on 8 May, 2023")
+	require.Contains(t, repo.stored[1].Content, "On 8 May 2023,")
 	require.Contains(t, repo.stored[1].Content, "Caroline")
 	require.Contains(t, repo.stored[1].Tags, "event")
-	require.Equal(t, "event", repo.stored[1].Source)
+	require.Contains(t, repo.stored[1].Tags, "parser")
+	require.Equal(t, "parser", repo.stored[1].Source)
 }
 
 func TestStoreStructuredMemoryDualWriteRepeatedTurnDedupesObservation(t *testing.T) {
@@ -354,28 +373,38 @@ func TestStoreStructuredMemoryDualWriteRepeatedTurnDedupesEvent(t *testing.T) {
 	require.Equal(t, 1, countKind(repo.stored, domain.MemoryKindEvent))
 }
 
-func TestLegacyDualWriteNegationConflictDoesNotDedupe(t *testing.T) {
+func TestStructuredDualWriteUsesCanonicalParserPathAcrossRepeatedTurns(t *testing.T) {
 	repo := &structuredRepoStub{}
-	vector := &forcedSimilarityVectorStub{}
+	vector := &structuredVectorStub{}
 	svc := NewService(
 		repo,
 		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
 		vector,
-		embedderStub{},
+		structuredEmbedderStub{},
 		scorerStub{},
+		StructuredMemoryOptions{
+			Enabled:               true,
+			DualWriteObservations: true,
+			MaxObservations:       2,
+		},
 	)
 
-	seed, err := svc.storeOne(context.Background(), domain.Memory{
-		TenantID:  "tenant_1",
-		Content:   "married",
-		Tier:      domain.MemoryTierSemantic,
-		Kind:      domain.MemoryKindObservation,
-		CreatedBy: domain.MemoryCreatedBySystem,
+	_, err := svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:8:30 am on 3 June, 2024] Taylor: I always choose tea over coffee.",
 	})
 	require.NoError(t, err)
-	vector.candidateID = seed.ID
-
-	skip, err := svc.shouldSkipLegacyDerived(context.Background(), "tenant_1", "not married", domain.MemoryKindObservation)
+	_, err = svc.Store(context.Background(), StoreInput{
+		TenantID: "tenant_1",
+		Content:  "[time:8:30 am on 3 June, 2024] Taylor: I always choose tea over coffee.",
+	})
 	require.NoError(t, err)
-	require.False(t, skip)
+
+	require.Equal(t, 1, countKind(repo.stored, domain.MemoryKindObservation))
+	for _, memory := range repo.stored {
+		if memory.Kind == domain.MemoryKindObservation {
+			require.Equal(t, "parser", memory.Source)
+			require.NotEmpty(t, memory.CanonicalKey)
+		}
+	}
 }
