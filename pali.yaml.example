@@ -1,0 +1,66 @@
+server:
+  host: 127.0.0.1
+  port: 8080
+
+vector_backend: sqlite
+default_tenant_id: default
+importance_scorer: heuristic # heuristic | ollama
+structured_memory:
+  enabled: false
+  dual_write_observations: false
+  dual_write_events: false
+  query_routing_enabled: false
+  max_observations: 3
+
+retrieval:
+  scoring:
+    algorithm: wal # wal | match
+    wal:
+      recency: 1.0
+      relevance: 1.0
+      importance: 1.0
+    match:
+      recency: 0.05
+      relevance: 0.70
+      importance: 0.10
+      query_overlap: 0.10
+      routing: 0.05
+
+parser:
+  enabled: false
+  provider: heuristic # heuristic | ollama
+  ollama_base_url: http://127.0.0.1:11434
+  ollama_model: deepseek-r1:7b
+  ollama_timeout_ms: 20000
+  store_raw_turn: true
+  max_facts: 4
+  dedupe_threshold: 0.88
+  update_threshold: 0.94
+
+database:
+  sqlite_dsn: file:pali.db?cache=shared
+
+qdrant:
+  base_url: http://127.0.0.1:6333
+  api_key: ""
+  collection: pali_memories
+  timeout_ms: 2000
+
+embedding:
+  provider: ollama # ollama | onnx | lexical (mock alias supported)
+  fallback_provider: lexical
+  ollama_base_url: http://127.0.0.1:11434
+  ollama_model: mxbai-embed-large
+  ollama_timeout_seconds: 10
+  model_path: ./models/all-MiniLM-L6-v2/model.onnx
+  tokenizer_path: ./models/all-MiniLM-L6-v2/tokenizer.json
+
+ollama:
+  base_url: http://127.0.0.1:11434
+  model: deepseek-r1:7b
+  timeout_ms: 2000
+
+auth:
+  enabled: false
+  jwt_secret: "change-me"
+  issuer: "pali"
