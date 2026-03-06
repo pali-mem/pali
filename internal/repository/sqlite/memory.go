@@ -1,0 +1,467 @@
+package sqlite
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/vein05/pali/internal/domain"
+)
+
+var ftsTokenPattern = regexp.MustCompile(`[a-zA-Z0-9_]+`)
+
+type MemoryRepository struct {
+	db *sql.DB
+}
+
+func NewMemoryRepository(db *sql.DB) *MemoryRepository {
+	return &MemoryRepository{db: db}
+}
+
+func (r *MemoryRepository) Store(ctx context.Context, m domain.Memory) (domain.Memory, error) {
+	if strings.TrimSpace(m.TenantID) == "" || strings.TrimSpace(m.Content) == "" {
+		return domain.Memory{}, domain.ErrInvalidInput
+	}
+	now := time.Now().UTC()
+	if err := prepareMemoryForStore(&m, now); err != nil {
+		return domain.Memory{}, err
+	}
+
+	tagsJSON, err := json.Marshal(m.Tags)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("marshal tags: %w", err)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("begin store transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := insertMemoryTx(ctx, tx, m, string(tagsJSON)); err != nil {
+		return domain.Memory{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return domain.Memory{}, fmt.Errorf("commit store transaction: %w", err)
+	}
+
+	return m, nil
+}
+
+func (r *MemoryRepository) StoreBatch(ctx context.Context, memories []domain.Memory) ([]domain.Memory, error) {
+	if len(memories) == 0 {
+		return []domain.Memory{}, nil
+	}
+
+	now := time.Now().UTC()
+	stored := make([]domain.Memory, 0, len(memories))
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin store-batch transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for i := range memories {
+		m := memories[i]
+		if err := prepareMemoryForStore(&m, now); err != nil {
+			return nil, fmt.Errorf("prepare memory[%d]: %w", i, err)
+		}
+
+		tagsJSON, err := json.Marshal(m.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("marshal tags for memory[%d]: %w", i, err)
+		}
+		if err := insertMemoryTx(ctx, tx, m, string(tagsJSON)); err != nil {
+			return nil, fmt.Errorf("store memory[%d]: %w", i, err)
+		}
+		stored = append(stored, m)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit store-batch transaction: %w", err)
+	}
+	return stored, nil
+}
+
+func (r *MemoryRepository) Delete(ctx context.Context, tenantID, memoryID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, DeleteMemoryFTSSQL, tenantID, memoryID); err != nil {
+		return fmt.Errorf("delete memory fts row: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, DeleteMemorySQL, tenantID, memoryID)
+	if err != nil {
+		return fmt.Errorf("delete memory: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete memory rows affected: %w", err)
+	}
+	if affected == 0 {
+		return domain.ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete transaction: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepository) Search(ctx context.Context, tenantID, query string, topK int) ([]domain.Memory, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if topK <= 0 {
+		topK = 20
+	}
+
+	ftsQuery := toFTSQuery(query)
+	sqlQuery := SearchMemoriesSQL
+	args := []any{tenantID, ftsQuery, topK}
+	if ftsQuery == "" {
+		sqlQuery = ListMemoriesRecentSQL
+		args = []any{tenantID, topK}
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search memories: %w", err)
+	}
+	defer rows.Close()
+
+	memories := make([]domain.Memory, 0, topK)
+	for rows.Next() {
+		var (
+			m            domain.Memory
+			tier         string
+			tagsJSON     string
+			createdBy    string
+			kind         string
+			importance   float64
+			recallCount  int
+			createdAtRaw string
+			updatedAtRaw string
+			accessedAt   string
+			recalledAt   string
+		)
+
+		if err := rows.Scan(
+			&m.ID,
+			&m.TenantID,
+			&m.Content,
+			&tier,
+			&tagsJSON,
+			&m.Source,
+			&createdBy,
+			&kind,
+			&importance,
+			&recallCount,
+			&createdAtRaw,
+			&updatedAtRaw,
+			&accessedAt,
+			&recalledAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan memory row: %w", err)
+		}
+
+		m.Tier = domain.MemoryTier(tier)
+		m.CreatedBy = domain.MemoryCreatedBy(createdBy)
+		m.Kind = domain.MemoryKind(kind)
+		m.Importance = importance
+		m.RecallCount = recallCount
+		if tagsJSON == "" {
+			m.Tags = []string{}
+		} else if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
+			return nil, fmt.Errorf("unmarshal memory tags: %w", err)
+		}
+
+		m.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse created_at: %w", err)
+		}
+		m.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse updated_at: %w", err)
+		}
+		m.LastAccessedAt, err = time.Parse(time.RFC3339Nano, accessedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse last_accessed_at: %w", err)
+		}
+		m.LastRecalledAt, err = time.Parse(time.RFC3339Nano, recalledAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse last_recalled_at: %w", err)
+		}
+
+		memories = append(memories, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memory rows: %w", err)
+	}
+
+	return memories, nil
+}
+
+func (r *MemoryRepository) GetByIDs(ctx context.Context, tenantID string, ids []string) ([]domain.Memory, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if len(ids) == 0 {
+		return []domain.Memory{}, nil
+	}
+
+	uniqueIDs := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	if len(uniqueIDs) == 0 {
+		return []domain.Memory{}, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(uniqueIDs)), ",")
+	query := GetMemoriesByIDsBaseSQL + " AND id IN (" + placeholders + ")"
+
+	args := make([]any, 0, len(uniqueIDs)+1)
+	args = append(args, tenantID)
+	for _, id := range uniqueIDs {
+		args = append(args, id)
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get memories by ids: %w", err)
+	}
+	defer rows.Close()
+
+	memories := make([]domain.Memory, 0, len(uniqueIDs))
+	for rows.Next() {
+		var (
+			m            domain.Memory
+			tier         string
+			tagsJSON     string
+			createdBy    string
+			kind         string
+			importance   float64
+			recallCount  int
+			createdAtRaw string
+			updatedAtRaw string
+			accessedAt   string
+			recalledAt   string
+		)
+		if err := rows.Scan(
+			&m.ID,
+			&m.TenantID,
+			&m.Content,
+			&tier,
+			&tagsJSON,
+			&m.Source,
+			&createdBy,
+			&kind,
+			&importance,
+			&recallCount,
+			&createdAtRaw,
+			&updatedAtRaw,
+			&accessedAt,
+			&recalledAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan memory by ids: %w", err)
+		}
+		m.Tier = domain.MemoryTier(tier)
+		m.CreatedBy = domain.MemoryCreatedBy(createdBy)
+		m.Kind = domain.MemoryKind(kind)
+		m.Importance = importance
+		m.RecallCount = recallCount
+
+		if tagsJSON == "" {
+			m.Tags = []string{}
+		} else if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
+			return nil, fmt.Errorf("unmarshal memory tags by ids: %w", err)
+		}
+
+		m.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse created_at by ids: %w", err)
+		}
+		m.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse updated_at by ids: %w", err)
+		}
+		m.LastAccessedAt, err = time.Parse(time.RFC3339Nano, accessedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse last_accessed_at by ids: %w", err)
+		}
+		m.LastRecalledAt, err = time.Parse(time.RFC3339Nano, recalledAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse last_recalled_at by ids: %w", err)
+		}
+
+		memories = append(memories, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memories by ids: %w", err)
+	}
+
+	// Preserve caller order.
+	slices.SortFunc(memories, func(a, b domain.Memory) int {
+		return cmpIndex(uniqueIDs, a.ID) - cmpIndex(uniqueIDs, b.ID)
+	})
+
+	return memories, nil
+}
+
+func (r *MemoryRepository) Touch(ctx context.Context, tenantID string, ids []string) error {
+	if strings.TrimSpace(tenantID) == "" {
+		return domain.ErrInvalidInput
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	uniqueIDs := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	if len(uniqueIDs) == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(uniqueIDs)), ",")
+	query := "UPDATE memories SET last_accessed_at = ?, last_recalled_at = ?, recall_count = recall_count + 1, updated_at = ? WHERE tenant_id = ? AND id IN (" + placeholders + ")"
+
+	args := make([]any, 0, len(uniqueIDs)+4)
+	args = append(args, now, now, now, tenantID)
+	for _, id := range uniqueIDs {
+		args = append(args, id)
+	}
+
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("touch memories: %w", err)
+	}
+	return nil
+}
+
+func cmpIndex(ids []string, id string) int {
+	for i := range ids {
+		if ids[i] == id {
+			return i
+		}
+	}
+	return len(ids) + 1
+}
+
+func prepareMemoryForStore(m *domain.Memory, now time.Time) error {
+	if m == nil {
+		return domain.ErrInvalidInput
+	}
+	if strings.TrimSpace(m.TenantID) == "" || strings.TrimSpace(m.Content) == "" {
+		return domain.ErrInvalidInput
+	}
+	if m.ID == "" {
+		m.ID = newID("mem")
+	}
+	if m.Tier == "" {
+		m.Tier = domain.MemoryTierAuto
+	}
+	if m.CreatedBy == "" {
+		m.CreatedBy = domain.MemoryCreatedByAuto
+	}
+	if m.Kind == "" {
+		m.Kind = domain.MemoryKindRawTurn
+	}
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = now
+	}
+	m.UpdatedAt = now
+	if m.LastAccessedAt.IsZero() {
+		m.LastAccessedAt = now
+	}
+	if m.LastRecalledAt.IsZero() {
+		m.LastRecalledAt = time.Unix(0, 0).UTC()
+	}
+	if len(m.Tags) == 0 {
+		m.Tags = []string{}
+	}
+	if m.RecallCount < 0 {
+		m.RecallCount = 0
+	}
+	return nil
+}
+
+func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON string) error {
+	if _, err := tx.ExecContext(
+		ctx,
+		InsertMemorySQL,
+		m.ID,
+		m.TenantID,
+		m.Content,
+		string(m.Tier),
+		tagsJSON,
+		m.Source,
+		string(m.CreatedBy),
+		string(m.Kind),
+		m.Importance,
+		m.RecallCount,
+		m.CreatedAt.Format(time.RFC3339Nano),
+		m.UpdatedAt.Format(time.RFC3339Nano),
+		m.LastAccessedAt.Format(time.RFC3339Nano),
+		m.LastRecalledAt.Format(time.RFC3339Nano),
+	); err != nil {
+		return fmt.Errorf("insert memory: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, InsertMemoryFTSSQL, m.Content, m.TenantID, m.ID); err != nil {
+		return fmt.Errorf("insert memory fts row: %w", err)
+	}
+	return nil
+}
+
+func newID(prefix string) string {
+	raw := make([]byte, 8)
+	if _, err := rand.Read(raw); err != nil {
+		now := time.Now().UnixNano()
+		for i := range raw {
+			raw[i] = byte(now >> (i * 8))
+		}
+	}
+	return prefix + "_" + hex.EncodeToString(raw)
+}
+
+func toFTSQuery(raw string) string {
+	tokens := ftsTokenPattern.FindAllString(strings.ToLower(strings.TrimSpace(raw)), -1)
+	if len(tokens) == 0 {
+		return ""
+	}
+	return strings.Join(tokens, " OR ")
+}
