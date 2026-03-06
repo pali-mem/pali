@@ -329,6 +329,63 @@ SELECT value FROM entity_facts WHERE tenant_id = ? AND entity = ? AND relation =
 - Comparison artifact: `research/results/p1_parser_benchmark/20260305T225007Z/comparison_vs_20260305T211801Z.json`
 - Decision: `iterate` (temporal stable; recall/MRR up; open-domain dipped)
 
+## Two-Speed Benchmark Workflow
+
+Parsing is the slow step. Re-parsing is only needed when the **parser or schema changes**. Everything else reuses the cached DB and finishes in ~2 min.
+
+### When to re-parse vs reuse
+
+| Change type | Re-parse? | Command | Time |
+|---|---|---|---|
+| Tune retrieval k, BM25 weights | No | `--reuse-cache` | ~2 min |
+| Different answer model | No | `--reuse-cache` | ~2 min |
+| Fix scoring/routing bug | No | `--reuse-cache` | ~2 min |
+| New parser prompt or model | Yes | `--num-convs 3` mini | ~45 min |
+| Schema migration (e.g. add `event_at`) | Yes | `--num-convs 3` mini | ~45 min |
+
+### Fast dev-loop command (`--num-convs 1`)
+
+Fastest possible smoke test — 1 conversation (~600 rows, ~200 queries, heuristic, extractive):
+
+```bash
+research/run_locomo_paper_aligned_lite.sh \
+  --num-convs 1 \
+  --parser-no-store-raw \
+  --reset-cache \
+  --cache-db research/cache/mini1_heuristic.sqlite \
+  --cache-index-map research/cache/mini1_heuristic_idx_map.json \
+  --answer-mode extractive \
+  --out-dir research/results/mini_runs/$(date -u +%Y%m%dT%H%M%SZ)_mini1_heuristic
+```
+
+### Parser experiment command (`--num-convs 3`, LLM parser)
+
+~1800 rows, ~45 min parse once, then ~2 min per re-eval with `--reuse-cache`:
+
+```bash
+research/run_locomo_paper_aligned_lite.sh \
+  --num-convs 3 \
+  --parser-provider ollama \
+  --parser-model qwen2.5:3b \
+  --parser-timeout-ms 30000 \
+  --parser-no-store-raw \
+  --reset-cache \
+  --cache-db research/cache/mini3_qwen3b.sqlite \
+  --cache-index-map research/cache/mini3_qwen3b_idx_map.json \
+  --out-dir research/results/mini_runs/$(date -u +%Y%m%dT%H%M%SZ)_mini3_qwen3b
+```
+
+### Data integrity note
+
+`--num-convs N` always uses conversations 0..N-1 (deterministic slice).
+- conv 0: 199 QA pairs (cat1=32, cat2=37, cat3=13, cat4=70, cat5=47)
+- conv 0+1: 304 QA pairs
+- conv 0+1+2: 497 QA pairs — covers all 5 categories with decent sample sizes
+
+Mini results are **directionally valid** for retrieval/parser experiments but not directly comparable to full-10-conv scores. Always run full validation before logging a milestone in the Runs Table.
+
+---
+
 ## Runs Table (rolling)
 | Run ID | Scenario | F1 Overall | Recall@60 | Multi-hop F1 | Temporal F1 | Decision |
 |---|---|---:|---:|---:|---:|---|
