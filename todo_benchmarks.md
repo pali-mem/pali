@@ -391,3 +391,4 @@ Mini results are **directionally valid** for retrieval/parser experiments but no
 |---|---|---:|---:|---:|---:|---|
 | `20260305T225007Z` | M1 (deepseek 120q) | 10.83 | 38.26% | 3.79 | 26.85 | iterate |
 | `20260306T001938Z_m1m2m3p2_deepseek120` | M1+M2+M3+P2 (deepseek 120q, clean) | 10.89 | 38.96% | 3.79 | 26.85 | iterate (**Cat1 unchanged, Open-domain down**) |
+| `20260306T074509Z_mini1_heuristic` | **mini1** heuristic extractive (conv 0 only, 151q) | 9.02 | 21.85% | 3.31 | 25.95 | ✅ mini baseline established — use for dev-loop comparisons |
