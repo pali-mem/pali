@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vein05/pali/internal/api/dto"
-	corememory "github.com/vein05/pali/internal/core/memory"
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/api/dto"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 type MemoryHandler struct {

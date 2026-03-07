@@ -9,7 +9,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/schollz/progressbar/v2"
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 type parserBatchItem struct {

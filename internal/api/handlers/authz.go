@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiauth "github.com/vein05/pali/internal/auth"
-	"github.com/vein05/pali/internal/domain"
+	apiauth "github.com/pali-mem/pali/internal/auth"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 func enforceTenantAccess(c *gin.Context, requestedTenantID string) error {

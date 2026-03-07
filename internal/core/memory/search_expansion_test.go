@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 func TestBuildSearchQueriesAddsIntentAwareRewriteForWhyQuery(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 func writeError(c *gin.Context, err error) {

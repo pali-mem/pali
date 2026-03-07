@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/config"
-	sqliterepo "github.com/vein05/pali/internal/repository/sqlite"
-	heuristicscorer "github.com/vein05/pali/internal/scorer/heuristic"
+	"github.com/pali-mem/pali/internal/config"
+	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	heuristicscorer "github.com/pali-mem/pali/internal/scorer/heuristic"
 )
 
 func TestBuildVectorStore_SQLite(t *testing.T) {

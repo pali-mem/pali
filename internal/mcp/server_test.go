@@ -9,13 +9,13 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
-	corememory "github.com/vein05/pali/internal/core/memory"
-	coretenant "github.com/vein05/pali/internal/core/tenant"
-	embedmock "github.com/vein05/pali/internal/embeddings/mock"
-	"github.com/vein05/pali/internal/mcp/tools"
-	sqliterepo "github.com/vein05/pali/internal/repository/sqlite"
-	heuristicscorer "github.com/vein05/pali/internal/scorer/heuristic"
-	"github.com/vein05/pali/internal/vectorstore/sqlitevec"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	coretenant "github.com/pali-mem/pali/internal/core/tenant"
+	embedmock "github.com/pali-mem/pali/internal/embeddings/mock"
+	"github.com/pali-mem/pali/internal/mcp/tools"
+	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	heuristicscorer "github.com/pali-mem/pali/internal/scorer/heuristic"
+	"github.com/pali-mem/pali/internal/vectorstore/sqlitevec"
 )
 
 func TestServerRegistersExpectedTools(t *testing.T) {

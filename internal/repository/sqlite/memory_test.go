@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/domain"
-	"github.com/vein05/pali/test/testutil"
+	"github.com/pali-mem/pali/internal/domain"
+	"github.com/pali-mem/pali/test/testutil"
 )
 
 func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vein05/pali/internal/api/dto"
-	coretenant "github.com/vein05/pali/internal/core/tenant"
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/api/dto"
+	coretenant "github.com/pali-mem/pali/internal/core/tenant"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 type TenantHandler struct {

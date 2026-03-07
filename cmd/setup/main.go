@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vein05/pali/internal/config"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 const (

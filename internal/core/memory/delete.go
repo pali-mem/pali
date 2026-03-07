@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 func (s *Service) Delete(ctx context.Context, tenantID, memoryID string) error {

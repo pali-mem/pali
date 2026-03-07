@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vein05/pali/internal/config"
-	corememory "github.com/vein05/pali/internal/core/memory"
-	"github.com/vein05/pali/internal/domain"
-	heuristicscorer "github.com/vein05/pali/internal/scorer/heuristic"
-	ollamascorer "github.com/vein05/pali/internal/scorer/ollama"
-	qdrantstore "github.com/vein05/pali/internal/vectorstore/qdrant"
-	sqlitevec "github.com/vein05/pali/internal/vectorstore/sqlitevec"
+	"github.com/pali-mem/pali/internal/config"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	"github.com/pali-mem/pali/internal/domain"
+	heuristicscorer "github.com/pali-mem/pali/internal/scorer/heuristic"
+	ollamascorer "github.com/pali-mem/pali/internal/scorer/ollama"
+	qdrantstore "github.com/pali-mem/pali/internal/vectorstore/qdrant"
+	sqlitevec "github.com/pali-mem/pali/internal/vectorstore/sqlitevec"
 )
 
 func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, error) {

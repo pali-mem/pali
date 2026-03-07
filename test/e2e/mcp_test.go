@@ -10,8 +10,8 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/mcp/tools"
-	paliclient "github.com/vein05/pali/pkg/client"
+	"github.com/pali-mem/pali/internal/mcp/tools"
+	paliclient "github.com/pali-mem/pali/pkg/client"
 )
 
 func TestMCPCrossSurfaceFlow(t *testing.T) {

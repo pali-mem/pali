@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	corememory "github.com/vein05/pali/internal/core/memory"
-	coretenant "github.com/vein05/pali/internal/core/tenant"
-	"github.com/vein05/pali/internal/mcp/tools"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	coretenant "github.com/pali-mem/pali/internal/core/tenant"
+	"github.com/pali-mem/pali/internal/mcp/tools"
 )
 
 type Services struct {

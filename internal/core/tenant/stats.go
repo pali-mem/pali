@@ -3,7 +3,7 @@ package tenant
 import (
 	"context"
 
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 type Stats struct {

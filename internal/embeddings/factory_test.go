@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/config"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func TestBuildWithMetadata_PrimaryProvider(t *testing.T) {

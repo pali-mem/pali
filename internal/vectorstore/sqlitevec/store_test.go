@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/domain"
-	sqliterepo "github.com/vein05/pali/internal/repository/sqlite"
-	"github.com/vein05/pali/test/testutil"
+	"github.com/pali-mem/pali/internal/domain"
+	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	"github.com/pali-mem/pali/test/testutil"
 )
 
 func TestStoreUpsertSearchDelete(t *testing.T) {

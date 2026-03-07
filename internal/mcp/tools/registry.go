@@ -10,9 +10,9 @@ import (
 
 	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	corememory "github.com/vein05/pali/internal/core/memory"
-	coretenant "github.com/vein05/pali/internal/core/tenant"
-	"github.com/vein05/pali/internal/domain"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	coretenant "github.com/pali-mem/pali/internal/core/tenant"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 type Logger interface {

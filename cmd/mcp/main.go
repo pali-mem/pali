@@ -5,14 +5,14 @@ import (
 	"flag"
 	"log"
 
-	corememory "github.com/vein05/pali/internal/core/memory"
-	coretenant "github.com/vein05/pali/internal/core/tenant"
-	"github.com/vein05/pali/internal/embeddings"
-	palimcp "github.com/vein05/pali/internal/mcp"
-	sqliterepo "github.com/vein05/pali/internal/repository/sqlite"
-	"github.com/vein05/pali/internal/wiring"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	coretenant "github.com/pali-mem/pali/internal/core/tenant"
+	"github.com/pali-mem/pali/internal/embeddings"
+	palimcp "github.com/pali-mem/pali/internal/mcp"
+	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	"github.com/pali-mem/pali/internal/wiring"
 
-	"github.com/vein05/pali/internal/config"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func main() {

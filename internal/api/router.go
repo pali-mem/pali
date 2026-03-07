@@ -9,16 +9,16 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vein05/pali/internal/api/handlers"
-	apimiddleware "github.com/vein05/pali/internal/api/middleware"
-	apiauth "github.com/vein05/pali/internal/auth"
-	"github.com/vein05/pali/internal/config"
-	corememory "github.com/vein05/pali/internal/core/memory"
-	coretenant "github.com/vein05/pali/internal/core/tenant"
-	"github.com/vein05/pali/internal/dashboard"
-	"github.com/vein05/pali/internal/embeddings"
-	sqliterepo "github.com/vein05/pali/internal/repository/sqlite"
-	"github.com/vein05/pali/internal/wiring"
+	"github.com/pali-mem/pali/internal/api/handlers"
+	apimiddleware "github.com/pali-mem/pali/internal/api/middleware"
+	apiauth "github.com/pali-mem/pali/internal/auth"
+	"github.com/pali-mem/pali/internal/config"
+	corememory "github.com/pali-mem/pali/internal/core/memory"
+	coretenant "github.com/pali-mem/pali/internal/core/tenant"
+	"github.com/pali-mem/pali/internal/dashboard"
+	"github.com/pali-mem/pali/internal/embeddings"
+	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	"github.com/pali-mem/pali/internal/wiring"
 )
 
 func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {

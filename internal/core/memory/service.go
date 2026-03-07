@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 type Service struct {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/config"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func newTestRouter(t *testing.T) *gin.Engine {

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 var ftsTokenPattern = regexp.MustCompile(`[a-zA-Z0-9_]+`)

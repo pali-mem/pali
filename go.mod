@@ -1,4 +1,4 @@
-module github.com/vein05/pali
+module github.com/pali-mem/pali
 
 go 1.24.0
 

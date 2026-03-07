@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/auth"
-	"github.com/vein05/pali/internal/config"
+	"github.com/pali-mem/pali/internal/auth"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func TestAuthMiddlewareAndTenantEnforcement(t *testing.T) {

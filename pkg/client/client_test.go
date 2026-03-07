@@ -11,9 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	api "github.com/vein05/pali/internal/api"
-	apiauth "github.com/vein05/pali/internal/auth"
-	"github.com/vein05/pali/internal/config"
+	api "github.com/pali-mem/pali/internal/api"
+	apiauth "github.com/pali-mem/pali/internal/auth"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func TestClientMemoryTenantFlow(t *testing.T) {

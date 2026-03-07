@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vein05/pali/internal/config"
-	"github.com/vein05/pali/internal/domain"
-	embedmock "github.com/vein05/pali/internal/embeddings/mock"
-	embedollama "github.com/vein05/pali/internal/embeddings/ollama"
-	onnxembed "github.com/vein05/pali/internal/embeddings/onnx"
+	"github.com/pali-mem/pali/internal/config"
+	"github.com/pali-mem/pali/internal/domain"
+	embedmock "github.com/pali-mem/pali/internal/embeddings/mock"
+	embedollama "github.com/pali-mem/pali/internal/embeddings/ollama"
+	onnxembed "github.com/pali-mem/pali/internal/embeddings/onnx"
 )
 
 type BuildMetadata struct {

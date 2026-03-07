@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	apiauth "github.com/vein05/pali/internal/auth"
-	"github.com/vein05/pali/internal/config"
+	apiauth "github.com/pali-mem/pali/internal/auth"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func main() {

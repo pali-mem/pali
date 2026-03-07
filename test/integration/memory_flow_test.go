@@ -13,8 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/vein05/pali/internal/api"
-	"github.com/vein05/pali/internal/config"
+	"github.com/pali-mem/pali/internal/api"
+	"github.com/pali-mem/pali/internal/config"
 )
 
 func TestMemoryCRUDFlow_RealSQLite(t *testing.T) {

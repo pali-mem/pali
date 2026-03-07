@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vein05/pali/internal/core/scoring"
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/core/scoring"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 const reciprocalRankFusionK = 60

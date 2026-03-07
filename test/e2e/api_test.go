@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	paliclient "github.com/vein05/pali/pkg/client"
+	paliclient "github.com/pali-mem/pali/pkg/client"
 )
 
 func TestAPIMemoryFlow(t *testing.T) {

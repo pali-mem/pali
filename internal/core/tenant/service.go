@@ -1,6 +1,6 @@
 package tenant
 
-import "github.com/vein05/pali/internal/domain"
+import "github.com/pali-mem/pali/internal/domain"
 
 type Service struct {
 	repo domain.TenantRepository

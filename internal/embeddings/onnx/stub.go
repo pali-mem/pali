@@ -5,7 +5,7 @@ package onnx
 import (
 	"errors"
 
-	"github.com/vein05/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/domain"
 )
 
 // NewEmbedder is a compile-time stub returned when the binary is built without
