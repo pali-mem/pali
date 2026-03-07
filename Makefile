@@ -1,6 +1,6 @@
 APP=pali
 
-.PHONY: run mcp setup build test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend
+.PHONY: run mcp setup build test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring
 
 run:
 	go run ./cmd/pali -config pali.yaml.example
@@ -51,3 +51,6 @@ retrieval-quality:
 
 retrieval-trend:
 	./scripts/retrieval_trend.sh --fixture $${FIXTURE:-test/fixtures/memories.json} --backend $${BACKEND:-sqlite}
+
+check-wiring:
+	go test ./internal/core/memory ./internal/repository/sqlite -run 'Test(SearchBuildsIterativeQueriesForMultiHopQuestion|SearchWithFiltersAppliesKindFilter|SearchAggregationRouteRespectsMinScore|StoreMarksIndexStateTransitions|StoreMarksIndexStateFailedOnVectorFailure|DeleteMarksIndexStateTombstoned|DeleteMarksIndexStateFailedOnVectorFailure|MemoryRepositoryIndexJobLifecycle)' -count=1

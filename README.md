@@ -77,6 +77,10 @@ MCP toolset currently exposes 11 common operations:
 - `health_check`
 - `pali_capabilities`
 
+Pali also exposes built-in MCP guidance for better default adoption:
+- `initialize.instructions` with memory-first policy hints
+- `prompts/get` prompt: `pali_memory_autopilot`
+
 For tenant-aware MCP tools, `tenant_id` is optional when a fallback is available. Resolution order:
 1. `tenant_id` in tool input
 2. JWT tenant claim (if auth is enabled and provided by transport)
@@ -186,7 +190,7 @@ qdrant:
 
 embedding:
   provider: ollama # ollama | onnx | lexical (mock alias supported)
-  fallback_provider: lexical
+  fallback_provider: "" # optional explicit fallback, e.g. lexical
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: mxbai-embed-large
   ollama_timeout_seconds: 10
@@ -200,7 +204,7 @@ ollama:
 Current behavior:
 
 - `ollama` is the default embedding provider (requires local Ollama server).
-- `fallback_provider` lets startup gracefully downgrade when the primary embedder is unavailable (default: `lexical`).
+- `fallback_provider` is opt-in; leave it empty to fail fast when the primary provider is unavailable.
 - `lexical` is the pure-Go local fallback provider (legacy `mock` alias still works).
 - `importance_scorer` controls importance scoring (`heuristic` default, `ollama` opt-in).
 - `retrieval.scoring.algorithm` switches reranking mode (`wal` default, `match` for QA-heavy relevance-first behavior).
