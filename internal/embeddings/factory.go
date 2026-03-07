@@ -12,23 +12,48 @@ import (
 	onnxembed "github.com/vein05/pali/internal/embeddings/onnx"
 )
 
+type BuildMetadata struct {
+	PrimaryProvider  string
+	ResolvedProvider string
+	FallbackProvider string
+	UsedFallback     bool
+}
+
 func Build(cfg config.Config) (domain.Embedder, error) {
+	embedder, _, err := BuildWithMetadata(cfg)
+	return embedder, err
+}
+
+func BuildWithMetadata(cfg config.Config) (domain.Embedder, BuildMetadata, error) {
 	primary := providerOrDefault(cfg.Embedding.Provider)
 	embedder, err := buildProvider(primary, cfg)
 	if err == nil {
-		return embedder, nil
+		return embedder, BuildMetadata{
+			PrimaryProvider:  primary,
+			ResolvedProvider: primary,
+		}, nil
 	}
 
 	fallback := strings.ToLower(strings.TrimSpace(cfg.Embedding.FallbackProvider))
 	if fallback == "" || fallback == primary {
-		return nil, err
+		return nil, BuildMetadata{
+			PrimaryProvider: primary,
+		}, err
 	}
 
 	fallbackEmbedder, fallbackErr := buildProvider(fallback, cfg)
 	if fallbackErr != nil {
-		return nil, fmt.Errorf("initialize embedding provider %q failed: %w; fallback %q also failed: %v", primary, err, fallback, fallbackErr)
+		return nil, BuildMetadata{
+			PrimaryProvider:  primary,
+			FallbackProvider: fallback,
+		}, fmt.Errorf("initialize embedding provider %q failed: %w; fallback %q also failed: %v", primary, err, fallback, fallbackErr)
 	}
-	return fallbackEmbedder, nil
+	return fallbackEmbedder, BuildMetadata{
+		PrimaryProvider:  primary,
+		ResolvedProvider: fallback,
+		FallbackProvider: fallback,
+		UsedFallback:     true,
+	}, nil
 }
 
 func buildProvider(provider string, cfg config.Config) (domain.Embedder, error) {
