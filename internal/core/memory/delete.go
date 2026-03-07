@@ -19,11 +19,43 @@ func (s *Service) Delete(ctx context.Context, tenantID, memoryID string) error {
 		return fmt.Errorf("memory service vector store is not initialized")
 	}
 
+	s.markIndexState(
+		ctx,
+		tenantID,
+		[]string{memoryID},
+		domain.MemoryIndexOperationDelete,
+		domain.MemoryIndexStatePending,
+		nil,
+	)
 	if err := s.repo.Delete(ctx, tenantID, memoryID); err != nil {
+		s.markIndexState(
+			ctx,
+			tenantID,
+			[]string{memoryID},
+			domain.MemoryIndexOperationDelete,
+			domain.MemoryIndexStateFailed,
+			err,
+		)
 		return err
 	}
 	if err := s.vector.Delete(ctx, tenantID, memoryID); err != nil {
+		s.markIndexState(
+			ctx,
+			tenantID,
+			[]string{memoryID},
+			domain.MemoryIndexOperationDelete,
+			domain.MemoryIndexStateFailed,
+			err,
+		)
 		return err
 	}
+	s.markIndexState(
+		ctx,
+		tenantID,
+		[]string{memoryID},
+		domain.MemoryIndexOperationDelete,
+		domain.MemoryIndexStateTombstoned,
+		nil,
+	)
 	return nil
 }

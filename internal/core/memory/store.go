@@ -691,7 +691,7 @@ func (s *Service) storeOnePrecomputed(ctx context.Context, m domain.Memory, embe
 		return domain.Memory{}, fmt.Errorf("store returned %d records for single memory", len(storedBatch))
 	}
 	stored := storedBatch[0]
-	if err := s.vector.Upsert(ctx, stored.TenantID, stored.ID, embedding); err != nil {
+	if err := s.upsertStoredEmbeddings(ctx, []domain.Memory{stored}, [][]float32{embedding}); err != nil {
 		return domain.Memory{}, err
 	}
 	return stored, nil
@@ -862,6 +862,12 @@ func (s *Service) upsertStoredEmbeddings(ctx context.Context, stored []domain.Me
 	if len(stored) == 0 {
 		return nil
 	}
+	memoryIDs := make([]string, 0, len(stored))
+	for _, memory := range stored {
+		memoryIDs = append(memoryIDs, memory.ID)
+	}
+	tenantID := stored[0].TenantID
+	s.markIndexState(ctx, tenantID, memoryIDs, domain.MemoryIndexOperationUpsert, domain.MemoryIndexStatePending, nil)
 
 	if batchVector, ok := s.vector.(domain.VectorBatchStore); ok && batchVector != nil {
 		upserts := make([]domain.VectorUpsert, 0, len(stored))
@@ -872,13 +878,32 @@ func (s *Service) upsertStoredEmbeddings(ctx context.Context, stored []domain.Me
 				Embedding: embeddings[i],
 			})
 		}
-		return batchVector.UpsertBatch(ctx, upserts)
-	}
-
-	for i := range stored {
-		if err := s.vector.Upsert(ctx, stored[i].TenantID, stored[i].ID, embeddings[i]); err != nil {
+		if err := batchVector.UpsertBatch(ctx, upserts); err != nil {
+			s.markIndexState(ctx, tenantID, memoryIDs, domain.MemoryIndexOperationUpsert, domain.MemoryIndexStateFailed, err)
 			return err
 		}
+		s.markIndexState(ctx, tenantID, memoryIDs, domain.MemoryIndexOperationUpsert, domain.MemoryIndexStateIndexed, nil)
+		return nil
+	}
+
+	indexedIDs := make([]string, 0, len(stored))
+	for i := range stored {
+		if err := s.vector.Upsert(ctx, stored[i].TenantID, stored[i].ID, embeddings[i]); err != nil {
+			failedIDs := make([]string, 0, len(stored)-i)
+			failedIDs = append(failedIDs, stored[i].ID)
+			for j := i + 1; j < len(stored); j++ {
+				failedIDs = append(failedIDs, stored[j].ID)
+			}
+			if len(indexedIDs) > 0 {
+				s.markIndexState(ctx, tenantID, indexedIDs, domain.MemoryIndexOperationUpsert, domain.MemoryIndexStateIndexed, nil)
+			}
+			s.markIndexState(ctx, tenantID, failedIDs, domain.MemoryIndexOperationUpsert, domain.MemoryIndexStateFailed, err)
+			return err
+		}
+		indexedIDs = append(indexedIDs, stored[i].ID)
+	}
+	if len(indexedIDs) > 0 {
+		s.markIndexState(ctx, tenantID, indexedIDs, domain.MemoryIndexOperationUpsert, domain.MemoryIndexStateIndexed, nil)
 	}
 	return nil
 }

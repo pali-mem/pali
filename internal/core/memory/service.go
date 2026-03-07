@@ -29,7 +29,6 @@ type StructuredMemoryOptions struct {
 	Enabled               bool
 	DualWriteObservations bool
 	DualWriteEvents       bool
-	QueryRoutingEnabled   bool
 	MaxObservations       int
 }
 
@@ -175,7 +174,6 @@ func defaultStructuredMemoryOptions() StructuredMemoryOptions {
 		Enabled:               false,
 		DualWriteObservations: false,
 		DualWriteEvents:       false,
-		QueryRoutingEnabled:   false,
 		MaxObservations:       3,
 	}
 }
