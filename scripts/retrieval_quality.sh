@@ -22,6 +22,10 @@ OLLAMA_MODEL="all-minilm"
 OLLAMA_TIMEOUT_SECONDS=10
 ONNX_MODEL_PATH="./models/all-MiniLM-L6-v2/model.onnx"
 ONNX_TOKENIZER_PATH="./models/all-MiniLM-L6-v2/tokenizer.json"
+QDRANT_BASE_URL="http://127.0.0.1:6333"
+QDRANT_API_KEY=""
+QDRANT_COLLECTION="pali_memories"
+QDRANT_TIMEOUT_MS=2000
 
 usage() {
   cat <<'EOF'
@@ -31,7 +35,7 @@ Usage:
 Flags:
   --fixture <path>         Fixture JSON file used to store memories first (default: test/fixtures/memories.json)
   --eval-set <path>        Optional labeled eval set JSON (query + expected ids/indexes)
-  --backend <name>         sqlite (default: sqlite)
+  --backend <name>         sqlite | qdrant (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
   --top-k <n>              top_k used in search requests (default: 10)
   --max-queries <n>        Max number of eval queries to run (default: 200, <=0 means all)
@@ -45,6 +49,10 @@ Flags:
   --ollama-url <url>       Ollama base URL (default: http://127.0.0.1:11434)
   --onnx-model <path>      ONNX model path (default: ./models/all-MiniLM-L6-v2/model.onnx)
   --onnx-tokenizer <path>  ONNX tokenizer path (default: ./models/all-MiniLM-L6-v2/tokenizer.json)
+  --qdrant-url <url>       Qdrant base URL (default: http://127.0.0.1:6333)
+  --qdrant-api-key <key>   Qdrant API key (default: empty)
+  --qdrant-collection <n>  Qdrant collection name (default: pali_memories)
+  --qdrant-timeout-ms <n>  Qdrant request timeout (default: 2000)
   --help                   Show this help
 
 Eval set format (JSON array):
@@ -130,6 +138,22 @@ while [[ $# -gt 0 ]]; do
       ONNX_TOKENIZER_PATH="$2"
       shift 2
       ;;
+    --qdrant-url)
+      QDRANT_BASE_URL="$2"
+      shift 2
+      ;;
+    --qdrant-api-key)
+      QDRANT_API_KEY="$2"
+      shift 2
+      ;;
+    --qdrant-collection)
+      QDRANT_COLLECTION="$2"
+      shift 2
+      ;;
+    --qdrant-timeout-ms)
+      QDRANT_TIMEOUT_MS="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -166,17 +190,20 @@ if [[ -n "$EVAL_SET" && ! -f "$EVAL_SET" ]]; then
   exit 1
 fi
 
-if [[ "$BACKEND" != "sqlite" ]]; then
-  echo "ERROR: backend '$BACKEND' is not supported by retrieval_quality.sh yet."
-  echo "       Current router wiring uses sqlite store only."
-  exit 1
-fi
+case "$BACKEND" in
+  sqlite|qdrant)
+    ;;
+  *)
+    echo "ERROR: --backend must be one of: sqlite, qdrant"
+    exit 1
+    ;;
+esac
 
 case "$EMBEDDING_PROVIDER" in
   ollama|onnx|mock|lexical)
     ;;
   *)
-    echo "ERROR: --embedding-provider must be one of: ollama, onnx, mock"
+    echo "ERROR: --embedding-provider must be one of: ollama, onnx, mock, lexical"
     exit 1
     ;;
 esac
@@ -258,6 +285,15 @@ check_ollama_ready() {
   fi
 }
 
+check_qdrant_ready() {
+  local base_url="$1"
+  if ! curl -sS -f "$base_url/collections" >/dev/null; then
+    echo "ERROR: Qdrant is not reachable at $base_url"
+    echo "  Start Qdrant before running backend=qdrant retrieval quality eval."
+    exit 1
+  fi
+}
+
 file_sha256() {
   local path="$1"
   if command -v shasum >/dev/null 2>&1; then
@@ -281,6 +317,9 @@ if [[ "$START_SERVER" -eq 1 ]]; then
   if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
     check_ollama_ready "$OLLAMA_BASE_URL" "$OLLAMA_MODEL"
   fi
+  if [[ "$BACKEND" == "qdrant" ]]; then
+    check_qdrant_ready "$QDRANT_BASE_URL"
+  fi
   BASE_URL="http://${HOST}:${PORT}"
   if curl -sS -f "$BASE_URL/health" >/dev/null 2>&1; then
     echo "ERROR: refusing to start a new server because ${BASE_URL}/health is already responding."
@@ -297,6 +336,11 @@ server:
 vector_backend: "${BACKEND}"
 database:
   sqlite_dsn: "file:${db_path}?cache=shared"
+qdrant:
+  base_url: "${QDRANT_BASE_URL}"
+  api_key: "${QDRANT_API_KEY}"
+  collection: "${QDRANT_COLLECTION}"
+  timeout_ms: ${QDRANT_TIMEOUT_MS}
 embedding:
   provider: "${EMBEDDING_PROVIDER}"
   ollama_base_url: "${OLLAMA_BASE_URL}"

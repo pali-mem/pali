@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FIXTURE="test/fixtures/memories.json"
+EVAL_SET=""
 BACKEND="sqlite"
 OUT_DIR="test/benchmarks/results"
 SEARCH_OPS=200
@@ -19,6 +20,10 @@ OLLAMA_MODEL="all-minilm"
 OLLAMA_TIMEOUT_SECONDS=10
 ONNX_MODEL_PATH="./models/all-MiniLM-L6-v2/model.onnx"
 ONNX_TOKENIZER_PATH="./models/all-MiniLM-L6-v2/tokenizer.json"
+QDRANT_BASE_URL="http://127.0.0.1:6333"
+QDRANT_API_KEY=""
+QDRANT_COLLECTION="pali_memories"
+QDRANT_TIMEOUT_MS=2000
 
 usage() {
   cat <<'EOF'
@@ -27,7 +32,8 @@ Usage:
 
 Flags:
   --fixture <path>         Fixture JSON file (default: test/fixtures/memories.json)
-  --backend <name>         sqlite | qdrant | pgvector (default: sqlite)
+  --eval-set <path>        Optional labeled eval set used for realistic search queries
+  --backend <name>         sqlite | qdrant (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
   --search-ops <n>         Number of search operations (default: 200)
   --top-k <n>              top_k used in search requests (default: 10)
@@ -39,6 +45,10 @@ Flags:
   --ollama-url <url>       Ollama base URL (default: http://127.0.0.1:11434)
   --onnx-model <path>      ONNX model path (default: ./models/all-MiniLM-L6-v2/model.onnx)
   --onnx-tokenizer <path>  ONNX tokenizer path (default: ./models/all-MiniLM-L6-v2/tokenizer.json)
+  --qdrant-url <url>       Qdrant base URL (default: http://127.0.0.1:6333)
+  --qdrant-api-key <key>   Qdrant API key (default: empty)
+  --qdrant-collection <n>  Qdrant collection name (default: pali_memories)
+  --qdrant-timeout-ms <n>  Qdrant request timeout (default: 2000)
   --help                   Show this help
 
 Examples:
@@ -52,6 +62,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --fixture)
       FIXTURE="$2"
+      shift 2
+      ;;
+    --eval-set)
+      EVAL_SET="$2"
       shift 2
       ;;
     --backend)
@@ -103,6 +117,22 @@ while [[ $# -gt 0 ]]; do
       ONNX_TOKENIZER_PATH="$2"
       shift 2
       ;;
+    --qdrant-url)
+      QDRANT_BASE_URL="$2"
+      shift 2
+      ;;
+    --qdrant-api-key)
+      QDRANT_API_KEY="$2"
+      shift 2
+      ;;
+    --qdrant-collection)
+      QDRANT_COLLECTION="$2"
+      shift 2
+      ;;
+    --qdrant-timeout-ms)
+      QDRANT_TIMEOUT_MS="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -132,6 +162,11 @@ if [[ ! -f "$FIXTURE" ]]; then
   exit 1
 fi
 
+if [[ -n "$EVAL_SET" && ! -f "$EVAL_SET" ]]; then
+  echo "ERROR: eval set file not found: $EVAL_SET"
+  exit 1
+fi
+
 if ! [[ "$SEARCH_OPS" =~ ^[0-9]+$ ]] || [[ "$SEARCH_OPS" -le 0 ]]; then
   echo "ERROR: --search-ops must be a positive integer"
   exit 1
@@ -142,17 +177,20 @@ if ! [[ "$TOP_K" =~ ^[0-9]+$ ]] || [[ "$TOP_K" -le 0 ]]; then
   exit 1
 fi
 
-if [[ "$BACKEND" != "sqlite" ]]; then
-  echo "ERROR: backend '$BACKEND' is not benchmarkable yet from scripts/benchmark.sh."
-  echo "       Current router wiring uses sqlite store only."
-  exit 1
-fi
+case "$BACKEND" in
+  sqlite|qdrant)
+    ;;
+  *)
+    echo "ERROR: --backend must be one of: sqlite, qdrant"
+    exit 1
+    ;;
+esac
 
 case "$EMBEDDING_PROVIDER" in
   ollama|onnx|mock|lexical)
     ;;
   *)
-    echo "ERROR: --embedding-provider must be one of: ollama, onnx, mock"
+    echo "ERROR: --embedding-provider must be one of: ollama, onnx, mock, lexical"
     exit 1
     ;;
 esac
@@ -226,6 +264,15 @@ check_ollama_ready() {
   fi
 }
 
+check_qdrant_ready() {
+  local base_url="$1"
+  if ! curl -sS -f "$base_url/collections" >/dev/null; then
+    echo "ERROR: Qdrant is not reachable at $base_url"
+    echo "  Start Qdrant before running backend=qdrant benchmarks."
+    exit 1
+  fi
+}
+
 file_sha256() {
   local path="$1"
   if command -v shasum >/dev/null 2>&1; then
@@ -277,6 +324,9 @@ if [[ "$START_SERVER" -eq 1 ]]; then
   if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
     check_ollama_ready "$OLLAMA_BASE_URL" "$OLLAMA_MODEL"
   fi
+  if [[ "$BACKEND" == "qdrant" ]]; then
+    check_qdrant_ready "$QDRANT_BASE_URL"
+  fi
   BASE_URL="http://${HOST}:${PORT}"
   if curl -sS -f "$BASE_URL/health" >/dev/null 2>&1; then
     echo "ERROR: refusing to start a new server because ${BASE_URL}/health is already responding."
@@ -293,6 +343,11 @@ server:
 vector_backend: "${BACKEND}"
 database:
   sqlite_dsn: "file:${db_path}?cache=shared"
+qdrant:
+  base_url: "${QDRANT_BASE_URL}"
+  api_key: "${QDRANT_API_KEY}"
+  collection: "${QDRANT_COLLECTION}"
+  timeout_ms: ${QDRANT_TIMEOUT_MS}
 embedding:
   provider: "${EMBEDDING_PROVIDER}"
   ollama_base_url: "${OLLAMA_BASE_URL}"
@@ -334,7 +389,23 @@ fixture_sha256="$(file_sha256 "$FIXTURE")"
 
 jq -r '.[].tenant_id' "$FIXTURE" | sort -u > "$tmp_tenants"
 jq -c '.[]' "$FIXTURE" > "$tmp_fixture_lines"
-jq -r '.[] | [.tenant_id, (.content | gsub("\\s+";" "))] | @tsv' "$FIXTURE" > "$tmp_search_pairs"
+query_source="fixture_mid_window"
+if [[ -n "$EVAL_SET" ]]; then
+  jq -r '.[] | [.tenant_id, (.query | gsub("\\s+";" "))] | @tsv' "$EVAL_SET" > "$tmp_search_pairs"
+  query_source="eval_set"
+else
+  jq -r '
+    .[] |
+    (.content | gsub("\\s+";" ") | split(" ")) as $words |
+    ($words | length) as $n |
+    (if $n <= 12 then
+       ($words | join(" "))
+     else
+       ($words[($n/2|floor)-6:($n/2|floor)+6] | join(" "))
+     end) as $q |
+    [.tenant_id, $q] | @tsv
+  ' "$FIXTURE" > "$tmp_search_pairs"
+fi
 tenant_count="$(wc -l < "$tmp_tenants" | tr -d ' ')"
 
 echo "==> Benchmark run"
@@ -347,6 +418,10 @@ if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
 fi
 echo "    search ops   : $SEARCH_OPS"
 echo "    top_k        : $TOP_K"
+echo "    query source : $query_source"
+if [[ -n "$EVAL_SET" ]]; then
+  echo "    eval set     : $EVAL_SET"
+fi
 echo "    output dir   : $OUT_DIR"
 echo ""
 
@@ -468,10 +543,9 @@ for ((op=0; op<SEARCH_OPS; op++)); do
   idx=$((op % pair_count))
   line="${search_pairs[$idx]}"
   tenant_id="${line%%$'\t'*}"
-  content="${line#*$'\t'}"
-  query="$(printf '%s\n' "$content" | awk '{print $1, $2, $3}')"
+  query="${line#*$'\t'}"
   if [[ -z "${query// }" ]]; then
-    query="user preference"
+    query="memory recall details"
   fi
   payload="$(jq -n --arg tenant_id "$tenant_id" --arg query "$query" --argjson top_k "$TOP_K" \
     '{tenant_id:$tenant_id,query:$query,top_k:$top_k}')"
@@ -538,6 +612,8 @@ cat > "$result_json" <<EOF
   "backend": "$BACKEND",
   "fixture": "$FIXTURE",
   "fixture_sha256": "$fixture_sha256",
+  "eval_set": "$EVAL_SET",
+  "query_source": "$query_source",
   "fixture_count": $fixture_count,
   "tenant_count": $tenant_count,
   "base_url": "$BASE_URL",
@@ -594,6 +670,8 @@ Embedder       : $EMBEDDING_PROVIDER
 Embed model    : $OLLAMA_MODEL
 Fixture        : $FIXTURE
 Fixture SHA256 : $fixture_sha256
+Eval set       : ${EVAL_SET:-"(none)"}
+Query source   : $query_source
 Fixture count  : $fixture_count
 Tenant count   : $tenant_count
 Base URL       : $BASE_URL
