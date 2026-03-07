@@ -87,7 +87,7 @@ func runMCP(cfg config.Config) {
 	if err != nil {
 		log.Fatalf("build vector store: %v", err)
 	}
-	embedder, err := embeddings.Build(cfg)
+	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
 	if err != nil {
 		log.Fatalf("build embedder: %v", err)
 	}
@@ -104,7 +104,6 @@ func runMCP(cfg config.Config) {
 			Enabled:               cfg.StructuredMemory.Enabled,
 			DualWriteObservations: cfg.StructuredMemory.DualWriteObservations,
 			DualWriteEvents:       cfg.StructuredMemory.DualWriteEvents,
-			QueryRoutingEnabled:   cfg.StructuredMemory.QueryRoutingEnabled,
 			MaxObservations:       cfg.StructuredMemory.MaxObservations,
 		},
 		corememory.RankingOptions{
@@ -154,12 +153,22 @@ func runMCP(cfg config.Config) {
 	}
 
 	log.Printf("[pali-startup] pid=%d port=%d db=%s", os.Getpid(), cfg.Server.Port, cfg.Database.SQLiteDSN)
-	log.Printf(
-		"[pali-startup] embedder=%s model=%s provider=%s",
-		cfg.Embedding.Provider,
-		cfg.Embedding.OllamaModel,
-		cfg.Embedding.OllamaBaseURL,
-	)
+	if embedMeta.UsedFallback {
+		log.Printf(
+			"[pali-startup] embedder=%s (fallback from %s) model=%s provider=%s",
+			embedMeta.ResolvedProvider,
+			embedMeta.PrimaryProvider,
+			cfg.Embedding.OllamaModel,
+			cfg.Embedding.OllamaBaseURL,
+		)
+	} else {
+		log.Printf(
+			"[pali-startup] embedder=%s model=%s provider=%s",
+			embedMeta.ResolvedProvider,
+			cfg.Embedding.OllamaModel,
+			cfg.Embedding.OllamaBaseURL,
+		)
+	}
 	var tenantCount int64
 	var memoryCount int64
 	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tenants").Scan(&tenantCount); err == nil {

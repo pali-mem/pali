@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("build vector store: %v", err)
 	}
-	embedder, err := embeddings.Build(cfg)
+	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
 	if err != nil {
 		log.Fatalf("build embedder: %v", err)
 	}
@@ -58,7 +58,6 @@ func main() {
 			Enabled:               cfg.StructuredMemory.Enabled,
 			DualWriteObservations: cfg.StructuredMemory.DualWriteObservations,
 			DualWriteEvents:       cfg.StructuredMemory.DualWriteEvents,
-			QueryRoutingEnabled:   cfg.StructuredMemory.QueryRoutingEnabled,
 			MaxObservations:       cfg.StructuredMemory.MaxObservations,
 		},
 		corememory.RankingOptions{
@@ -104,6 +103,11 @@ func main() {
 		log.Fatalf("build mcp server: %v", err)
 	}
 
+	if embedMeta.UsedFallback {
+		log.Printf("[pali-startup] embedder=%s (fallback from %s)", embedMeta.ResolvedProvider, embedMeta.PrimaryProvider)
+	} else {
+		log.Printf("[pali-startup] embedder=%s", embedMeta.ResolvedProvider)
+	}
 	log.Printf("starting pali mcp server over stdio")
 	if err := server.RunStdio(context.Background()); err != nil {
 		log.Fatalf("mcp server exited: %v", err)
