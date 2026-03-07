@@ -17,6 +17,7 @@ var migrationStatements = []string{
 			id TEXT PRIMARY KEY,
 			tenant_id TEXT NOT NULL,
 			content TEXT NOT NULL,
+			query_view_text TEXT NOT NULL DEFAULT '',
 			tier TEXT NOT NULL,
 			tags_json TEXT NOT NULL DEFAULT '[]',
 			source TEXT NOT NULL DEFAULT '',
@@ -67,6 +68,7 @@ var migrationStatements = []string{
 	`ALTER TABLE memories ADD COLUMN source TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE memories ADD COLUMN created_by TEXT NOT NULL DEFAULT 'auto';`,
 	`ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'raw_turn';`,
+	`ALTER TABLE memories ADD COLUMN query_view_text TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE memories ADD COLUMN canonical_key TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE memories ADD COLUMN source_turn_hash TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE memories ADD COLUMN source_fact_index INTEGER NOT NULL DEFAULT -1;`,
@@ -93,6 +95,20 @@ var migrationStatements = []string{
 	);`,
 	`CREATE INDEX IF NOT EXISTS entity_facts_lookup ON entity_facts(tenant_id, entity, relation);`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS entity_facts_dedupe ON entity_facts(tenant_id, entity, relation, value, memory_id);`,
+	`CREATE TABLE IF NOT EXISTS memory_index_jobs (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL,
+		memory_id TEXT NOT NULL,
+		op TEXT NOT NULL,
+		state TEXT NOT NULL DEFAULT 'pending',
+		last_error TEXT NOT NULL DEFAULT '',
+		attempts INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE(tenant_id, memory_id, op)
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_memory_index_jobs_state ON memory_index_jobs(state, updated_at DESC);`,
+	`CREATE INDEX IF NOT EXISTS idx_memory_index_jobs_tenant_memory ON memory_index_jobs(tenant_id, memory_id, op);`,
 }
 
 func RunMigrations(ctx context.Context, db *sql.DB) error {
