@@ -100,6 +100,18 @@ func (r *MemoryRepository) Delete(ctx context.Context, tenantID, memoryID string
 	}
 	defer tx.Rollback()
 
+	if err := upsertMemoryIndexJobTx(
+		ctx,
+		tx,
+		tenantID,
+		memoryID,
+		domain.MemoryIndexOperationDelete,
+		domain.MemoryIndexStatePending,
+		"",
+	); err != nil {
+		return fmt.Errorf("queue delete index job: %w", err)
+	}
+
 	if _, err := tx.ExecContext(ctx, DeleteMemoryFTSSQL, tenantID, memoryID); err != nil {
 		return fmt.Errorf("delete memory fts row: %w", err)
 	}
@@ -123,6 +135,15 @@ func (r *MemoryRepository) Delete(ctx context.Context, tenantID, memoryID string
 }
 
 func (r *MemoryRepository) Search(ctx context.Context, tenantID, query string, topK int) ([]domain.Memory, error) {
+	return r.SearchWithFilters(ctx, tenantID, query, topK, domain.MemorySearchFilters{})
+}
+
+func (r *MemoryRepository) SearchWithFilters(
+	ctx context.Context,
+	tenantID, query string,
+	topK int,
+	filters domain.MemorySearchFilters,
+) ([]domain.Memory, error) {
 	if strings.TrimSpace(tenantID) == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -132,11 +153,21 @@ func (r *MemoryRepository) Search(ctx context.Context, tenantID, query string, t
 
 	ftsQuery := toFTSQuery(query)
 	sqlQuery := SearchMemoriesSQL
-	args := []any{tenantID, ftsQuery, topK}
+	args := make([]any, 0, topK+8)
 	if ftsQuery == "" {
 		sqlQuery = ListMemoriesRecentSQL
-		args = []any{tenantID, topK}
+		args = append(args, tenantID)
+	} else {
+		args = append(args, tenantID, ftsQuery)
 	}
+	var filterArgs []any
+	if ftsQuery == "" {
+		sqlQuery, filterArgs = appendMemoryFilterClause(sqlQuery, "", filters)
+	} else {
+		sqlQuery, filterArgs = appendMemoryFilterClause(sqlQuery, "m", filters)
+	}
+	args = append(args, filterArgs...)
+	args = append(args, topK)
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
@@ -369,6 +400,7 @@ func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON s
 		m.ID,
 		m.TenantID,
 		m.Content,
+		m.QueryViewText,
 		string(m.Tier),
 		tagsJSON,
 		m.Source,
@@ -390,6 +422,17 @@ func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON s
 	}
 	if _, err := tx.ExecContext(ctx, InsertMemoryFTSSQL, buildIndexedMemoryText(m), m.TenantID, m.ID); err != nil {
 		return fmt.Errorf("insert memory fts row: %w", err)
+	}
+	if err := upsertMemoryIndexJobTx(
+		ctx,
+		tx,
+		m.TenantID,
+		m.ID,
+		domain.MemoryIndexOperationUpsert,
+		domain.MemoryIndexStatePending,
+		"",
+	); err != nil {
+		return fmt.Errorf("queue upsert index job: %w", err)
 	}
 	return nil
 }
@@ -422,6 +465,7 @@ func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
 		&m.ID,
 		&m.TenantID,
 		&m.Content,
+		&m.QueryViewText,
 		&tier,
 		&tagsJSON,
 		&m.Source,
@@ -491,4 +535,206 @@ func toFTSQuery(raw string) string {
 		return ""
 	}
 	return strings.Join(tokens, " OR ")
+}
+
+func (r *MemoryRepository) MarkIndexState(
+	ctx context.Context,
+	tenantID string,
+	memoryIDs []string,
+	op domain.MemoryIndexOperation,
+	state domain.MemoryIndexState,
+	lastError string,
+) error {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(string(op)) == "" || strings.TrimSpace(string(state)) == "" {
+		return domain.ErrInvalidInput
+	}
+	unique := uniqueNonEmptyStrings(memoryIDs)
+	if len(unique) == 0 {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	lastError = strings.TrimSpace(lastError)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin index-state transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, memoryID := range unique {
+		result, err := tx.ExecContext(
+			ctx,
+			UpdateMemoryIndexJobStateSQL,
+			string(state),
+			lastError,
+			string(state),
+			now,
+			tenantID,
+			memoryID,
+			string(op),
+		)
+		if err != nil {
+			return fmt.Errorf("update index job state: %w", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("index job rows affected: %w", err)
+		}
+		if affected == 0 {
+			if err := upsertMemoryIndexJobTx(
+				ctx,
+				tx,
+				tenantID,
+				memoryID,
+				op,
+				state,
+				lastError,
+			); err != nil {
+				return fmt.Errorf("upsert missing index job: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit index-state transaction: %w", err)
+	}
+	return nil
+}
+
+func upsertMemoryIndexJobTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	tenantID, memoryID string,
+	op domain.MemoryIndexOperation,
+	state domain.MemoryIndexState,
+	lastError string,
+) error {
+	if tx == nil {
+		return domain.ErrInvalidInput
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	attempts := 0
+	if state == domain.MemoryIndexStateFailed {
+		attempts = 1
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		UpsertMemoryIndexJobSQL,
+		newID("idx"),
+		tenantID,
+		memoryID,
+		string(op),
+		string(state),
+		strings.TrimSpace(lastError),
+		attempts,
+		now,
+		now,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func appendMemoryFilterClause(
+	baseSQL string,
+	alias string,
+	filters domain.MemorySearchFilters,
+) (string, []any) {
+	args := make([]any, 0, len(filters.Tiers)+len(filters.Kinds))
+	clauses := make([]string, 0, 2)
+	column := func(name string) string {
+		if strings.TrimSpace(alias) == "" {
+			return name
+		}
+		return alias + "." + name
+	}
+
+	kinds := normalizeKindsForFilter(filters.Kinds)
+	if len(kinds) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(kinds)), ",")
+		clauses = append(clauses, column("kind")+" IN ("+placeholders+")")
+		for _, kind := range kinds {
+			args = append(args, string(kind))
+		}
+	}
+	tiers := normalizeTiersForFilter(filters.Tiers)
+	if len(tiers) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(tiers)), ",")
+		clauses = append(clauses, column("tier")+" IN ("+placeholders+")")
+		for _, tier := range tiers {
+			args = append(args, string(tier))
+		}
+	}
+
+	if len(clauses) == 0 {
+		return baseSQL, args
+	}
+	filterClause := "\n  AND " + strings.Join(clauses, "\n  AND ")
+	if strings.Contains(baseSQL, "\nORDER BY") {
+		return strings.Replace(baseSQL, "\nORDER BY", filterClause+"\nORDER BY", 1), args
+	}
+	if strings.Contains(baseSQL, " ORDER BY") {
+		return strings.Replace(baseSQL, " ORDER BY", filterClause+" ORDER BY", 1), args
+	}
+	return baseSQL + filterClause, args
+}
+
+func normalizeKindsForFilter(kinds []domain.MemoryKind) []domain.MemoryKind {
+	if len(kinds) == 0 {
+		return []domain.MemoryKind{}
+	}
+	seen := make(map[domain.MemoryKind]struct{}, len(kinds))
+	out := make([]domain.MemoryKind, 0, len(kinds))
+	for _, kind := range kinds {
+		switch kind {
+		case domain.MemoryKindRawTurn, domain.MemoryKindObservation, domain.MemoryKindSummary, domain.MemoryKindEvent:
+		default:
+			continue
+		}
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		seen[kind] = struct{}{}
+		out = append(out, kind)
+	}
+	return out
+}
+
+func normalizeTiersForFilter(tiers []domain.MemoryTier) []domain.MemoryTier {
+	if len(tiers) == 0 {
+		return []domain.MemoryTier{}
+	}
+	seen := make(map[domain.MemoryTier]struct{}, len(tiers))
+	out := make([]domain.MemoryTier, 0, len(tiers))
+	for _, tier := range tiers {
+		switch tier {
+		case domain.MemoryTierWorking, domain.MemoryTierEpisodic, domain.MemoryTierSemantic:
+		default:
+			continue
+		}
+		if _, ok := seen[tier]; ok {
+			continue
+		}
+		seen[tier] = struct{}{}
+		out = append(out, tier)
+	}
+	return out
 }

@@ -54,6 +54,7 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Equal(t, 2, results[0].SourceFactIndex)
 	require.Equal(t, "ollama", results[0].Extractor)
 	require.Equal(t, "qwen3:4b", results[0].ExtractorVersion)
+	require.Equal(t, "what stack does the user like for backend work", results[0].QueryViewText)
 	require.Equal(t, 0, results[0].RecallCount)
 
 	byID, err := memRepo.GetByIDs(ctx, "tenant_1", []string{stored.ID})
@@ -68,6 +69,7 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Equal(t, 2, byID[0].SourceFactIndex)
 	require.Equal(t, "ollama", byID[0].Extractor)
 	require.Equal(t, "qwen3:4b", byID[0].ExtractorVersion)
+	require.Equal(t, "what stack does the user like for backend work", byID[0].QueryViewText)
 	require.Equal(t, 0, byID[0].RecallCount)
 
 	byCanonicalKey, err := memRepo.FindByCanonicalKey(ctx, "tenant_1", "canon_1")
@@ -176,4 +178,90 @@ func TestMemoryRepositoryStoreBatchRollsBackOnError(t *testing.T) {
 	results, err := memRepo.Search(ctx, "tenant_1", "", 10)
 	require.NoError(t, err)
 	require.Empty(t, results)
+}
+
+func TestMemoryRepositoryIndexJobLifecycle(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenantRepo := NewTenantRepository(db)
+	memRepo := NewMemoryRepository(db)
+	_, err = tenantRepo.Create(ctx, domain.Tenant{ID: "tenant_1", Name: "Tenant One"})
+	require.NoError(t, err)
+
+	stored, err := memRepo.Store(ctx, domain.Memory{
+		TenantID: "tenant_1",
+		Content:  "User likes tea.",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, stored.ID)
+
+	type indexJobRow struct {
+		state     string
+		lastError string
+		attempts  int
+	}
+	readIndexJob := func(memoryID string, op domain.MemoryIndexOperation) indexJobRow {
+		t.Helper()
+		var row indexJobRow
+		err := db.QueryRowContext(
+			ctx,
+			`SELECT state, last_error, attempts
+			 FROM memory_index_jobs
+			 WHERE tenant_id = ? AND memory_id = ? AND op = ?`,
+			"tenant_1",
+			memoryID,
+			string(op),
+		).Scan(&row.state, &row.lastError, &row.attempts)
+		require.NoError(t, err)
+		return row
+	}
+
+	upsertJob := readIndexJob(stored.ID, domain.MemoryIndexOperationUpsert)
+	require.Equal(t, string(domain.MemoryIndexStatePending), upsertJob.state)
+	require.Equal(t, "", upsertJob.lastError)
+	require.Equal(t, 0, upsertJob.attempts)
+
+	require.NoError(t, memRepo.MarkIndexState(
+		ctx,
+		"tenant_1",
+		[]string{stored.ID},
+		domain.MemoryIndexOperationUpsert,
+		domain.MemoryIndexStateIndexed,
+		"",
+	))
+	upsertJob = readIndexJob(stored.ID, domain.MemoryIndexOperationUpsert)
+	require.Equal(t, string(domain.MemoryIndexStateIndexed), upsertJob.state)
+	require.Equal(t, "", upsertJob.lastError)
+	require.Equal(t, 0, upsertJob.attempts)
+
+	require.NoError(t, memRepo.MarkIndexState(
+		ctx,
+		"tenant_1",
+		[]string{stored.ID},
+		domain.MemoryIndexOperationUpsert,
+		domain.MemoryIndexStateFailed,
+		"vector timeout",
+	))
+	upsertJob = readIndexJob(stored.ID, domain.MemoryIndexOperationUpsert)
+	require.Equal(t, string(domain.MemoryIndexStateFailed), upsertJob.state)
+	require.Equal(t, "vector timeout", upsertJob.lastError)
+	require.Equal(t, 1, upsertJob.attempts)
+
+	require.NoError(t, memRepo.Delete(ctx, "tenant_1", stored.ID))
+	deleteJob := readIndexJob(stored.ID, domain.MemoryIndexOperationDelete)
+	require.Equal(t, string(domain.MemoryIndexStatePending), deleteJob.state)
+
+	require.NoError(t, memRepo.MarkIndexState(
+		ctx,
+		"tenant_1",
+		[]string{stored.ID},
+		domain.MemoryIndexOperationDelete,
+		domain.MemoryIndexStateTombstoned,
+		"",
+	))
+	deleteJob = readIndexJob(stored.ID, domain.MemoryIndexOperationDelete)
+	require.Equal(t, string(domain.MemoryIndexStateTombstoned), deleteJob.state)
 }
