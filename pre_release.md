@@ -88,7 +88,7 @@
 
 ## 6. Repo Hygiene (Before Going Public)
 
-- [ ] Decide on org name (e.g. `pali-mem`) and migrate from `vein05/pali` — update all `github.com/vein05/pali` import paths
+- [ ] Decide on org name (e.g. `pali-mem`) and migrate from `pali-mem/pali` — update all `github.com/pali-mem/pali` import paths
 - [ ] Add `LICENSE` check — confirm license is appropriate for an open infra project
 - [ ] Add `CHANGELOG.md` — v0.1 entry with what's in it
 - [ ] Tag `v0.1.0` on GitHub after CI is green
@@ -107,7 +107,7 @@ gh auth login
 
 # (When ready) Create org and transfer repo
 gh org create pali-mem
-gh repo transfer vein05/pali pali-mem
+gh repo transfer pali-mem/pali pali-mem
 
 # Set repo description, topics, visibility
 gh repo edit --description "Persistent memory layer for LLM applications" \

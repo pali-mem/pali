@@ -270,7 +270,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/vein05/pali/pkg/client"
+	"github.com/pali-mem/pali/pkg/client"
 )
 
 func main() {
@@ -367,7 +367,7 @@ Results are written to `test/benchmarks/results/` as JSON and text summary files
 
 `go.mod` is initialized as:
 
-`github.com/vein05/pali`
+`github.com/pali-mem/pali`
 
 ---
 

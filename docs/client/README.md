@@ -23,7 +23,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/vein05/pali/pkg/client"
+	"github.com/pali-mem/pali/pkg/client"
 )
 
 func main() {
@@ -69,7 +69,7 @@ import (
 	"errors"
 	"log"
 
-	"github.com/vein05/pali/pkg/client"
+	"github.com/pali-mem/pali/pkg/client"
 )
 
 if err != nil {

@@ -47,8 +47,8 @@ go test ./internal/mcp ./internal/config
 
 Result:
 
-- `ok   github.com/vein05/pali/internal/mcp`
-- `ok   github.com/vein05/pali/internal/config`
+- `ok   github.com/pali-mem/pali/internal/mcp`
+- `ok   github.com/pali-mem/pali/internal/config`
 
 ## Notes
 
