@@ -8,10 +8,11 @@ import (
 )
 
 var (
-	temporalPattern = regexp.MustCompile(`\b(when|what time|date|day|month|year|before|after|first|last|earlier|later|yesterday|today|tomorrow)\b`)
-	personPattern   = regexp.MustCompile(`\b(who|name|which person|whose)\b`)
-	multiHopPattern = regexp.MustCompile(`\b(before|after|first|last|both|either|then|and)\b`)
-	timeTagPattern  = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
+	temporalPattern   = regexp.MustCompile(`\b(when|what time|date|day|month|year|before|after|first|last|earlier|later|yesterday|today|tomorrow)\b`)
+	personPattern     = regexp.MustCompile(`\b(who|name|which person|whose)\b`)
+	multiHopPattern   = regexp.MustCompile(`\b(before|after|first|last|both|either|then|and|while|followed|prior|previously)\b`)
+	entityNamePattern = regexp.MustCompile(`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b`)
+	timeTagPattern    = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
 
 	aggregationIntentPattern           = regexp.MustCompile(`\b(what all|list|activities?|events?|things?|places?|books?|hobbies?|interests?|participated|attended|done)\b`)
 	aggregationEntityDoesDoPattern     = regexp.MustCompile(`(?i)\b(?:does|did)\s+([a-z][a-z0-9'\-]*(?:\s+[a-z][a-z0-9'\-]*){0,2})\s+do\b`)
@@ -26,9 +27,27 @@ var aggregationEntityStopwords = map[string]struct{}{
 	"hobby": {}, "hobbies": {}, "interest": {}, "interests": {},
 }
 
+var entityHintStopwords = map[string]struct{}{
+	"what": {}, "when": {}, "where": {}, "who": {}, "why": {}, "how": {}, "which": {}, "whose": {},
+	"did": {}, "does": {}, "do": {}, "is": {}, "are": {}, "was": {}, "were": {}, "the": {}, "a": {}, "an": {},
+}
+
 type aggregationQuery struct {
 	Entity   string
 	Relation string
+}
+
+type queryPlan struct {
+	Intent           string
+	Confidence       float64
+	Entities         []string
+	Relations        []string
+	TimeConstraints  []string
+	RequiredEvidence string
+	Temporal         bool
+	Person           bool
+	MultiHop         bool
+	FallbackPath     []string
 }
 
 type queryProfile struct {
@@ -45,8 +64,124 @@ func classifyQuery(query string) queryProfile {
 	return queryProfile{
 		Temporal: temporalPattern.MatchString(q),
 		Person:   personPattern.MatchString(q),
-		MultiHop: multiHopPattern.MatchString(q),
+		MultiHop: isLikelyMultiHopQuery(q),
 	}
+}
+
+func buildQueryPlan(query string, profile queryProfile) queryPlan {
+	plan := queryPlan{
+		Intent:           "hybrid_vector_fallback",
+		Confidence:       0.55,
+		Temporal:         profile.Temporal,
+		Person:           profile.Person,
+		MultiHop:         profile.MultiHop,
+		TimeConstraints:  extractTimeHints(query),
+		RequiredEvidence: "any_relevant_memory",
+	}
+
+	if route, ok := classifyAggregationQuery(query); ok {
+		plan.Intent = "aggregation_lookup"
+		plan.Confidence = 0.88
+		plan.Entities = []string{route.Entity}
+		plan.Relations = []string{route.Relation}
+		plan.RequiredEvidence = "set_of_entity_relation_facts"
+		plan.FallbackPath = []string{"direct_fact_lookup", "hybrid_vector_fallback"}
+		return plan
+	}
+
+	if profile.MultiHop {
+		plan.Intent = "graph_entity_expansion"
+		plan.Confidence = 0.74
+		plan.RequiredEvidence = "multi_hop_supporting_facts"
+		plan.FallbackPath = []string{"direct_fact_lookup", "hybrid_vector_fallback"}
+		return plan
+	}
+
+	if profile.Temporal {
+		plan.Intent = "temporal_lookup"
+		plan.Confidence = 0.72
+		plan.RequiredEvidence = "time_anchored_fact"
+		plan.FallbackPath = []string{"direct_fact_lookup", "hybrid_vector_fallback"}
+		return plan
+	}
+
+	if profile.Person {
+		plan.Intent = "direct_fact_lookup"
+		plan.Confidence = 0.68
+		plan.RequiredEvidence = "entity_attribute_fact"
+		if entity, ok := classifyEntityHintQuery(query, profile); ok {
+			plan.Entities = []string{normalizeEntityFactEntity(entity)}
+		}
+		plan.FallbackPath = []string{"hybrid_vector_fallback"}
+		return plan
+	}
+
+	if entity, ok := classifyEntityHintQuery(query, profile); ok {
+		plan.Entities = []string{normalizeEntityFactEntity(entity)}
+	}
+	plan.FallbackPath = []string{"direct_fact_lookup"}
+	return plan
+}
+
+func (p queryPlan) primaryEntity() string {
+	for _, entity := range p.Entities {
+		entity = strings.TrimSpace(entity)
+		if entity != "" {
+			return entity
+		}
+	}
+	return ""
+}
+
+func (p queryPlan) primaryRelation() string {
+	for _, relation := range p.Relations {
+		relation = strings.TrimSpace(relation)
+		if relation != "" {
+			return relation
+		}
+	}
+	return ""
+}
+
+func isLikelyMultiHopQuery(q string) bool {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" || !multiHopPattern.MatchString(q) {
+		return false
+	}
+	if strings.Contains(q, "both") || strings.Contains(q, "either") {
+		return true
+	}
+
+	parts := searchSplitPattern.Split(q, -1)
+	informativeParts := 0
+	for _, part := range parts {
+		if len(strings.Fields(condenseSearchQuery(part))) >= 2 {
+			informativeParts++
+		}
+	}
+	return informativeParts >= 2
+}
+
+func classifyEntityHintQuery(query string, profile queryProfile) (string, bool) {
+	query = strings.TrimSpace(query)
+	if query == "" || profile.Temporal || profile.MultiHop {
+		return "", false
+	}
+	if _, ok := classifyAggregationQuery(query); ok {
+		return "", false
+	}
+	matches := entityNamePattern.FindAllString(query, -1)
+	for _, match := range matches {
+		candidate := strings.ToLower(strings.TrimSpace(match))
+		if candidate == "" {
+			continue
+		}
+		if _, blocked := entityHintStopwords[candidate]; blocked {
+			continue
+		}
+		return match, true
+	}
+	return "", false
 }
 
 func classifyAggregationQuery(query string) (aggregationQuery, bool) {
@@ -136,6 +271,30 @@ func isLikelyEntity(entity string) bool {
 		}
 	}
 	return true
+}
+
+func extractTimeHints(query string) []string {
+	if strings.TrimSpace(query) == "" {
+		return []string{}
+	}
+	matches := timeTagPattern.FindAllString(strings.ToLower(query), -1)
+	if len(matches) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(matches))
+	seen := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		hint := strings.TrimSpace(match)
+		if hint == "" {
+			continue
+		}
+		if _, ok := seen[hint]; ok {
+			continue
+		}
+		seen[hint] = struct{}{}
+		out = append(out, hint)
+	}
+	return out
 }
 
 func routeBoost(m domain.Memory, profile queryProfile) float64 {
