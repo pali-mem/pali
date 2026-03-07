@@ -55,6 +55,44 @@ func TestServerRegistersExpectedTools(t *testing.T) {
 	}
 }
 
+func TestServerExposesMemoryAutopilotGuidance(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	server, cleanup := newTestMCPServer(t)
+	defer cleanup()
+
+	session, stop := connectInMemorySession(t, ctx, server)
+	defer stop()
+
+	initResult := session.InitializeResult()
+	require.NotNil(t, initResult)
+	require.Contains(t, initResult.Instructions, "memory_search")
+	require.Contains(t, initResult.Instructions, "memory_store")
+
+	prompts, err := session.ListPrompts(ctx, &sdkmcp.ListPromptsParams{})
+	require.NoError(t, err)
+	require.NotEmpty(t, prompts.Prompts)
+
+	names := make(map[string]struct{}, len(prompts.Prompts))
+	for _, prompt := range prompts.Prompts {
+		names[prompt.Name] = struct{}{}
+	}
+	_, ok := names[promptMemoryAutopilotName]
+	require.True(t, ok, "missing prompt: %s", promptMemoryAutopilotName)
+
+	prompt, err := session.GetPrompt(ctx, &sdkmcp.GetPromptParams{
+		Name:      promptMemoryAutopilotName,
+		Arguments: map[string]string{},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, prompt.Messages)
+	text, ok := prompt.Messages[0].Content.(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, text.Text, "memory_search")
+	require.Contains(t, text.Text, "memory_store")
+}
+
 func TestServerToolFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

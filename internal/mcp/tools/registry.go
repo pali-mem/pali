@@ -60,19 +60,31 @@ func (t *Toolset) Register(s *sdkmcp.Server) error {
 
 	memoryStore := &sdkmcp.Tool{
 		Name:        "memory_store",
-		Description: "Store a memory. Required fields: content (string). Optional: tenant_id (string), tier (auto|working|episodic|semantic), tags ([]string), source (string), created_by (auto|user|system). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Description: "Write a durable memory item. Prefer this after learning user facts, plans, preferences, identity details, or corrections. Required: content (string). Optional: tenant_id (string), tier (auto|working|episodic|semantic), tags ([]string), source (string), created_by (auto|user|system). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Annotations: &sdkmcp.ToolAnnotations{
+			DestructiveHint: boolPtr(false),
+			OpenWorldHint:   boolPtr(false),
+		},
 	}
 	sdkmcp.AddTool(s, memoryStore, t.handleMemoryStore)
 
 	memoryStorePreference := &sdkmcp.Tool{
 		Name:        "memory_store_preference",
-		Description: "Store a semantic preference memory using key/value input. Required fields: key (string), value (string). Optional: tenant_id (string), tags ([]string). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Description: "Write a user preference in key/value form. Prefer this for stable defaults, style, likes, and dislikes. Required: key (string), value (string). Optional: tenant_id (string), tags ([]string). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Annotations: &sdkmcp.ToolAnnotations{
+			DestructiveHint: boolPtr(false),
+			OpenWorldHint:   boolPtr(false),
+		},
 	}
 	sdkmcp.AddTool(s, memoryStorePreference, t.handleMemoryStorePreference)
 
 	memorySearch := &sdkmcp.Tool{
 		Name:        "memory_search",
-		Description: "Search memories by semantic similarity. Required fields: query (string — the search text, e.g. 'Jane graduation'). Optional: tenant_id (string), top_k (int, default 5), min_score (0..1), tiers ([working|episodic|semantic]), kinds ([raw_turn|observation|summary|event]). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Description: "Primary recall tool. Call before answering user-specific or history-dependent requests, using the latest user message as query. Required: query (string). Optional: tenant_id (string), top_k (int, default 5), min_score (0..1), tiers ([working|episodic|semantic]), kinds ([raw_turn|observation|summary|event]). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Annotations: &sdkmcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: boolPtr(false),
+		},
 	}
 	sdkmcp.AddTool(s, memorySearch, t.handleMemorySearch)
 
@@ -123,6 +135,26 @@ func (t *Toolset) Register(s *sdkmcp.Server) error {
 		Description: "List canonical Pali MCP tool names, tenant resolution behavior, and example tool calls.",
 	}
 	sdkmcp.AddTool(s, capabilities, t.handleCapabilitiesHelp)
+
+	s.AddPrompt(&sdkmcp.Prompt{
+		Name:        "memory_workflow",
+		Description: "Instructs the agent to always use Pali memory tools: search before answering, store after learning.",
+	}, func(_ context.Context, _ *sdkmcp.GetPromptRequest) (*sdkmcp.GetPromptResult, error) {
+		return &sdkmcp.GetPromptResult{
+			Description: "Pali memory workflow instructions",
+			Messages: []*sdkmcp.PromptMessage{
+				{
+					Role: "user",
+					Content: &sdkmcp.TextContent{
+						Text: "You have access to Pali, a long-term memory system. Follow this workflow for every interaction:\n\n" +
+							"1. BEFORE answering: call memory_search with the user's message as the query (top_k 5). Use the results to inform your response.\n" +
+							"2. WHILE responding: if the user shares facts, preferences, identity details, plans, or corrections, call memory_store or memory_store_preference to persist them.\n" +
+							"3. Do NOT ask the user whether to remember something — just store it silently.",
+					},
+				},
+			},
+		}, nil
+	})
 
 	return nil
 }
@@ -264,20 +296,20 @@ type ToolCallExample struct {
 func (t *Toolset) handleMemoryStore(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryStoreInput) (*sdkmcp.CallToolResult, MemoryStoreOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 
 	tier, err := parseTier(args.Tier)
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 	createdBy, err := parseCreatedBy(args.CreatedBy)
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 	kind, err := parseMemoryKind(args.Kind)
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 	stored, err := t.memory.Store(ctx, corememory.StoreInput{
 		TenantID:  tenantID,
@@ -289,7 +321,7 @@ func (t *Toolset) handleMemoryStore(ctx context.Context, req *sdkmcp.CallToolReq
 		CreatedBy: createdBy,
 	})
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 	return toolOK("memory stored"), MemoryStoreOutput{
 		ID:         stored.ID,
@@ -305,11 +337,11 @@ func (t *Toolset) handleMemoryStore(ctx context.Context, req *sdkmcp.CallToolReq
 func (t *Toolset) handleMemoryStorePreference(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryStorePreferenceInput) (*sdkmcp.CallToolResult, MemoryStoreOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 
 	if strings.TrimSpace(args.Key) == "" || strings.TrimSpace(args.Value) == "" {
-		return toolError(domain.ErrInvalidInput), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, fmt.Errorf("%w: key and value are required", domain.ErrInvalidInput)
 	}
 	content := fmt.Sprintf("%s: %s", strings.TrimSpace(args.Key), strings.TrimSpace(args.Value))
 	tags := append([]string{"preferences", strings.TrimSpace(args.Key)}, args.Tags...)
@@ -323,7 +355,7 @@ func (t *Toolset) handleMemoryStorePreference(ctx context.Context, req *sdkmcp.C
 		CreatedBy: domain.MemoryCreatedByAuto,
 	})
 	if err != nil {
-		return toolError(err), MemoryStoreOutput{}, nil
+		return nil, MemoryStoreOutput{}, err
 	}
 	return toolOK("preference stored"), MemoryStoreOutput{
 		ID:         stored.ID,
@@ -339,7 +371,7 @@ func (t *Toolset) handleMemoryStorePreference(ctx context.Context, req *sdkmcp.C
 func (t *Toolset) handleMemorySearch(ctx context.Context, req *sdkmcp.CallToolRequest, args MemorySearchInput) (*sdkmcp.CallToolResult, MemorySearchOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), MemorySearchOutput{}, nil
+		return nil, MemorySearchOutput{}, err
 	}
 
 	if args.MinScore < 0 || args.MinScore > 1 {
@@ -347,11 +379,11 @@ func (t *Toolset) handleMemorySearch(ctx context.Context, req *sdkmcp.CallToolRe
 	}
 	searchTiers, err := parseSearchTiers(args.Tiers)
 	if err != nil {
-		return toolError(err), MemorySearchOutput{}, nil
+		return nil, MemorySearchOutput{}, err
 	}
 	searchKinds, err := parseSearchKinds(args.Kinds)
 	if err != nil {
-		return toolError(err), MemorySearchOutput{}, nil
+		return nil, MemorySearchOutput{}, err
 	}
 	items, err := t.memory.SearchWithFilters(ctx, tenantID, args.Query, args.TopK, corememory.SearchOptions{
 		MinScore: args.MinScore,
@@ -359,7 +391,7 @@ func (t *Toolset) handleMemorySearch(ctx context.Context, req *sdkmcp.CallToolRe
 		Kinds:    searchKinds,
 	})
 	if err != nil {
-		return toolError(err), MemorySearchOutput{}, nil
+		return nil, MemorySearchOutput{}, err
 	}
 	return toolOK(fmt.Sprintf("%d memories found", len(items))), MemorySearchOutput{Items: mapMemoryItems(items)}, nil
 }
@@ -367,12 +399,12 @@ func (t *Toolset) handleMemorySearch(ctx context.Context, req *sdkmcp.CallToolRe
 func (t *Toolset) handleMemoryList(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryListInput) (*sdkmcp.CallToolResult, MemoryListOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), MemoryListOutput{}, nil
+		return nil, MemoryListOutput{}, err
 	}
 
 	items, err := t.memory.List(ctx, tenantID, args.Limit)
 	if err != nil {
-		return toolError(err), MemoryListOutput{}, nil
+		return nil, MemoryListOutput{}, err
 	}
 	return toolOK(fmt.Sprintf("%d memories listed", len(items))), MemoryListOutput{Items: mapMemoryItems(items)}, nil
 }
@@ -380,11 +412,11 @@ func (t *Toolset) handleMemoryList(ctx context.Context, req *sdkmcp.CallToolRequ
 func (t *Toolset) handleMemoryDelete(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryDeleteInput) (*sdkmcp.CallToolResult, MemoryDeleteOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), MemoryDeleteOutput{}, nil
+		return nil, MemoryDeleteOutput{}, err
 	}
 
 	if err := t.memory.Delete(ctx, tenantID, args.MemoryID); err != nil {
-		return toolError(err), MemoryDeleteOutput{}, nil
+		return nil, MemoryDeleteOutput{}, err
 	}
 	return toolOK("memory deleted"), MemoryDeleteOutput{Deleted: true}, nil
 }
@@ -395,7 +427,7 @@ func (t *Toolset) handleTenantCreate(ctx context.Context, req *sdkmcp.CallToolRe
 		Name: args.Name,
 	})
 	if err != nil {
-		return toolError(err), TenantCreateOutput{}, nil
+		return nil, TenantCreateOutput{}, err
 	}
 	return toolOK("tenant created"), TenantCreateOutput{
 		ID:        created.ID,
@@ -407,7 +439,7 @@ func (t *Toolset) handleTenantCreate(ctx context.Context, req *sdkmcp.CallToolRe
 func (t *Toolset) handleTenantList(ctx context.Context, req *sdkmcp.CallToolRequest, args TenantListInput) (*sdkmcp.CallToolResult, TenantListOutput, error) {
 	tenants, err := t.tenant.List(ctx, args.Limit)
 	if err != nil {
-		return toolError(err), TenantListOutput{}, nil
+		return nil, TenantListOutput{}, err
 	}
 	out := make([]TenantItem, 0, len(tenants))
 	for _, tenant := range tenants {
@@ -419,12 +451,12 @@ func (t *Toolset) handleTenantList(ctx context.Context, req *sdkmcp.CallToolRequ
 func (t *Toolset) handleTenantStats(ctx context.Context, req *sdkmcp.CallToolRequest, args TenantStatsInput) (*sdkmcp.CallToolResult, TenantStatsOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), TenantStatsOutput{}, nil
+		return nil, TenantStatsOutput{}, err
 	}
 
 	stats, err := t.tenant.Stats(ctx, tenantID)
 	if err != nil {
-		return toolError(err), TenantStatsOutput{}, nil
+		return nil, TenantStatsOutput{}, err
 	}
 	return toolOK("tenant stats loaded"), TenantStatsOutput{
 		TenantID:    tenantID,
@@ -435,12 +467,12 @@ func (t *Toolset) handleTenantStats(ctx context.Context, req *sdkmcp.CallToolReq
 func (t *Toolset) handleTenantExists(ctx context.Context, req *sdkmcp.CallToolRequest, args TenantExistsInput) (*sdkmcp.CallToolResult, TenantExistsOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
-		return toolError(err), TenantExistsOutput{}, nil
+		return nil, TenantExistsOutput{}, err
 	}
 
 	exists, err := t.tenant.Exists(ctx, tenantID)
 	if err != nil {
-		return toolError(err), TenantExistsOutput{}, nil
+		return nil, TenantExistsOutput{}, err
 	}
 	return toolOK("tenant existence checked"), TenantExistsOutput{
 		TenantID: tenantID,
@@ -530,7 +562,16 @@ func (t *Toolset) resolveTenant(ctx context.Context, req *sdkmcp.CallToolRequest
 		return t.defaultTenantID, nil
 	}
 
-	return "", fmt.Errorf("%w: tenant_id is required (checked input, jwt, session default, and default_tenant_id)", domain.ErrInvalidInput)
+	// Single-tenant auto-detect: if exactly one tenant exists, use it automatically.
+	// This makes pali work out-of-the-box for single-user setups without any config.
+	if tenants, err := t.tenant.List(ctx, 2); err == nil && len(tenants) == 1 {
+		tenantID := tenants[0].ID
+		t.rememberSessionTenant(req, tenantID)
+		t.logTenantResolution(req, tenantID, "single_tenant_auto")
+		return tenantID, nil
+	}
+
+	return "", fmt.Errorf("%w: tenant_id is required (checked input, jwt, session default, default_tenant_id, and single-tenant auto-detect)", domain.ErrInvalidInput)
 }
 
 func (t *Toolset) tenantFromJWT(ctx context.Context, req *sdkmcp.CallToolRequest) string {
@@ -686,6 +727,10 @@ func dedupeTags(tags []string) []string {
 		out = append(out, tag)
 	}
 	return out
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 func parseTier(raw string) (domain.MemoryTier, error) {
