@@ -20,6 +20,13 @@ func (s *Store) Upsert(ctx context.Context, tenantID, memoryID string, embedding
 	return s.client.Upsert(ctx, tenantID, memoryID, embedding)
 }
 
+func (s *Store) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("qdrant store client is nil")
+	}
+	return s.client.UpsertBatch(ctx, upserts)
+}
+
 func (s *Store) Delete(ctx context.Context, tenantID, memoryID string) error {
 	if s == nil || s.client == nil {
 		return fmt.Errorf("qdrant store client is nil")

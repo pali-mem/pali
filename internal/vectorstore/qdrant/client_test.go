@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vein05/pali/internal/domain"
 )
 
 type fakePoint struct {
@@ -255,4 +256,62 @@ func TestStoreVectorSizeMismatch(t *testing.T) {
 	_, err = store.Search(ctx, "tenant_1", []float32{1, 0, 0}, 1)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "vector size mismatch")
+}
+
+func TestStoreUpsertBatch(t *testing.T) {
+	fake := newFakeQdrant()
+	server := httptest.NewServer(http.HandlerFunc(fake.handler))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "", "test_collection", time.Second)
+	require.NoError(t, err)
+	store := NewStore(client)
+
+	ctx := context.Background()
+	upserts := []domain.VectorUpsert{
+		{TenantID: "tenant_1", MemoryID: "m1", Embedding: []float32{1, 0}},
+		{TenantID: "tenant_1", MemoryID: "m2", Embedding: []float32{0, 1}},
+		{TenantID: "tenant_2", MemoryID: "other", Embedding: []float32{1, 0}},
+	}
+	require.NoError(t, store.UpsertBatch(ctx, upserts))
+
+	// Verify tenant_1 results.
+	candidates, err := store.Search(ctx, "tenant_1", []float32{0.9, 0.1}, 10)
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	require.Equal(t, "m1", candidates[0].MemoryID)
+	require.Equal(t, "m2", candidates[1].MemoryID)
+
+	// tenant_2 is isolated.
+	candidates, err = store.Search(ctx, "tenant_2", []float32{1, 0}, 10)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, "other", candidates[0].MemoryID)
+
+	// Empty batch is a no-op.
+	require.NoError(t, store.UpsertBatch(ctx, nil))
+}
+
+func TestStoreUpsertBatchValidation(t *testing.T) {
+	fake := newFakeQdrant()
+	server := httptest.NewServer(http.HandlerFunc(fake.handler))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "", "test_collection", time.Second)
+	require.NoError(t, err)
+	store := NewStore(client)
+
+	ctx := context.Background()
+
+	// Missing tenant.
+	err = store.UpsertBatch(ctx, []domain.VectorUpsert{{TenantID: "", MemoryID: "m1", Embedding: []float32{1, 0}}})
+	require.Error(t, err)
+
+	// Missing memory ID.
+	err = store.UpsertBatch(ctx, []domain.VectorUpsert{{TenantID: "t1", MemoryID: "", Embedding: []float32{1, 0}}})
+	require.Error(t, err)
+
+	// Empty embedding.
+	err = store.UpsertBatch(ctx, []domain.VectorUpsert{{TenantID: "t1", MemoryID: "m1", Embedding: nil}})
+	require.Error(t, err)
 }

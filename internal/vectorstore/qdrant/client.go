@@ -86,6 +86,39 @@ func (c *Client) Upsert(ctx context.Context, tenantID, memoryID string, embeddin
 	return nil
 }
 
+func (c *Client) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) error {
+	if len(upserts) == 0 {
+		return nil
+	}
+	for i, u := range upserts {
+		if strings.TrimSpace(u.TenantID) == "" || strings.TrimSpace(u.MemoryID) == "" || len(u.Embedding) == 0 {
+			return fmt.Errorf("upsert[%d]: %w", i, domain.ErrInvalidInput)
+		}
+	}
+	if err := c.ensureCollection(ctx, len(upserts[0].Embedding)); err != nil {
+		return err
+	}
+
+	points := make([]map[string]any, 0, len(upserts))
+	for _, u := range upserts {
+		points = append(points, map[string]any{
+			"id":     stablePointID(u.TenantID, u.MemoryID),
+			"vector": u.Embedding,
+			"payload": map[string]any{
+				"tenant_id": u.TenantID,
+				"memory_id": u.MemoryID,
+			},
+		})
+	}
+
+	payload := map[string]any{"points": points}
+	_, err := c.request(ctx, http.MethodPut, "/collections/"+c.collection+"/points?wait=true", payload, false)
+	if err != nil {
+		return fmt.Errorf("qdrant upsert batch: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) Delete(ctx context.Context, tenantID, memoryID string) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" {
 		return domain.ErrInvalidInput
