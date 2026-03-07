@@ -7,22 +7,21 @@ func Defaults() Config {
 			Port: 8080,
 		},
 		VectorBackend:    "sqlite",
-		DefaultTenantID:  "default",
+		DefaultTenantID:  "",
 		ImportanceScorer: "heuristic",
 		StructuredMemory: StructuredMemoryConfig{
 			Enabled:               false,
 			DualWriteObservations: false,
 			DualWriteEvents:       false,
-			QueryRoutingEnabled:   false,
 			MaxObservations:       3,
 		},
 		Retrieval: RetrievalConfig{
 			Scoring: RetrievalScoringConfig{
 				Algorithm: "wal",
 				WAL: ScoringWeightsConfig{
-					Recency:    1,
-					Relevance:  1,
-					Importance: 1,
+					Recency:    0.1,
+					Relevance:  0.8,
+					Importance: 0.1,
 				},
 				Match: MatchScoringWeightsConfig{
 					Recency:      0.05,
@@ -55,7 +54,7 @@ func Defaults() Config {
 		},
 		Embedding: Embedding{
 			Provider:             "ollama",
-			FallbackProvider:     "lexical",
+			FallbackProvider:     "",
 			ModelPath:            "./models/all-MiniLM-L6-v2/model.onnx",
 			TokenizerPath:        "./models/all-MiniLM-L6-v2/tokenizer.json",
 			OllamaBaseURL:        "http://127.0.0.1:11434",

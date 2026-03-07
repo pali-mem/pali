@@ -65,7 +65,6 @@ type StructuredMemoryConfig struct {
 	Enabled               bool `yaml:"enabled"`
 	DualWriteObservations bool `yaml:"dual_write_observations"`
 	DualWriteEvents       bool `yaml:"dual_write_events"`
-	QueryRoutingEnabled   bool `yaml:"query_routing_enabled"`
 	MaxObservations       int  `yaml:"max_observations"`
 }
 
