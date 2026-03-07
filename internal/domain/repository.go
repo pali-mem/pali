@@ -10,6 +10,22 @@ type MemoryRepository interface {
 	Touch(ctx context.Context, tenantID string, ids []string) error
 }
 
+type MemorySearchFilters struct {
+	Tiers []MemoryTier
+	Kinds []MemoryKind
+}
+
+// MemoryFilteredSearchRepository is an optional extension for repositories
+// that can apply tier/kind constraints during lexical retrieval.
+type MemoryFilteredSearchRepository interface {
+	SearchWithFilters(
+		ctx context.Context,
+		tenantID, query string,
+		topK int,
+		filters MemorySearchFilters,
+	) ([]Memory, error)
+}
+
 // MemoryBatchRepository is an optional extension for repositories that can
 // persist multiple memories in one transaction.
 type MemoryBatchRepository interface {
@@ -26,6 +42,35 @@ type MemoryCanonicalKeyRepository interface {
 // can list memories grounded to the same source turn.
 type MemorySourceTurnRepository interface {
 	ListBySourceTurnHash(ctx context.Context, tenantID, sourceTurnHash string, limit int) ([]Memory, error)
+}
+
+type MemoryIndexOperation string
+
+const (
+	MemoryIndexOperationUpsert MemoryIndexOperation = "upsert"
+	MemoryIndexOperationDelete MemoryIndexOperation = "delete"
+)
+
+type MemoryIndexState string
+
+const (
+	MemoryIndexStatePending    MemoryIndexState = "pending"
+	MemoryIndexStateIndexed    MemoryIndexState = "indexed"
+	MemoryIndexStateFailed     MemoryIndexState = "failed"
+	MemoryIndexStateTombstoned MemoryIndexState = "tombstoned"
+)
+
+// MemoryIndexStateRepository is an optional extension for repositories that
+// persist index job state alongside memory metadata.
+type MemoryIndexStateRepository interface {
+	MarkIndexState(
+		ctx context.Context,
+		tenantID string,
+		memoryIDs []string,
+		op MemoryIndexOperation,
+		state MemoryIndexState,
+		lastError string,
+	) error
 }
 
 type EntityFactRepository interface {
