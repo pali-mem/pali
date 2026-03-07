@@ -21,6 +21,15 @@ Production command pattern:
 - `pali mcp run -config /etc/pali/pali.yaml`
 - This is the stable command to reference from MCP hosts (Claude Desktop/Cursor/etc.).
 
+## Built-In Agent Guidance
+
+Pali exposes memory-first guidance through standard MCP surfaces so hosts can adopt defaults without per-user instruction files:
+
+- `initialize.instructions`: tells agents to call `memory_search` before history-dependent answers and write durable facts with `memory_store`/`memory_store_preference`.
+- prompt `pali_memory_autopilot`: a reusable prompt snippet hosts can inject automatically for memory-first behavior.
+
+Note: this improves default tool usage, but MCP servers cannot force tool calls when the host ignores prompts/instructions.
+
 ## Tool Catalog (11 common tools)
 
 1. `memory_store`
@@ -54,6 +63,8 @@ Tenant-aware tools (`memory_*`, `tenant_stats`, `tenant_exists`) resolve tenant 
 
 Pali follows the standard MCP flow:
 - `initialize`
+- `prompts/list`
+- `prompts/get`
 - `tools/list`
 - `tools/call`
 

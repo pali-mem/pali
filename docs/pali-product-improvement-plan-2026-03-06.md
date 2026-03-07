@@ -78,7 +78,8 @@ If repo write succeeds and vector upsert/delete fails, Pali can drift into a par
 - Go-side cosine on every row
 - full sort of all candidates
 
-Note: `sqlitevec` already has `UpsertBatch` (transactional batch insert). The missing `UpsertBatch` is in `qdrant/store.go`, which only has `Upsert`, `Delete`, and `Search`.
+Note: `sqlitevec` already has `UpsertBatch` (transactional batch insert).
+Update: `qdrant/store.go` now implements `UpsertBatch`; remaining work is benchmark parity and repeated-run variance control.
 
 This is not sqlite-vec ANN. It is JSON scan plus Go math. That means current "vector backend" comparisons are mixing product quality issues with an intentionally weak search primitive.
 
@@ -174,16 +175,38 @@ There is no update, forget, supersede, history, audit, pin, or reindex control p
 
 ### 11. Benchmarks are still easy to game in the default path
 
-`scripts/benchmark.sh` only benchmarks sqlite and auto-generates search queries from the first 3 words:
+`scripts/benchmark.sh` previously only benchmarked sqlite and auto-generated search queries from the first 3 words:
 
 - `scripts/benchmark.sh:145-148` (sqlite-only guard: `if [[ "$BACKEND" != "sqlite" ]]` confirmed)
 - `scripts/benchmark.sh:472` (first-3-word query: `awk '{print $1, $2, $3}'` confirmed at line 472)
 
-`scripts/retrieval_quality.sh` also only supports sqlite:
+`scripts/retrieval_quality.sh` previously only supported sqlite:
 
 - `scripts/retrieval_quality.sh:172-174` (same guard: `if [[ "$BACKEND" != "sqlite" ]]` confirmed)
 
-That makes the default scorecard too weak for backend or product claims.
+Update (implemented): both scripts now support `sqlite` and `qdrant`, and `benchmark.sh` no longer relies on first-3-word prefix queries as the primary workload.
+
+### 12. Parser evidence can be written but not credited if eval mapping drifts
+
+A concrete failure mode observed in LOCOMO paperlite runs:
+
+- parser/structured rows were written (`source` suffix like `:run_<stamp>:parser`)
+- retrieval returned those rows
+- but eval grouping only mapped `source LIKE 'eval_row_%:run_<stamp>'` (no trailing `%`)
+
+That under-counts expected evidence groups and can hide or distort the impact of parser work.
+
+Fix (implemented):
+
+- `research/eval_locomo_f1_bleu.py` now maps with `source LIKE 'eval_row_%:run_<stamp>%'` so parser-suffixed rows are included.
+
+Operational rule:
+
+- treat runner/evaluator flag drift as a product risk
+- benchmark runner scripts must pass critical retrieval/context flags explicitly (not rely on silent defaults)
+- after parser-enabled runs, validate index-map expansion (`avg ids/group > 1` on parser-active fixtures)
+- default paperlite iteration budget should be capped (`120-150` queries), not full eval-set count, unless explicitly running a final gate
+- evaluator code must not contain dataset-specific question or answer phrase heuristics; no LOCOMO-specific rewrites/bonuses in scoring or extraction
 
 ## Priority Plan
 
@@ -237,6 +260,11 @@ Stop gates:
 - [ ] Open-domain F1 `>= 7.0`.
 - [ ] Multi-hop F1 `>= 8.0`.
 - [ ] Temporal F1 does not regress below `35.0`.
+
+Completion policy for #1:
+
+- [ ] #1 is not treated as complete until all Gate C thresholds above are passing on the locked 120-query run profile.
+- [ ] #1 completion requires canonical-memory behavior plus retrieval correctness fixes listed in #4 and #5 where they directly affect canonical-unit recall.
 
 ### [ ] 2. Make writes and deletes transactional from Pali's point of view, sync-first
 
@@ -342,6 +370,12 @@ What to do:
 - Add adaptive candidate expansion for low-confidence queries.
 - Return debug ranking factors for inspection.
 
+Implementation progress (2026-03-07):
+
+- [x] Carry explicit candidate features through ranking (dense score/rank, lexical score/rank, RRF, entity-slot signal, route fit, freshness, importance).
+- [x] Apply kind/tier filters before and during candidate generation paths (repo filter-aware search + dense metadata filtering).
+- [x] Return debug ranking factors for inspection via `POST /v1/memory/search` with `debug=true`.
+
 Files to track:
 
 - `internal/core/memory/search.go`
@@ -382,6 +416,12 @@ What to do:
   - graph/entity expansion
   - hybrid vector fallback
 - Make `debug=true` show route, planner output, and fallback chain.
+
+Implementation progress (2026-03-07):
+
+- [x] Add a typed planner output (`intent`, `confidence`, `entities`, `relations`, `time_constraints`, `required_evidence`, `fallback_path`).
+- [x] Route into direct/temporal/aggregation/graph-expansion/hybrid fallback intents from one planner entrypoint.
+- [x] Expose planner and fallback chain through API debug payload (`debug=true`).
 
 Files to track:
 
@@ -427,8 +467,8 @@ Files to track:
 
 Stop gates:
 
-- [ ] Backend benchmark scripts support `sqlite` and `qdrant` with the same workload.
-- [ ] `internal/vectorstore/qdrant/store.go` implements `UpsertBatch`.
+- [x] Backend benchmark scripts support `sqlite` and `qdrant` with the same workload.
+- [x] `internal/vectorstore/qdrant/store.go` implements `UpsertBatch`.
 - [ ] 3 repeated runs on the same machine stay within `10%` variance for search p95.
 - [ ] Any local vector-storage rewrite preserves or improves curated retrieval quality.
 
@@ -495,8 +535,8 @@ Files to track:
 
 Stop gates:
 
-- [ ] `scripts/benchmark.sh` no longer uses first-3-word queries as its primary search workload.
-- [ ] `scripts/retrieval_quality.sh` supports non-sqlite backends.
+- [x] `scripts/benchmark.sh` no longer uses first-3-word queries as its primary search workload.
+- [x] `scripts/retrieval_quality.sh` supports non-sqlite backends.
 - [ ] Every retrieval/store change updates the curated scorecard and the paperlite mini scorecard.
 - [ ] Backend/model changes are blocked until paperlite mini overall F1 is `>= 20.0`.
 
@@ -691,9 +731,9 @@ scripts/retrieval_quality.sh \
 
 ```bash
 research/run_locomo_paper_aligned_lite.sh \
-  --num-convs 5 \
+  --num-convs 10 \
   --top-k 60 \
-  --max-queries 200 \
+  --max-queries 120 \
   --answer-mode hybrid \
   --answer-model qwen2.5:7b \
   --parser-provider ollama \
@@ -701,6 +741,14 @@ research/run_locomo_paper_aligned_lite.sh \
   --embed-model all-minilm \
   --reuse-cache
 ```
+
+### Locked run profiles (Windows + Ollama)
+
+Use these as the only comparison profiles for iteration. Do not change them between runs unless intentionally creating a new baseline.
+
+- [ ] Main verification run (full): `--num-convs 10 --max-queries 120`, provider `ollama`, answer mode `hybrid`, parser enabled. Target runtime: ~5 minutes on the same Windows machine.
+- [ ] Lite iteration run (fast): lexical-only answer path with `--num-convs 10 --max-queries 120`, same fixture/eval pair and same retrieval flags, used only for quick regression checks.
+- [ ] Promotion decisions must use the main verification run profile; lite runs are directional only.
 
 Operational rules:
 
@@ -752,10 +800,12 @@ Use this as the "where do we touch code first?" map.
 - [ ] PR 2: schema expansion for canonical memories, versions, outbox, indexing state
 - [ ] PR 3: canonical parser/store path replacing legacy dual-write behavior
 - [ ] PR 4: tiering, touch-control, and eval determinism cleanup
-- [ ] PR 5: feature-based hybrid reranker and filter-aware retrieval
-- [ ] PR 6: query planner and typed retrieval routes
-- [ ] PR 7: lifecycle APIs and MCP tools
-- [ ] PR 8: SQLite baseline cleanup and Qdrant batch parity
+- [x] PR 5: hybrid fusion fix to carry real lexical score features through reranking (not only RRF-derived lexical signal).
+- [x] PR 6: apply kind/tier filters before candidate generation and fix `min_score` behavior on entity-fact routes.
+- [ ] PR 7: run step-2 transactional indexing hardening in parallel with retrieval work (do not block retrieval fixes on full async indexing).
+- [ ] PR 8: add one multi-hop-specific retrieval path (IRCoT-style iterative retrieval) before additional model/backend churn.
+- [ ] PR 9: lifecycle APIs and MCP tools
+- [ ] PR 10: SQLite baseline cleanup and Qdrant batch parity
 
 If this order is followed, Pali improves where it is actually weak today:
 

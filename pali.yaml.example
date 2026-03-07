@@ -3,13 +3,11 @@ server:
   port: 8080
 
 vector_backend: sqlite
-default_tenant_id: default
 importance_scorer: heuristic # heuristic | ollama
 structured_memory:
   enabled: false
   dual_write_observations: false
   dual_write_events: false
-  query_routing_enabled: false
   max_observations: 3
 
 retrieval:
@@ -48,7 +46,7 @@ qdrant:
 
 embedding:
   provider: ollama # ollama | onnx | lexical (mock alias supported)
-  fallback_provider: lexical
+  fallback_provider: "" # optional explicit fallback (e.g. lexical)
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: mxbai-embed-large
   ollama_timeout_seconds: 10
