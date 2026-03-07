@@ -41,7 +41,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 		return nil, nil, err
 	}
 
-	embedder, err := embeddings.Build(cfg)
+	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
 	if err != nil {
 		_ = db.Close()
 		return nil, nil, err
@@ -61,7 +61,6 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 			Enabled:               cfg.StructuredMemory.Enabled,
 			DualWriteObservations: cfg.StructuredMemory.DualWriteObservations,
 			DualWriteEvents:       cfg.StructuredMemory.DualWriteEvents,
-			QueryRoutingEnabled:   cfg.StructuredMemory.QueryRoutingEnabled,
 			MaxObservations:       cfg.StructuredMemory.MaxObservations,
 		},
 		corememory.RankingOptions{
@@ -97,7 +96,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	serviceOptions = append(serviceOptions, corememory.WithEntityFactRepository(entityFactRepo))
 	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
 	tenantService := coretenant.NewService(tenantRepo)
-	logStartup(cfg, db)
+	logStartup(cfg, db, embedMeta)
 
 	r := gin.New()
 	r.Use(apimiddleware.Logging())
@@ -145,15 +144,25 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	return r, cleanup, nil
 }
 
-func logStartup(cfg config.Config, db *sql.DB) {
+func logStartup(cfg config.Config, db *sql.DB, embedMeta embeddings.BuildMetadata) {
 	logger := log.Default()
 	logger.Printf("[pali-startup] pid=%d port=%d db=%s", os.Getpid(), cfg.Server.Port, cfg.Database.SQLiteDSN)
-	logger.Printf(
-		"[pali-startup] embedder=%s model=%s provider=%s",
-		cfg.Embedding.Provider,
-		cfg.Embedding.OllamaModel,
-		cfg.Embedding.OllamaBaseURL,
-	)
+	if embedMeta.UsedFallback {
+		logger.Printf(
+			"[pali-startup] embedder=%s (fallback from %s) model=%s provider=%s",
+			embedMeta.ResolvedProvider,
+			embedMeta.PrimaryProvider,
+			cfg.Embedding.OllamaModel,
+			cfg.Embedding.OllamaBaseURL,
+		)
+	} else {
+		logger.Printf(
+			"[pali-startup] embedder=%s model=%s provider=%s",
+			embedMeta.ResolvedProvider,
+			cfg.Embedding.OllamaModel,
+			cfg.Embedding.OllamaBaseURL,
+		)
+	}
 	var tenantCount int64
 	var memoryCount int64
 	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tenants").Scan(&tenantCount); err != nil {

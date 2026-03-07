@@ -111,12 +111,21 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 		return
 	}
 
-	items, err := h.service.SearchWithFilters(c.Request.Context(), req.TenantID, req.Query, req.TopK, corememory.SearchOptions{
+	searchOpts := corememory.SearchOptions{
 		MinScore:     req.MinScore,
 		Tiers:        searchTiers,
 		Kinds:        searchKinds,
 		DisableTouch: req.DisableTouch,
-	})
+	}
+	var (
+		items []domain.Memory
+		debug *corememory.SearchDebugInfo
+	)
+	if req.Debug {
+		items, debug, err = h.service.SearchWithFiltersDebug(c.Request.Context(), req.TenantID, req.Query, req.TopK, searchOpts)
+	} else {
+		items, err = h.service.SearchWithFilters(c.Request.Context(), req.TenantID, req.Query, req.TopK, searchOpts)
+	}
 	if err != nil {
 		writeError(c, err)
 		return
@@ -141,7 +150,33 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, dto.SearchMemoryResponse{Items: out})
+	response := dto.SearchMemoryResponse{Items: out}
+	if debug != nil {
+		response.Debug = &dto.SearchMemoryDebugDTO{
+			Plan: dto.SearchPlanDebugDTO{
+				Intent:           debug.Plan.Intent,
+				Confidence:       debug.Plan.Confidence,
+				Entities:         append([]string{}, debug.Plan.Entities...),
+				Relations:        append([]string{}, debug.Plan.Relations...),
+				TimeConstraints:  append([]string{}, debug.Plan.TimeConstraints...),
+				RequiredEvidence: debug.Plan.RequiredEvidence,
+				FallbackPath:     append([]string{}, debug.Plan.FallbackPath...),
+			},
+		}
+		for _, factor := range debug.Ranking {
+			response.Debug.Ranking = append(response.Debug.Ranking, dto.SearchRankingDebugDTO{
+				Rank:         factor.Rank,
+				MemoryID:     factor.MemoryID,
+				Kind:         factor.Kind,
+				Tier:         factor.Tier,
+				LexicalScore: factor.LexicalScore,
+				QueryOverlap: factor.QueryOverlap,
+				RouteFit:     factor.RouteFit,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *MemoryHandler) Delete(c *gin.Context) {

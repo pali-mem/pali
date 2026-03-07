@@ -24,6 +24,7 @@ type SearchMemoryRequest struct {
 	Tiers        []string `json:"tiers"`
 	Kinds        []string `json:"kinds,omitempty"`
 	DisableTouch bool     `json:"disable_touch,omitempty"`
+	Debug        bool     `json:"debug,omitempty"`
 }
 
 type StoreMemoryResponse struct {
@@ -52,5 +53,31 @@ type MemoryResponse struct {
 }
 
 type SearchMemoryResponse struct {
-	Items []MemoryResponse `json:"items"`
+	Items []MemoryResponse      `json:"items"`
+	Debug *SearchMemoryDebugDTO `json:"debug,omitempty"`
+}
+
+type SearchMemoryDebugDTO struct {
+	Plan    SearchPlanDebugDTO      `json:"plan"`
+	Ranking []SearchRankingDebugDTO `json:"ranking,omitempty"`
+}
+
+type SearchPlanDebugDTO struct {
+	Intent           string   `json:"intent"`
+	Confidence       float64  `json:"confidence"`
+	Entities         []string `json:"entities,omitempty"`
+	Relations        []string `json:"relations,omitempty"`
+	TimeConstraints  []string `json:"time_constraints,omitempty"`
+	RequiredEvidence string   `json:"required_evidence,omitempty"`
+	FallbackPath     []string `json:"fallback_path,omitempty"`
+}
+
+type SearchRankingDebugDTO struct {
+	Rank         int     `json:"rank"`
+	MemoryID     string  `json:"memory_id"`
+	Kind         string  `json:"kind"`
+	Tier         string  `json:"tier"`
+	LexicalScore float64 `json:"lexical_score"`
+	QueryOverlap float64 `json:"query_overlap"`
+	RouteFit     float64 `json:"route_fit"`
 }
