@@ -8,7 +8,7 @@
 ## 1. Developer Experience (Highest Priority)
 
 ### Python SDK
-- [ ] Create `python/` directory with a pip-installable package (`pali-client`)
+- [ ] Create a new project inside pali-mem org, and create a pip-installable package (`pali-client`) in repo pali-python.
 - [ ] Implement `PaliClient` — thin HTTP wrapper over the existing REST API (store, search, delete, tenants)
 - [ ] Implement `PaliMiddleware` — wraps any OpenAI-compatible LLM client: search before call → inject context → call LLM → store new facts after
 - [ ] Publish to PyPI as `pali-client`
