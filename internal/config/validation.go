@@ -86,6 +86,30 @@ func Validate(cfg Config) error {
 	if cfg.Auth.Enabled && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
 		return fmt.Errorf("auth.jwt_secret is required when auth.enabled=true")
 	}
+	if cfg.Postprocess.PollIntervalMS <= 0 {
+		return fmt.Errorf("postprocess.poll_interval_ms must be > 0")
+	}
+	if cfg.Postprocess.BatchSize <= 0 {
+		return fmt.Errorf("postprocess.batch_size must be > 0")
+	}
+	if cfg.Postprocess.WorkerCount <= 0 {
+		return fmt.Errorf("postprocess.worker_count must be > 0")
+	}
+	if cfg.Postprocess.LeaseMS <= 0 {
+		return fmt.Errorf("postprocess.lease_ms must be > 0")
+	}
+	if cfg.Postprocess.MaxAttempts <= 0 {
+		return fmt.Errorf("postprocess.max_attempts must be > 0")
+	}
+	if cfg.Postprocess.RetryBaseMS <= 0 {
+		return fmt.Errorf("postprocess.retry_base_ms must be > 0")
+	}
+	if cfg.Postprocess.RetryMaxMS <= 0 {
+		return fmt.Errorf("postprocess.retry_max_ms must be > 0")
+	}
+	if cfg.Postprocess.RetryBaseMS > cfg.Postprocess.RetryMaxMS {
+		return fmt.Errorf("postprocess.retry_base_ms must be <= postprocess.retry_max_ms")
+	}
 	if cfg.StructuredMemory.MaxObservations < 0 {
 		return fmt.Errorf("structured_memory.max_observations must be >= 0")
 	}

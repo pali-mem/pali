@@ -133,4 +133,81 @@ WHERE tenant_id = ?
   AND memory_id = ?
   AND op = ?
 `
+
+	UpsertMemoryPostprocessJobSQL = `
+INSERT INTO memory_postprocess_jobs(id, ingest_id, tenant_id, memory_id, job_type, status, attempts, max_attempts, available_at, lease_owner, leased_until, last_error, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(tenant_id, memory_id, job_type) DO UPDATE SET
+	ingest_id = excluded.ingest_id,
+	status = 'queued',
+	attempts = 0,
+	max_attempts = excluded.max_attempts,
+	available_at = excluded.available_at,
+	lease_owner = '',
+	leased_until = '',
+	last_error = '',
+	updated_at = excluded.updated_at
+`
+
+	GetMemoryPostprocessJobIDSQL = `
+SELECT id
+FROM memory_postprocess_jobs
+WHERE tenant_id = ?
+  AND memory_id = ?
+  AND job_type = ?
+LIMIT 1
+`
+
+	GetMemoryPostprocessJobByIDSQL = `
+SELECT id, ingest_id, tenant_id, memory_id, job_type, status, attempts, max_attempts, available_at, lease_owner, leased_until, last_error, created_at, updated_at
+FROM memory_postprocess_jobs
+WHERE id = ?
+LIMIT 1
+`
+
+	ListMemoryPostprocessJobsBaseSQL = `
+SELECT id, ingest_id, tenant_id, memory_id, job_type, status, attempts, max_attempts, available_at, lease_owner, leased_until, last_error, created_at, updated_at
+FROM memory_postprocess_jobs
+`
+
+	ListMemoryPostprocessJobIDsForClaimSQL = `
+SELECT id
+FROM memory_postprocess_jobs
+WHERE available_at <= ?
+  AND status IN ('queued', 'failed')
+  AND (leased_until = '' OR leased_until <= ?)
+ORDER BY available_at ASC, created_at ASC
+LIMIT ?
+`
+
+	MarkMemoryPostprocessJobClaimedSQL = `
+UPDATE memory_postprocess_jobs
+SET status = 'running',
+	lease_owner = ?,
+	leased_until = ?,
+	updated_at = ?
+WHERE id = ?
+`
+
+	MarkMemoryPostprocessJobSucceededSQL = `
+UPDATE memory_postprocess_jobs
+SET status = 'succeeded',
+	last_error = '',
+	lease_owner = '',
+	leased_until = '',
+	updated_at = ?
+WHERE id = ?
+`
+
+	MarkMemoryPostprocessJobFailedSQL = `
+UPDATE memory_postprocess_jobs
+SET status = ?,
+	attempts = ?,
+	available_at = ?,
+	last_error = ?,
+	lease_owner = '',
+	leased_until = '',
+	updated_at = ?
+WHERE id = ?
+`
 )

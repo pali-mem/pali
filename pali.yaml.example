@@ -4,6 +4,15 @@ server:
 
 vector_backend: sqlite
 importance_scorer: heuristic # heuristic | ollama
+postprocess:
+  enabled: true
+  poll_interval_ms: 250
+  batch_size: 32
+  worker_count: 2
+  lease_ms: 30000
+  max_attempts: 5
+  retry_base_ms: 500
+  retry_max_ms: 60000
 structured_memory:
   enabled: false
   dual_write_observations: false

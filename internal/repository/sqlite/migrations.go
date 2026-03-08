@@ -109,6 +109,25 @@ var migrationStatements = []string{
 	);`,
 	`CREATE INDEX IF NOT EXISTS idx_memory_index_jobs_state ON memory_index_jobs(state, updated_at DESC);`,
 	`CREATE INDEX IF NOT EXISTS idx_memory_index_jobs_tenant_memory ON memory_index_jobs(tenant_id, memory_id, op);`,
+	`CREATE TABLE IF NOT EXISTS memory_postprocess_jobs (
+		id TEXT PRIMARY KEY,
+		ingest_id TEXT NOT NULL DEFAULT '',
+		tenant_id TEXT NOT NULL,
+		memory_id TEXT NOT NULL,
+		job_type TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'queued',
+		attempts INTEGER NOT NULL DEFAULT 0,
+		max_attempts INTEGER NOT NULL DEFAULT 5,
+		available_at TEXT NOT NULL,
+		lease_owner TEXT NOT NULL DEFAULT '',
+		leased_until TEXT NOT NULL DEFAULT '',
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE(tenant_id, memory_id, job_type)
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_memory_postprocess_jobs_poll ON memory_postprocess_jobs(status, available_at ASC, updated_at DESC);`,
+	`CREATE INDEX IF NOT EXISTS idx_memory_postprocess_jobs_tenant ON memory_postprocess_jobs(tenant_id, updated_at DESC);`,
 }
 
 func RunMigrations(ctx context.Context, db *sql.DB) error {

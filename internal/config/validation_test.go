@@ -136,3 +136,24 @@ func TestValidate_ParserOptions(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "parser.dedupe_threshold")
 }
+
+func TestValidate_PostprocessOptions(t *testing.T) {
+	cfg := Defaults()
+	cfg.Postprocess.PollIntervalMS = 0
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "postprocess.poll_interval_ms")
+
+	cfg = Defaults()
+	cfg.Postprocess.WorkerCount = 0
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "postprocess.worker_count")
+
+	cfg = Defaults()
+	cfg.Postprocess.RetryBaseMS = 70000
+	cfg.Postprocess.RetryMaxMS = 60000
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "postprocess.retry_base_ms")
+}

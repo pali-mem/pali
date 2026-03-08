@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestRouter(t *testing.T) *gin.Engine {
@@ -246,4 +246,80 @@ func TestMemorySearchFilters(t *testing.T) {
 	invalidMinScoreW := httptest.NewRecorder()
 	r.ServeHTTP(invalidMinScoreW, invalidMinScoreReq)
 	require.Equal(t, http.StatusBadRequest, invalidMinScoreW.Code)
+}
+
+func TestAsyncIngestAndJobEndpoints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := newTestRouter(t)
+
+	createTenantReq := httptest.NewRequest(http.MethodPost, "/v1/tenants", bytes.NewBufferString(`{"id":"tenant_async_api","name":"Tenant Async API"}`))
+	createTenantReq.Header.Set("Content-Type", "application/json")
+	createTenantW := httptest.NewRecorder()
+	r.ServeHTTP(createTenantW, createTenantReq)
+	require.Equal(t, http.StatusCreated, createTenantW.Code)
+
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/memory/ingest", bytes.NewBufferString(`{"tenant_id":"tenant_async_api","content":"I like to run every morning.","tier":"auto","source":"api_ingest"}`))
+	ingestReq.Header.Set("Content-Type", "application/json")
+	ingestW := httptest.NewRecorder()
+	r.ServeHTTP(ingestW, ingestReq)
+	require.Equal(t, http.StatusAccepted, ingestW.Code)
+
+	var ingestResp struct {
+		IngestID  string   `json:"ingest_id"`
+		MemoryIDs []string `json:"memory_ids"`
+		JobIDs    []string `json:"job_ids"`
+	}
+	require.NoError(t, json.Unmarshal(ingestW.Body.Bytes(), &ingestResp))
+	require.NotEmpty(t, ingestResp.IngestID)
+	require.Len(t, ingestResp.MemoryIDs, 1)
+	require.NotEmpty(t, ingestResp.JobIDs)
+
+	searchReq := httptest.NewRequest(http.MethodPost, "/v1/memory/search", bytes.NewBufferString(`{"tenant_id":"tenant_async_api","query":"run every morning","top_k":5}`))
+	searchReq.Header.Set("Content-Type", "application/json")
+	searchW := httptest.NewRecorder()
+	r.ServeHTTP(searchW, searchReq)
+	require.Equal(t, http.StatusOK, searchW.Code)
+	var searchResp struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(searchW.Body.Bytes(), &searchResp))
+	found := false
+	for _, item := range searchResp.Items {
+		if item.ID == ingestResp.MemoryIDs[0] {
+			found = true
+			break
+		}
+	}
+	require.True(t, found)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/memory/jobs?tenant_id=tenant_async_api&limit=20", nil)
+	listW := httptest.NewRecorder()
+	r.ServeHTTP(listW, listReq)
+	require.Equal(t, http.StatusOK, listW.Code)
+	var listResp struct {
+		Items []struct {
+			ID       string `json:"id"`
+			TenantID string `json:"tenant_id"`
+			Type     string `json:"type"`
+			Status   string `json:"status"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(listW.Body.Bytes(), &listResp))
+	require.NotEmpty(t, listResp.Items)
+	require.Equal(t, "tenant_async_api", listResp.Items[0].TenantID)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/memory/jobs/"+listResp.Items[0].ID, nil)
+	getW := httptest.NewRecorder()
+	r.ServeHTTP(getW, getReq)
+	require.Equal(t, http.StatusOK, getW.Code)
+
+	var getResp struct {
+		ID       string `json:"id"`
+		TenantID string `json:"tenant_id"`
+	}
+	require.NoError(t, json.Unmarshal(getW.Body.Bytes(), &getResp))
+	require.Equal(t, listResp.Items[0].ID, getResp.ID)
+	require.Equal(t, "tenant_async_api", getResp.TenantID)
 }

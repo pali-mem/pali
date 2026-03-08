@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/pali-mem/pali/internal/api"
 	"github.com/pali-mem/pali/internal/config"
@@ -138,6 +139,24 @@ func runMCP(cfg config.Config) {
 	}
 	serviceOptions = append(serviceOptions, corememory.WithEntityFactRepository(entityFactRepo))
 	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
+	stopPostprocess := func() {}
+	if cfg.Postprocess.Enabled {
+		stop, err := memoryService.StartPostprocessWorkers(context.Background(), corememory.PostprocessWorkerOptions{
+			Enabled:      cfg.Postprocess.Enabled,
+			PollInterval: time.Duration(cfg.Postprocess.PollIntervalMS) * time.Millisecond,
+			BatchSize:    cfg.Postprocess.BatchSize,
+			WorkerCount:  cfg.Postprocess.WorkerCount,
+			Lease:        time.Duration(cfg.Postprocess.LeaseMS) * time.Millisecond,
+			MaxAttempts:  cfg.Postprocess.MaxAttempts,
+			RetryBase:    time.Duration(cfg.Postprocess.RetryBaseMS) * time.Millisecond,
+			RetryMax:     time.Duration(cfg.Postprocess.RetryMaxMS) * time.Millisecond,
+		})
+		if err != nil {
+			log.Fatalf("start postprocess workers: %v", err)
+		}
+		stopPostprocess = stop
+	}
+	defer stopPostprocess()
 	tenantService := coretenant.NewService(tenantRepo)
 
 	server, err := palimcp.NewServer(palimcp.Services{

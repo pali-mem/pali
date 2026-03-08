@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pali-mem/pali/internal/api/handlers"
@@ -30,7 +31,11 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open sqlite for router: %w", err)
 	}
-	cleanup := func() error { return db.Close() }
+	stopPostprocess := func() {}
+	cleanup := func() error {
+		stopPostprocess()
+		return db.Close()
+	}
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
@@ -95,6 +100,23 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	}
 	serviceOptions = append(serviceOptions, corememory.WithEntityFactRepository(entityFactRepo))
 	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
+	if cfg.Postprocess.Enabled {
+		stop, err := memoryService.StartPostprocessWorkers(context.Background(), corememory.PostprocessWorkerOptions{
+			Enabled:      cfg.Postprocess.Enabled,
+			PollInterval: time.Duration(cfg.Postprocess.PollIntervalMS) * time.Millisecond,
+			BatchSize:    cfg.Postprocess.BatchSize,
+			WorkerCount:  cfg.Postprocess.WorkerCount,
+			Lease:        time.Duration(cfg.Postprocess.LeaseMS) * time.Millisecond,
+			MaxAttempts:  cfg.Postprocess.MaxAttempts,
+			RetryBase:    time.Duration(cfg.Postprocess.RetryBaseMS) * time.Millisecond,
+			RetryMax:     time.Duration(cfg.Postprocess.RetryMaxMS) * time.Millisecond,
+		})
+		if err != nil {
+			_ = db.Close()
+			return nil, nil, fmt.Errorf("start postprocess workers: %w", err)
+		}
+		stopPostprocess = stop
+	}
 	tenantService := coretenant.NewService(tenantRepo)
 	logStartup(cfg, db, embedMeta)
 
@@ -104,7 +126,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	r.Use(apimiddleware.CORS())
 
 	health := handlers.NewHealthHandler()
-	memory := handlers.NewMemoryHandler(memoryService)
+	memory := handlers.NewMemoryHandler(memoryService, cfg.Postprocess.MaxAttempts)
 	tenant := handlers.NewTenantHandler(tenantService)
 	dashboardHandlers := dashboard.NewHandlers(memoryService, tenantService)
 
@@ -134,7 +156,11 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	{
 		v1.POST("/memory", memory.Store)
 		v1.POST("/memory/batch", memory.StoreBatch)
+		v1.POST("/memory/ingest", memory.Ingest)
+		v1.POST("/memory/ingest/batch", memory.IngestBatch)
 		v1.POST("/memory/search", memory.Search)
+		v1.GET("/memory/jobs", memory.ListPostprocessJobs)
+		v1.GET("/memory/jobs/:id", memory.GetPostprocessJob)
 		v1.DELETE("/memory/:id", memory.Delete)
 
 		v1.POST("/tenants", tenant.Create)

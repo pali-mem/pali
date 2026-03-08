@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/domain"
 	"github.com/pali-mem/pali/test/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
@@ -264,4 +264,119 @@ func TestMemoryRepositoryIndexJobLifecycle(t *testing.T) {
 	))
 	deleteJob = readIndexJob(stored.ID, domain.MemoryIndexOperationDelete)
 	require.Equal(t, string(domain.MemoryIndexStateTombstoned), deleteJob.state)
+}
+
+func TestMemoryRepositoryStoreBatchAsyncIngestQueuesPostprocessJobs(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenantRepo := NewTenantRepository(db)
+	memRepo := NewMemoryRepository(db)
+	_, err = tenantRepo.Create(ctx, domain.Tenant{ID: "tenant_async", Name: "Tenant Async"})
+	require.NoError(t, err)
+
+	receipt, err := memRepo.StoreBatchAsyncIngest(ctx, []domain.MemoryAsyncIngestItem{
+		{
+			Memory: domain.Memory{
+				TenantID: "tenant_async",
+				Content:  "User likes tea and biking.",
+				Tier:     domain.MemoryTierSemantic,
+				Kind:     domain.MemoryKindRawTurn,
+			},
+			QueueVector: true,
+			QueueParser: true,
+		},
+	}, 7)
+	require.NoError(t, err)
+	require.NotEmpty(t, receipt.IngestID)
+	require.Len(t, receipt.MemoryIDs, 1)
+	require.Len(t, receipt.JobIDs, 2)
+
+	memories, err := memRepo.Search(ctx, "tenant_async", "", 10)
+	require.NoError(t, err)
+	require.Len(t, memories, 1)
+	require.Equal(t, receipt.MemoryIDs[0], memories[0].ID)
+
+	var queued int
+	err = db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(1)
+		 FROM memory_postprocess_jobs
+		 WHERE tenant_id = ? AND memory_id = ? AND status = 'queued'`,
+		"tenant_async",
+		receipt.MemoryIDs[0],
+	).Scan(&queued)
+	require.NoError(t, err)
+	require.Equal(t, 2, queued)
+}
+
+func TestMemoryRepositoryPostprocessClaimAndFailureLifecycle(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenantRepo := NewTenantRepository(db)
+	memRepo := NewMemoryRepository(db)
+	_, err = tenantRepo.Create(ctx, domain.Tenant{ID: "tenant_jobs", Name: "Tenant Jobs"})
+	require.NoError(t, err)
+
+	stored, err := memRepo.Store(ctx, domain.Memory{
+		TenantID: "tenant_jobs",
+		Content:  "User likes hiking.",
+	})
+	require.NoError(t, err)
+
+	enqueued, err := memRepo.EnqueuePostprocessJobs(ctx, []domain.MemoryPostprocessJobEnqueue{
+		{
+			IngestID:    "ing_1",
+			TenantID:    "tenant_jobs",
+			MemoryID:    stored.ID,
+			JobType:     domain.PostprocessJobTypeVectorUpsert,
+			MaxAttempts: 3,
+		},
+	}, 3)
+	require.NoError(t, err)
+	require.Len(t, enqueued, 1)
+
+	now := time.Now().UTC()
+	claimed, err := memRepo.ClaimPostprocessJobs(ctx, domain.MemoryPostprocessClaimOptions{
+		Owner:      "worker-1",
+		Limit:      5,
+		Now:        now,
+		LeaseUntil: now.Add(30 * time.Second),
+	})
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.Equal(t, enqueued[0].ID, claimed[0].ID)
+	require.Equal(t, domain.PostprocessJobStatusRunning, claimed[0].Status)
+	require.Equal(t, "worker-1", claimed[0].LeaseOwner)
+
+	err = memRepo.MarkPostprocessJobFailed(
+		ctx,
+		claimed[0].ID,
+		now.Add(1*time.Second),
+		now.Add(2*time.Second),
+		1,
+		domain.PostprocessJobStatusFailed,
+		"temporary failure",
+	)
+	require.NoError(t, err)
+
+	job, err := memRepo.GetPostprocessJob(ctx, claimed[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.Equal(t, domain.PostprocessJobStatusFailed, job.Status)
+	require.Equal(t, 1, job.Attempts)
+	require.Equal(t, "temporary failure", job.LastError)
+
+	err = memRepo.MarkPostprocessJobSucceeded(ctx, claimed[0].ID, now.Add(3*time.Second))
+	require.NoError(t, err)
+	job, err = memRepo.GetPostprocessJob(ctx, claimed[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.Equal(t, domain.PostprocessJobStatusSucceeded, job.Status)
+	require.Equal(t, "", job.LastError)
 }

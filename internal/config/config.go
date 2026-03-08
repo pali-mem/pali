@@ -12,6 +12,7 @@ type Config struct {
 	VectorBackend    string                 `yaml:"vector_backend"`
 	DefaultTenantID  string                 `yaml:"default_tenant_id"`
 	ImportanceScorer string                 `yaml:"importance_scorer"`
+	Postprocess      PostprocessConfig      `yaml:"postprocess"`
 	StructuredMemory StructuredMemoryConfig `yaml:"structured_memory"`
 	Retrieval        RetrievalConfig        `yaml:"retrieval"`
 	Parser           ParserConfig           `yaml:"parser"`
@@ -66,6 +67,17 @@ type StructuredMemoryConfig struct {
 	DualWriteObservations bool `yaml:"dual_write_observations"`
 	DualWriteEvents       bool `yaml:"dual_write_events"`
 	MaxObservations       int  `yaml:"max_observations"`
+}
+
+type PostprocessConfig struct {
+	Enabled        bool `yaml:"enabled"`
+	PollIntervalMS int  `yaml:"poll_interval_ms"`
+	BatchSize      int  `yaml:"batch_size"`
+	WorkerCount    int  `yaml:"worker_count"`
+	LeaseMS        int  `yaml:"lease_ms"`
+	MaxAttempts    int  `yaml:"max_attempts"`
+	RetryBaseMS    int  `yaml:"retry_base_ms"`
+	RetryMaxMS     int  `yaml:"retry_max_ms"`
 }
 
 type RetrievalConfig struct {

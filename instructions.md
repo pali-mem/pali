@@ -88,6 +88,15 @@ server:
 vector_backend: sqlite              # sqlite | qdrant | pgvector
 default_tenant_id: default
 importance_scorer: heuristic        # heuristic | ollama
+postprocess:
+  enabled: true
+  poll_interval_ms: 250
+  batch_size: 32
+  worker_count: 2
+  lease_ms: 30000
+  max_attempts: 5
+  retry_base_ms: 500
+  retry_max_ms: 60000
 
 database:
   sqlite_dsn: file:pali.db?cache=shared
@@ -124,6 +133,7 @@ Runtime notes:
 - `vector_backend=pgvector` currently returns fail-fast startup errors (adapter not implemented yet).
 - `importance_scorer=heuristic` is default.
 - `importance_scorer=ollama` calls local Ollama for score generation.
+- `postprocess.enabled=true` runs in-process workers for async ingest queue jobs (`parser_extract`, `vector_upsert`).
 - default embedding provider is `ollama` with `lexical` fallback.
 - ONNX embedding path is implemented and requires ONNX Runtime shared library.
 

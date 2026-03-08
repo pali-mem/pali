@@ -6,7 +6,11 @@ Base endpoints:
 - `GET /v1/tenants/:id/stats`
 - `POST /v1/memory`
 - `POST /v1/memory/batch`
+- `POST /v1/memory/ingest`
+- `POST /v1/memory/ingest/batch`
 - `POST /v1/memory/search`
+- `GET /v1/memory/jobs/:id`
+- `GET /v1/memory/jobs?tenant_id=...`
 - `DELETE /v1/memory/:id?tenant_id=...`
 
 Error mapping:
@@ -121,6 +125,67 @@ Request:
   "disable_touch": false
 }
 ```
+
+## Async ingest memory
+
+`POST /v1/memory/ingest`
+
+Request uses the same schema as `POST /v1/memory`.
+
+Response (`202`):
+```json
+{
+  "ingest_id": "ing_abcd1234",
+  "memory_ids": ["mem_abc123"],
+  "job_ids": ["ppj_1", "ppj_2"],
+  "accepted_at": "2026-03-08T10:00:00Z"
+}
+```
+
+## Async ingest memory batch
+
+`POST /v1/memory/ingest/batch`
+
+Request uses the same schema as `POST /v1/memory/batch`.
+
+Response (`202`):
+```json
+{
+  "ingest_id": "ing_abcd1234",
+  "memory_ids": ["mem_abc123", "mem_def456"],
+  "job_ids": ["ppj_1", "ppj_2", "ppj_3"],
+  "accepted_at": "2026-03-08T10:00:00Z"
+}
+```
+
+## Postprocess jobs
+
+`GET /v1/memory/jobs/:id`
+
+Response (`200`):
+```json
+{
+  "id": "ppj_1",
+  "ingest_id": "ing_abcd1234",
+  "tenant_id": "tenant_1",
+  "memory_id": "mem_abc123",
+  "type": "vector_upsert",
+  "status": "succeeded",
+  "attempts": 0,
+  "max_attempts": 5,
+  "available_at": "2026-03-08T10:00:00Z",
+  "created_at": "2026-03-08T10:00:00Z",
+  "updated_at": "2026-03-08T10:00:00Z"
+}
+```
+
+`GET /v1/memory/jobs?tenant_id=<tenant>&status=queued&type=vector_upsert&limit=50`
+
+Supported filters:
+- `tenant_id` (required)
+- `status`: `queued | running | succeeded | failed | dead_letter` (repeatable or CSV)
+- `type`: `parser_extract | vector_upsert` (repeatable or CSV)
+- `limit`: positive integer (max 200)
 
 Notes:
 - `top_k` defaults to `10` when `<= 0`

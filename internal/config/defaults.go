@@ -9,6 +9,16 @@ func Defaults() Config {
 		VectorBackend:    "sqlite",
 		DefaultTenantID:  "",
 		ImportanceScorer: "heuristic",
+		Postprocess: PostprocessConfig{
+			Enabled:        true,
+			PollIntervalMS: 250,
+			BatchSize:      32,
+			WorkerCount:    2,
+			LeaseMS:        30000,
+			MaxAttempts:    5,
+			RetryBaseMS:    500,
+			RetryMaxMS:     60000,
+		},
 		StructuredMemory: StructuredMemoryConfig{
 			Enabled:               false,
 			DualWriteObservations: false,

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -11,11 +12,19 @@ import (
 )
 
 type MemoryHandler struct {
-	service *corememory.Service
+	service               *corememory.Service
+	maxPostprocessAttempt int
 }
 
-func NewMemoryHandler(service *corememory.Service) *MemoryHandler {
-	return &MemoryHandler{service: service}
+func NewMemoryHandler(service *corememory.Service, maxPostprocessAttempts ...int) *MemoryHandler {
+	maxAttempts := 5
+	if len(maxPostprocessAttempts) > 0 && maxPostprocessAttempts[0] > 0 {
+		maxAttempts = maxPostprocessAttempts[0]
+	}
+	return &MemoryHandler{
+		service:               service,
+		maxPostprocessAttempt: maxAttempts,
+	}
 }
 
 func (h *MemoryHandler) Store(c *gin.Context) {
@@ -84,6 +93,73 @@ func (h *MemoryHandler) StoreBatch(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusCreated, dto.StoreMemoryBatchResponse{Items: out})
+}
+
+func (h *MemoryHandler) Ingest(c *gin.Context) {
+	var req dto.StoreMemoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	if err := enforceTenantAccess(c, req.TenantID); err != nil {
+		writeError(c, err)
+		return
+	}
+	storeInput, err := parseStoreInput(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	receipt, err := h.service.IngestAsync(c.Request.Context(), storeInput, h.maxPostprocessAttempt)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, dto.IngestMemoryResponse{
+		IngestID:   receipt.IngestID,
+		MemoryIDs:  append([]string{}, receipt.MemoryIDs...),
+		JobIDs:     append([]string{}, receipt.JobIDs...),
+		AcceptedAt: receipt.AcceptedAt,
+	})
+}
+
+func (h *MemoryHandler) IngestBatch(c *gin.Context) {
+	var req dto.StoreMemoryBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	if len(req.Items) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "items must not be empty"})
+		return
+	}
+
+	inputs := make([]corememory.StoreInput, 0, len(req.Items))
+	for _, item := range req.Items {
+		if err := enforceTenantAccess(c, item.TenantID); err != nil {
+			writeError(c, err)
+			return
+		}
+		storeInput, err := parseStoreInput(item)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		inputs = append(inputs, storeInput)
+	}
+
+	receipt, err := h.service.IngestBatchAsync(c.Request.Context(), inputs, h.maxPostprocessAttempt)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, dto.IngestMemoryResponse{
+		IngestID:   receipt.IngestID,
+		MemoryIDs:  append([]string{}, receipt.MemoryIDs...),
+		JobIDs:     append([]string{}, receipt.JobIDs...),
+		AcceptedAt: receipt.AcceptedAt,
+	})
 }
 
 func (h *MemoryHandler) Search(c *gin.Context) {
@@ -195,6 +271,64 @@ func (h *MemoryHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *MemoryHandler) GetPostprocessJob(c *gin.Context) {
+	jobID := c.Param("id")
+	job, err := h.service.GetPostprocessJob(c.Request.Context(), jobID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if err := enforceTenantAccess(c, job.TenantID); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toPostprocessJobResponse(*job))
+}
+
+func (h *MemoryHandler) ListPostprocessJobs(c *gin.Context) {
+	tenantID := strings.TrimSpace(c.Query("tenant_id"))
+	if err := enforceTenantAccess(c, tenantID); err != nil {
+		writeError(c, err)
+		return
+	}
+
+	filter := domain.MemoryPostprocessJobFilter{
+		TenantID: tenantID,
+		Limit:    50,
+	}
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		filter.Limit = limit
+	}
+
+	var err error
+	filter.Statuses, err = parsePostprocessStatuses(c.QueryArray("status"), c.Query("status"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	filter.Types, err = parsePostprocessTypes(c.QueryArray("type"), c.Query("type"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	jobs, err := h.service.ListPostprocessJobs(c.Request.Context(), filter)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	out := make([]dto.PostprocessJobResponse, 0, len(jobs))
+	for _, job := range jobs {
+		out = append(out, toPostprocessJobResponse(job))
+	}
+	c.JSON(http.StatusOK, dto.ListPostprocessJobsResponse{Items: out})
+}
+
 func parseTier(t string) (domain.MemoryTier, error) {
 	switch strings.ToLower(strings.TrimSpace(t)) {
 	case "", string(domain.MemoryTierAuto):
@@ -303,4 +437,105 @@ func parseStoreInput(req dto.StoreMemoryRequest) (corememory.StoreInput, error) 
 		Source:    req.Source,
 		CreatedBy: createdBy,
 	}, nil
+}
+
+func parsePostprocessStatuses(values []string, csv string) ([]domain.PostprocessJobStatus, error) {
+	raw := flattenCSVQuery(values, csv)
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	seen := make(map[domain.PostprocessJobStatus]struct{}, len(raw))
+	out := make([]domain.PostprocessJobStatus, 0, len(raw))
+	for _, value := range raw {
+		var status domain.PostprocessJobStatus
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case string(domain.PostprocessJobStatusQueued):
+			status = domain.PostprocessJobStatusQueued
+		case string(domain.PostprocessJobStatusRunning):
+			status = domain.PostprocessJobStatusRunning
+		case string(domain.PostprocessJobStatusSucceeded):
+			status = domain.PostprocessJobStatusSucceeded
+		case string(domain.PostprocessJobStatusFailed):
+			status = domain.PostprocessJobStatusFailed
+		case string(domain.PostprocessJobStatusDeadLetter):
+			status = domain.PostprocessJobStatusDeadLetter
+		default:
+			return nil, domain.ErrInvalidInput
+		}
+		if _, ok := seen[status]; ok {
+			continue
+		}
+		seen[status] = struct{}{}
+		out = append(out, status)
+	}
+	return out, nil
+}
+
+func parsePostprocessTypes(values []string, csv string) ([]domain.PostprocessJobType, error) {
+	raw := flattenCSVQuery(values, csv)
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	seen := make(map[domain.PostprocessJobType]struct{}, len(raw))
+	out := make([]domain.PostprocessJobType, 0, len(raw))
+	for _, value := range raw {
+		var jobType domain.PostprocessJobType
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case string(domain.PostprocessJobTypeParserExtract):
+			jobType = domain.PostprocessJobTypeParserExtract
+		case string(domain.PostprocessJobTypeVectorUpsert):
+			jobType = domain.PostprocessJobTypeVectorUpsert
+		default:
+			return nil, domain.ErrInvalidInput
+		}
+		if _, ok := seen[jobType]; ok {
+			continue
+		}
+		seen[jobType] = struct{}{}
+		out = append(out, jobType)
+	}
+	return out, nil
+}
+
+func flattenCSVQuery(values []string, csv string) []string {
+	out := make([]string, 0, len(values)+2)
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			out = append(out, part)
+		}
+	}
+	if strings.TrimSpace(csv) == "" {
+		return out
+	}
+	for _, part := range strings.Split(csv, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func toPostprocessJobResponse(job domain.MemoryPostprocessJob) dto.PostprocessJobResponse {
+	return dto.PostprocessJobResponse{
+		ID:          job.ID,
+		IngestID:    job.IngestID,
+		TenantID:    job.TenantID,
+		MemoryID:    job.MemoryID,
+		Type:        string(job.JobType),
+		Status:      string(job.Status),
+		Attempts:    job.Attempts,
+		MaxAttempts: job.MaxAttempts,
+		AvailableAt: job.AvailableAt,
+		LeaseOwner:  job.LeaseOwner,
+		LeasedUntil: job.LeasedUntil,
+		LastError:   job.LastError,
+		CreatedAt:   job.CreatedAt,
+		UpdatedAt:   job.UpdatedAt,
+	}
 }

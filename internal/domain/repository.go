@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type MemoryRepository interface {
 	Store(ctx context.Context, m Memory) (Memory, error)
@@ -71,6 +74,111 @@ type MemoryIndexStateRepository interface {
 		state MemoryIndexState,
 		lastError string,
 	) error
+}
+
+type PostprocessJobType string
+
+const (
+	PostprocessJobTypeParserExtract PostprocessJobType = "parser_extract"
+	PostprocessJobTypeVectorUpsert  PostprocessJobType = "vector_upsert"
+)
+
+type PostprocessJobStatus string
+
+const (
+	PostprocessJobStatusQueued     PostprocessJobStatus = "queued"
+	PostprocessJobStatusRunning    PostprocessJobStatus = "running"
+	PostprocessJobStatusSucceeded  PostprocessJobStatus = "succeeded"
+	PostprocessJobStatusFailed     PostprocessJobStatus = "failed"
+	PostprocessJobStatusDeadLetter PostprocessJobStatus = "dead_letter"
+)
+
+type MemoryPostprocessJob struct {
+	ID          string
+	IngestID    string
+	TenantID    string
+	MemoryID    string
+	JobType     PostprocessJobType
+	Status      PostprocessJobStatus
+	Attempts    int
+	MaxAttempts int
+	AvailableAt time.Time
+	LeaseOwner  string
+	LeasedUntil time.Time
+	LastError   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type MemoryPostprocessJobFilter struct {
+	TenantID string
+	Statuses []PostprocessJobStatus
+	Types    []PostprocessJobType
+	Limit    int
+}
+
+type MemoryPostprocessJobEnqueue struct {
+	IngestID    string
+	TenantID    string
+	MemoryID    string
+	JobType     PostprocessJobType
+	MaxAttempts int
+}
+
+type MemoryPostprocessClaimOptions struct {
+	Owner      string
+	Limit      int
+	Now        time.Time
+	LeaseUntil time.Time
+}
+
+type MemoryAsyncIngestItem struct {
+	Memory      Memory
+	QueueParser bool
+	QueueVector bool
+}
+
+type MemoryIngestReceipt struct {
+	IngestID   string
+	MemoryIDs  []string
+	JobIDs     []string
+	AcceptedAt time.Time
+}
+
+// MemoryAsyncIngestRepository is an optional extension for repositories that
+// can write memories and enqueue postprocess jobs atomically.
+type MemoryAsyncIngestRepository interface {
+	StoreBatchAsyncIngest(
+		ctx context.Context,
+		items []MemoryAsyncIngestItem,
+		maxAttempts int,
+	) (MemoryIngestReceipt, error)
+}
+
+// MemoryPostprocessJobRepository is an optional extension for repositories that
+// expose postprocess job queue operations.
+type MemoryPostprocessJobRepository interface {
+	EnqueuePostprocessJobs(
+		ctx context.Context,
+		jobs []MemoryPostprocessJobEnqueue,
+		defaultMaxAttempts int,
+	) ([]MemoryPostprocessJob, error)
+	ClaimPostprocessJobs(
+		ctx context.Context,
+		opts MemoryPostprocessClaimOptions,
+	) ([]MemoryPostprocessJob, error)
+	MarkPostprocessJobSucceeded(ctx context.Context, jobID string, now time.Time) error
+	MarkPostprocessJobFailed(
+		ctx context.Context,
+		jobID string,
+		now time.Time,
+		nextAvailable time.Time,
+		attempts int,
+		status PostprocessJobStatus,
+		lastError string,
+	) error
+	GetPostprocessJob(ctx context.Context, jobID string) (*MemoryPostprocessJob, error)
+	ListPostprocessJobs(ctx context.Context, filter MemoryPostprocessJobFilter) ([]MemoryPostprocessJob, error)
 }
 
 type EntityFactRepository interface {

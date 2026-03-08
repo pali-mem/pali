@@ -16,6 +16,13 @@ type StoreMemoryBatchRequest struct {
 	Items []StoreMemoryRequest `json:"items"`
 }
 
+type IngestMemoryResponse struct {
+	IngestID   string    `json:"ingest_id"`
+	MemoryIDs  []string  `json:"memory_ids"`
+	JobIDs     []string  `json:"job_ids"`
+	AcceptedAt time.Time `json:"accepted_at"`
+}
+
 type SearchMemoryRequest struct {
 	TenantID     string   `json:"tenant_id"`
 	Query        string   `json:"query"`
@@ -55,6 +62,27 @@ type MemoryResponse struct {
 type SearchMemoryResponse struct {
 	Items []MemoryResponse      `json:"items"`
 	Debug *SearchMemoryDebugDTO `json:"debug,omitempty"`
+}
+
+type PostprocessJobResponse struct {
+	ID          string    `json:"id"`
+	IngestID    string    `json:"ingest_id"`
+	TenantID    string    `json:"tenant_id"`
+	MemoryID    string    `json:"memory_id"`
+	Type        string    `json:"type"`
+	Status      string    `json:"status"`
+	Attempts    int       `json:"attempts"`
+	MaxAttempts int       `json:"max_attempts"`
+	AvailableAt time.Time `json:"available_at"`
+	LeaseOwner  string    `json:"lease_owner,omitempty"`
+	LeasedUntil time.Time `json:"leased_until,omitempty"`
+	LastError   string    `json:"last_error,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type ListPostprocessJobsResponse struct {
+	Items []PostprocessJobResponse `json:"items"`
 }
 
 type SearchMemoryDebugDTO struct {
