@@ -25,7 +25,7 @@ Example:
     --label "curated-eval-baseline" \
     --fixture test/fixtures/memories.json \
     --eval-set test/fixtures/retrieval_eval.curated.json \
-    --top-k 10 --max-queries 0 \
+    --top-k 5 --max-queries 0 \
     --embedding-provider ollama --embedding-model all-minilm
 EOF
 }

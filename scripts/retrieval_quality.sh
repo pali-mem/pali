@@ -8,7 +8,7 @@ FIXTURE="test/fixtures/memories.json"
 EVAL_SET=""
 BACKEND="sqlite"
 OUT_DIR="test/benchmarks/results"
-TOP_K=10
+TOP_K=5
 MAX_QUERIES=200
 QUERY_WORDS=3
 SAMPLE_SEED=42
@@ -37,7 +37,7 @@ Flags:
   --eval-set <path>        Optional labeled eval set JSON (query + expected ids/indexes)
   --backend <name>         sqlite | qdrant (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
-  --top-k <n>              top_k used in search requests (default: 10)
+  --top-k <n>              top_k used in search requests (default: 5)
   --max-queries <n>        Max number of eval queries to run (default: 200, <=0 means all)
   --query-words <n>        Auto-query first N words when --eval-set is not provided (default: 3)
   --sample-seed <n>        Deterministic sample seed when max-queries selects a subset (default: 42)
@@ -639,8 +639,9 @@ totals="$(awk -F'\t' '{h+=$5; rel+=$6} END{printf "%.0f|%.0f", h, rel}' "$tmp_me
 total_hits="${totals%%|*}"
 total_relevant="${totals#*|}"
 
-hit_rate_at_k="$(awk -F'\t' '{if($4>0) hit++} END{if(NR==0) print "0.000000"; else printf "%.6f", hit/NR}' "$tmp_metrics_tsv")"
+hit_rate_at_k="$(awk -F'\t' '{if($5>0) hit++} END{if(NR==0) print "0.000000"; else printf "%.6f", hit/NR}' "$tmp_metrics_tsv")"
 micro_recall_at_k="$(awk -v h="$total_hits" -v rel="$total_relevant" 'BEGIN{if(rel<=0) print "0.000000"; else printf "%.6f", h/rel}')"
+average_hits_at_k="$(awk -v h="$total_hits" -v ok="$eval_ok" 'BEGIN{if(ok<=0) print "0.000000"; else printf "%.6f", h/ok}')"
 
 result_json="$OUT_DIR/${run_id}_${BACKEND}_${fixture_name%.json}_retrieval_quality.json"
 summary_txt="$OUT_DIR/${run_id}_${BACKEND}_${fixture_name%.json}_retrieval_quality.summary.txt"
@@ -671,11 +672,13 @@ cat > "$result_json" <<EOF
   "eval_failures": $eval_fail,
   "metrics": {
     "top1_hit_rate": $top1_hit_rate,
+    "topk_accuracy": $hit_rate_at_k,
     "recall_at_k": $recall_at_k,
     "ndcg_at_k": $ndcg_at_k,
     "mrr": $mrr,
     "hit_rate_at_k": $hit_rate_at_k,
     "micro_recall_at_k": $micro_recall_at_k,
+    "average_hits_at_k": $average_hits_at_k,
     "total_hits_at_k": $total_hits,
     "total_relevant": $total_relevant
   }
@@ -713,11 +716,13 @@ Auto ambiguous : $auto_ambiguous_cases
 Retrieval Metrics
 -----------------
 Top1HitRate       : $top1_hit_rate
+Top${TOP_K}Accuracy   : $hit_rate_at_k
 Recall@$TOP_K     : $recall_at_k
 nDCG@$TOP_K       : $ndcg_at_k
 MRR               : $mrr
 HitRate@$TOP_K    : $hit_rate_at_k
 MicroRecall@$TOP_K: $micro_recall_at_k
+AvgHits@$TOP_K    : $average_hits_at_k
 Hits / Relevant   : $total_hits / $total_relevant
 
 Artifacts

@@ -12,6 +12,8 @@ Implemented and tested now:
 - `GET /dashboard` renders a simple web dashboard
 - `POST /v1/tenants` creates tenant records
 - `POST /v1/memory` / `POST /v1/memory/batch` / `POST /v1/memory/search` / `DELETE /v1/memory/:id` are wired to core+sqlite
+- `POST /v1/memory/ingest` / `POST /v1/memory/ingest/batch` provide async post-upload processing
+- `GET /v1/memory/jobs/:id` / `GET /v1/memory/jobs` expose postprocess job state
 - `GET /v1/tenants/:id/stats` returns tenant memory counts
 - Retrieval uses two-phase search: lexical + dense candidate fusion (RRF) followed by WMR reranking
 - `tier=auto` is resolved at store time to `episodic` or `semantic` using deterministic signals
@@ -150,6 +152,15 @@ Embedding provider selection (in `pali.yaml`):
 default_tenant_id: default
 vector_backend: sqlite
 importance_scorer: heuristic # heuristic | ollama
+postprocess:
+  enabled: true
+  poll_interval_ms: 250
+  batch_size: 32
+  worker_count: 2
+  lease_ms: 30000
+  max_attempts: 5
+  retry_base_ms: 500
+  retry_max_ms: 60000
 structured_memory:
   enabled: false
   dual_write_observations: false
@@ -340,11 +351,11 @@ Or run directly with flags:
 
 ```bash
 scripts/gen_fixtures.sh --model phi4-mini --count 1000 --tenants 100 --parallel 8 --out test/fixtures/memories_real.json
-scripts/benchmark.sh --fixture test/fixtures/memories_real.json --backend sqlite --search-ops 500 --top-k 10 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_quality.sh --fixture test/fixtures/memories_real.json --top-k 10 --max-queries 200 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_quality.sh --fixture test/fixtures/memories_real.json --eval-set test/fixtures/retrieval_eval.sample.json --top-k 10 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_quality.sh --fixture test/fixtures/memories.json --eval-set test/fixtures/retrieval_eval.curated.json --top-k 10 --max-queries 0 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_trend.sh --label "curated-eval-run" --fixture test/fixtures/memories.json --eval-set test/fixtures/retrieval_eval.curated.json --top-k 10 --max-queries 0 --embedding-provider ollama --embedding-model all-minilm
+scripts/benchmark.sh --fixture test/fixtures/memories_real.json --backend sqlite --search-ops 500 --top-k 5 --embedding-provider ollama --embedding-model all-minilm
+scripts/retrieval_quality.sh --fixture test/fixtures/memories_real.json --top-k 5 --max-queries 200 --embedding-provider ollama --embedding-model all-minilm
+scripts/retrieval_quality.sh --fixture test/fixtures/memories_real.json --eval-set test/fixtures/retrieval_eval.sample.json --top-k 5 --embedding-provider ollama --embedding-model all-minilm
+scripts/retrieval_quality.sh --fixture test/fixtures/memories.json --eval-set test/fixtures/retrieval_eval.curated.json --top-k 5 --max-queries 0 --embedding-provider ollama --embedding-model all-minilm
+scripts/retrieval_trend.sh --label "curated-eval-run" --fixture test/fixtures/memories.json --eval-set test/fixtures/retrieval_eval.curated.json --top-k 5 --max-queries 0 --embedding-provider ollama --embedding-model all-minilm
 ```
 
 Results are written to `test/benchmarks/results/` as JSON and text summary files.

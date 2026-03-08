@@ -9,7 +9,7 @@ EVAL_SET=""
 BACKEND="sqlite"
 OUT_DIR="test/benchmarks/results"
 SEARCH_OPS=200
-TOP_K=10
+TOP_K=5
 HOST="127.0.0.1"
 PORT="18080"
 BASE_URL=""
@@ -36,7 +36,7 @@ Flags:
   --backend <name>         sqlite | qdrant (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
   --search-ops <n>         Number of search operations (default: 200)
-  --top-k <n>              top_k used in search requests (default: 10)
+  --top-k <n>              top_k used in search requests (default: 5)
   --host <ip>              Server host for auto-start mode (default: 127.0.0.1)
   --port <port>            Server port for auto-start mode (default: 18080)
   --base-url <url>         Use an already-running server, disables auto-start
