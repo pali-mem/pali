@@ -18,7 +18,7 @@ var (
 	relativeTimePattern    = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|tonight|last|next|earlier|later|before|after|soon|eventually|someday)\b`)
 	futurePlanPattern      = regexp.MustCompile(`(?i)\b(?:will|plan(?:s|ning)? to|going to)\b`)
 	subjectPronounPattern  = regexp.MustCompile(`(?i)^(?:i|you|we|they|he|she|it)\b`)
-	predicateSignalPattern = regexp.MustCompile(`(?i)\b(?:is|was|has|had|lives? in|moved to|relocat(?:ed|es)|works? as|stud(?:y|ies|ied)|read(?:s|ing)?|likes?|loves?|enjoys?|prefers?|avoid(?:s)?|plans? to|going to|will|attended|participated in|joined|went to|visited|met|married|dating|supports?)\b`)
+	predicateSignalPattern = regexp.MustCompile(`(?i)\b(?:is|was|has|had|lives? in|moved to|relocat(?:ed|es)|works? as|stud(?:y|ies|ied)|read(?:s|ing)?|likes?|loves?|enjoys?|uses?|using|prefers?|avoid(?:s)?|plans? to|going to|will|attended|participated in|joined|went to|visited|met|married|dating|supports?)\b`)
 	identityValuePattern   = regexp.MustCompile(`(?i)\b(?:gay|lesbian|bisexual|queer|asexual|straight|heterosexual|non-binary|transgender(?:\s+(?:man|woman))?|genderqueer|genderfluid|agender|intersex)\b`)
 	roleValuePattern       = regexp.MustCompile(`(?i)\b(?:teacher|student|engineer|developer|designer|doctor|nurse|lawyer|manager|writer|artist|researcher|photographer|chef|therapist|architect|consultant|analyst|accountant|counselor)\b`)
 	emotionWordPattern     = regexp.MustCompile(`(?i)\b(?:happy|thankful|grateful|excited|proud|glad|thrilled|relieved|nervous|sad|upset|angry|emotional|empowered|liberated|accepted|inspired|motivated|fulfilled|comforted)\b`)
@@ -249,6 +249,7 @@ func inferSpecificValueCandidate(content string) string {
 	for _, prefix := range []string{
 		"is ", "was ", "has ", "had ", "will ", "can ", "could ", "would ", "should ",
 		"likes ", "like ", "loves ", "love ", "enjoys ", "enjoy ", "prefers ", "prefer ",
+		"uses ", "use ", "using ",
 		"plans to ", "plan to ", "going to ", "went to ", "attended ", "joined ",
 		"moved to ", "lives in ", "works as ", "read ", "reads ", "met ",
 	} {
