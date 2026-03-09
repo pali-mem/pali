@@ -3,8 +3,8 @@ package embeddings
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildWithMetadata_PrimaryProvider(t *testing.T) {
@@ -50,3 +50,17 @@ func TestBuildWithMetadata_FallbackDisabledFailsFast(t *testing.T) {
 	require.False(t, meta.UsedFallback)
 }
 
+func TestBuildWithMetadata_OpenRouterPrimaryProvider(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Embedding.Provider = "openrouter"
+	cfg.Embedding.FallbackProvider = "lexical"
+	cfg.OpenRouter.APIKey = "test-key"
+	cfg.OpenRouter.EmbeddingModel = "openai/text-embedding-3-small:nitro"
+
+	embedder, meta, err := BuildWithMetadata(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, embedder)
+	require.Equal(t, "openrouter", meta.PrimaryProvider)
+	require.Equal(t, "openrouter", meta.ResolvedProvider)
+	require.False(t, meta.UsedFallback)
+}

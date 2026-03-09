@@ -10,6 +10,7 @@ import (
 	embedmock "github.com/pali-mem/pali/internal/embeddings/mock"
 	embedollama "github.com/pali-mem/pali/internal/embeddings/ollama"
 	onnxembed "github.com/pali-mem/pali/internal/embeddings/onnx"
+	embedopenrouter "github.com/pali-mem/pali/internal/embeddings/openrouter"
 )
 
 type BuildMetadata struct {
@@ -69,6 +70,18 @@ func buildProvider(provider string, cfg config.Config) (domain.Embedder, error) 
 		e, err := embedollama.NewEmbedder(cfg.Embedding.OllamaBaseURL, cfg.Embedding.OllamaModel, timeout)
 		if err != nil {
 			return nil, fmt.Errorf("initialize ollama embedder: %w", err)
+		}
+		return e, nil
+	case "openrouter":
+		timeout := time.Duration(cfg.OpenRouter.TimeoutMS) * time.Millisecond
+		e, err := embedopenrouter.NewEmbedder(
+			cfg.OpenRouter.BaseURL,
+			cfg.OpenRouter.APIKey,
+			cfg.OpenRouter.EmbeddingModel,
+			timeout,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("initialize openrouter embedder: %w", err)
 		}
 		return e, nil
 	case "lexical", "mock", "":
