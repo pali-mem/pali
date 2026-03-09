@@ -180,6 +180,40 @@ func TestMemoryRepositoryStoreBatchRollsBackOnError(t *testing.T) {
 	require.Empty(t, results)
 }
 
+func TestToFTSQueryBuildsStrictAndFallback(t *testing.T) {
+	q := toFTSQuery("What is Caroline's relationship status?")
+	require.Equal(t, "(caroline relationship status) OR (caroline OR relationship OR status)", q)
+}
+
+func TestToFTSQueryFallsBackWhenOnlyStopwordsRemain(t *testing.T) {
+	q := toFTSQuery("What is it?")
+	require.Equal(t, "what OR is OR it", q)
+}
+
+func TestCleanIndexedContentTextStripsStructuredTagsAndSpeakerPrefix(t *testing.T) {
+	raw := "[sample:conv-26] [dialog:D1:3] [time:1:56 pm on 8 May, 2023] Caroline: I went to a LGBTQ support group yesterday."
+	clean := cleanIndexedContentText(raw)
+	require.Equal(t, "I went to a LGBTQ support group yesterday.", clean)
+}
+
+func TestExtractIndexedSpeakerTokensCollectsTagsAndPrefixes(t *testing.T) {
+	raw := "[speaker_a:Caroline] [speaker_b:Melanie]\nCaroline: I joined a group."
+	speakers := extractIndexedSpeakerTokens(raw)
+	require.Equal(t, "caroline melanie", speakers)
+}
+
+func TestBuildIndexedMemoryTextUsesCleanContentAndBoostsQueryView(t *testing.T) {
+	indexed := buildIndexedMemoryText(domain.Memory{
+		Content:       "[sample:conv-26] [speaker_a:Caroline] [speaker_b:Melanie] Caroline: I went to a LGBTQ support group yesterday.",
+		QueryViewText: "caroline support group",
+	})
+	require.Equal(
+		t,
+		"I went to a LGBTQ support group yesterday.\ncaroline melanie\ncaroline support group\ncaroline support group",
+		indexed,
+	)
+}
+
 func TestMemoryRepositoryIndexJobLifecycle(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())

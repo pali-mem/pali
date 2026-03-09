@@ -16,7 +16,20 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
-var ftsTokenPattern = regexp.MustCompile(`[a-zA-Z0-9_]+`)
+var (
+	ftsTokenPattern         = regexp.MustCompile(`[a-zA-Z0-9_]+`)
+	indexedTagPattern       = regexp.MustCompile(`\[[^\]]+\]`)
+	indexedSpeakerPrefix    = regexp.MustCompile(`^\s*[A-Za-z][A-Za-z0-9 .'\-]{0,80}:\s*`)
+	indexedSpeakerCapture   = regexp.MustCompile(`^\s*([A-Za-z][A-Za-z0-9 .'\-]{0,80}):\s*`)
+	indexedSpeakerTag       = regexp.MustCompile(`(?i)\[speaker_[ab]:([^\]]+)\]`)
+	ftsQueryStopwordPattern = map[string]struct{}{
+		"a": {}, "an": {}, "the": {}, "what": {}, "when": {}, "where": {}, "who": {}, "why": {}, "how": {}, "which": {}, "whose": {},
+		"did": {}, "does": {}, "do": {}, "is": {}, "are": {}, "was": {}, "were": {}, "to": {}, "of": {}, "in": {}, "on": {}, "at": {},
+		"for": {}, "with": {}, "about": {}, "tell": {}, "me": {}, "it": {}, "this": {}, "that": {},
+	}
+)
+
+const maxFTSQueryTokens = 12
 
 type MemoryRepository struct {
 	db *sql.DB
@@ -251,6 +264,14 @@ func (r *MemoryRepository) GetByIDs(ctx context.Context, tenantID string, ids []
 	return memories, nil
 }
 
+func (r *MemoryRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.QueryRowContext(ctx, CountMemoriesSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count memories: %w", err)
+	}
+	return count, nil
+}
+
 func (r *MemoryRepository) FindByCanonicalKey(
 	ctx context.Context,
 	tenantID, canonicalKey string,
@@ -439,11 +460,85 @@ func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON s
 
 func buildIndexedMemoryText(m domain.Memory) string {
 	content := strings.Join(strings.Fields(strings.TrimSpace(m.Content)), " ")
+	contentClean := cleanIndexedContentText(content)
 	queryView := strings.Join(strings.Fields(strings.TrimSpace(m.QueryViewText)), " ")
-	if queryView == "" {
-		return content
+	speakers := extractIndexedSpeakerTokens(content)
+
+	parts := make([]string, 0, 4)
+	switch {
+	case contentClean != "":
+		parts = append(parts, contentClean)
+	case content != "":
+		parts = append(parts, content)
 	}
-	return content + "\n" + queryView
+	if speakers != "" {
+		parts = append(parts, speakers)
+	}
+	if queryView != "" {
+		// Repeat query-view text once to approximate field weighting in a single FTS column.
+		parts = append(parts, queryView, queryView)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n")
+}
+
+func cleanIndexedContentText(content string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = indexedTagPattern.ReplaceAllString(line, " ")
+		line = indexedSpeakerPrefix.ReplaceAllString(line, "")
+		line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return strings.Join(out, " ")
+}
+
+func extractIndexedSpeakerTokens(content string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	seen := make(map[string]struct{}, 4)
+	out := make([]string, 0, 4)
+	add := func(raw string) {
+		tokens := ftsTokenPattern.FindAllString(strings.ToLower(strings.TrimSpace(raw)), -1)
+		if len(tokens) == 0 {
+			return
+		}
+		normalized := strings.Join(tokens, " ")
+		if len(normalized) < 2 {
+			return
+		}
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+
+	for _, match := range indexedSpeakerTag.FindAllStringSubmatch(content, -1) {
+		if len(match) > 1 {
+			add(match[1])
+		}
+	}
+	for _, line := range strings.Split(content, "\n") {
+		match := indexedSpeakerCapture.FindStringSubmatch(line)
+		if len(match) > 1 {
+			add(match[1])
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
@@ -530,11 +625,58 @@ func newID(prefix string) string {
 }
 
 func toFTSQuery(raw string) string {
-	tokens := ftsTokenPattern.FindAllString(strings.ToLower(strings.TrimSpace(raw)), -1)
+	rawTokens := ftsTokenPattern.FindAllString(strings.ToLower(strings.TrimSpace(raw)), -1)
+	if len(rawTokens) == 0 {
+		return ""
+	}
+	tokens := make([]string, 0, len(rawTokens))
+	seen := make(map[string]struct{}, len(rawTokens))
+	fallbackOnly := false
+	for _, token := range rawTokens {
+		if len(token) < 2 {
+			continue
+		}
+		if _, blocked := ftsQueryStopwordPattern[token]; blocked {
+			continue
+		}
+		if _, exists := seen[token]; exists {
+			continue
+		}
+		seen[token] = struct{}{}
+		tokens = append(tokens, token)
+		if len(tokens) >= maxFTSQueryTokens {
+			break
+		}
+	}
+	if len(tokens) == 0 {
+		fallbackOnly = true
+		for _, token := range rawTokens {
+			if len(token) < 2 {
+				continue
+			}
+			if _, exists := seen[token]; exists {
+				continue
+			}
+			seen[token] = struct{}{}
+			tokens = append(tokens, token)
+			if len(tokens) >= 4 {
+				break
+			}
+		}
+	}
 	if len(tokens) == 0 {
 		return ""
 	}
-	return strings.Join(tokens, " OR ")
+	if fallbackOnly {
+		return strings.Join(tokens, " OR ")
+	}
+	if len(tokens) == 1 {
+		return tokens[0]
+	}
+	// Combine strict conjunctive match with broad disjunctive fallback.
+	strictQuery := strings.Join(tokens, " ")
+	broadQuery := strings.Join(tokens, " OR ")
+	return "(" + strictQuery + ") OR (" + broadQuery + ")"
 }
 
 func (r *MemoryRepository) MarkIndexState(
@@ -1338,3 +1480,4 @@ func normalizeTiersForFilter(tiers []domain.MemoryTier) []domain.MemoryTier {
 	}
 	return out
 }
+
