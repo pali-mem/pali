@@ -12,14 +12,25 @@ import (
 var (
 	factLeadingDatePattern  = regexp.MustCompile(`(?i)^on\s+[^,]{3,80},\s*`)
 	factEntityPrefixPattern = regexp.MustCompile(`^([A-Z][A-Za-z0-9'\-]*(?:\s+[A-Z][A-Za-z0-9'\-]*){0,2})\b`)
+	factFirstPersonPattern  = regexp.MustCompile(`(?i)^(?:i|i'm|i am|i've|i have|i'd|i will|i'll|my|mine)\b`)
 
-	factActivityValuePattern = regexp.MustCompile(`(?i)\b(?:enjoys?|likes?|loves?|practices?|plays?|does|doing|did|interested in|hobbies?\s+include|chooses?|prefer(?:s)?)\s+([^.,;]+)`)
+	factActivityValuePattern = regexp.MustCompile(`(?i)\b(?:enjoys?|likes?|loves?|practices?|plays?|uses?|using|does|doing|did|interested in|hobbies?\s+include|chooses?|prefer(?:s)?)\s+([^.,;]+)`)
 	factEventValuePattern    = regexp.MustCompile(`(?i)\b(?:attended|participated in|joined|went to|visited)\s+([^.,;]+)`)
 	factBookValuePattern     = regexp.MustCompile(`(?i)\b(?:read(?:ing)?|reads?|book(?:s)?)\s+([^.,;]+)`)
 	factPlaceValuePattern    = regexp.MustCompile(`(?i)\b(?:lives? in|moved to|went to|visited)\s+([^.,;]+)`)
 	factPlanValuePattern     = regexp.MustCompile(`(?i)\b(?:plans? to|planning to|going to|will)\s+([^.,;]+)`)
-	factLeadingVerbPattern   = regexp.MustCompile(`(?i)^(?:is|was|attended|participated in|joined|went to|visited|likes?|loves?|enjoys?|practices?|plays?|does|chooses?|prefers?)\s+`)
+	factLeadingVerbPattern   = regexp.MustCompile(`(?i)^(?:is|was|attended|participated in|joined|went to|visited|likes?|loves?|enjoys?|practices?|plays?|uses?|using|does|chooses?|prefers?)\s+`)
 	factValueStopPattern     = regexp.MustCompile(`(?i)\b(?:because|since|while|although|but|and\s+(?:it|that|this)\b)\b`)
+
+	entityFactCanonicalRelations = map[string]struct{}{
+		"activity": {},
+		"event":    {},
+		"plan":     {},
+		"identity": {},
+		"role":     {},
+		"place":    {},
+		"book":     {},
+	}
 )
 
 func inferEntityRelationValue(content string, kind domain.MemoryKind) (string, string, string) {
@@ -42,6 +53,9 @@ func inferEntityRelationValue(content string, kind domain.MemoryKind) (string, s
 func inferEntityFromFact(content string) string {
 	candidate := strings.TrimSpace(content)
 	candidate = factLeadingDatePattern.ReplaceAllString(candidate, "")
+	if factFirstPersonPattern.MatchString(candidate) {
+		return "user"
+	}
 	m := factEntityPrefixPattern.FindStringSubmatch(candidate)
 	if len(m) < 2 {
 		return ""
@@ -68,7 +82,7 @@ func inferRelationFromFact(content string, kind domain.MemoryKind) string {
 		return "role"
 	case strings.Contains(l, "activit"), strings.Contains(l, "hobb"), strings.Contains(l, "interest"):
 		return "activity"
-	case strings.Contains(l, "enjoy"), strings.Contains(l, "like "), strings.Contains(l, "likes "), strings.Contains(l, "love "), strings.Contains(l, "practice"), strings.Contains(l, "play "), strings.Contains(l, "choose "), strings.Contains(l, "chooses "), strings.Contains(l, "prefer "):
+	case strings.Contains(l, "enjoy"), strings.Contains(l, "like "), strings.Contains(l, "likes "), strings.Contains(l, "love "), strings.Contains(l, "practice"), strings.Contains(l, "play "), strings.Contains(l, "choose "), strings.Contains(l, "chooses "), strings.Contains(l, "prefer "), strings.Contains(l, "use "), strings.Contains(l, "uses "), strings.Contains(l, "using "):
 		return "activity"
 	default:
 		return ""
@@ -134,11 +148,69 @@ func normalizeEntityFactEntity(value string) string {
 }
 
 func normalizeEntityFactRelation(value string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+	relation := strings.TrimSpace(strings.ToLower(value))
+	relation = strings.ReplaceAll(relation, "_", " ")
+	relation = strings.ReplaceAll(relation, "-", " ")
+	relation = strings.Join(strings.Fields(relation), " ")
+	if relation == "" {
+		return ""
+	}
+	if _, ok := entityFactCanonicalRelations[relation]; ok {
+		return relation
+	}
+	switch {
+	case relationHasAny(relation,
+		"event", "attend", "attendance", "joined", "join", "participat", "met ",
+		"encounter", "happen", "occur", "celebrat", "conference", "meetup",
+		"event date", "event type", "time", "created", "received"):
+		return "event"
+	case relationHasAny(relation, "book", "read", "novel", "author", "story"):
+		return "book"
+	case relationHasAny(relation,
+		"place", "location", "city", "country", "moved", "move", "lives",
+		"live", "reside", "visited", "visit", "travel"):
+		return "place"
+	case relationHasAny(relation, "role", "job", "profession", "career", "occupation", "works as"):
+		return "role"
+	case relationHasAny(relation,
+		"plan", "goal", "intention", "intent", "purpose", "aim", "hopes",
+		"hope", "will ", "going to"):
+		return "plan"
+	case relationHasAny(relation,
+		"activity", "hobby", "interest", "prefer", "preference", "desire",
+		"passion", "motivation", "coping", "practice", "play", "enjoy",
+		"like ", "likes", "love", "action", "appreciat"):
+		return "activity"
+	case relationHasAny(relation,
+		"identity", "name", "belief", "opinion", "value", "emotion", "feeling",
+		"feels", "state", "characteristic", "quality", "attribute", "description",
+		"assessment", "evaluation", "sentiment", "perception", "support", "has",
+		"possession", "appearance"):
+		return "identity"
+	default:
+		// Keep retrieval graph addressable by collapsing long-tail relations.
+		return "identity"
+	}
 }
 
 func normalizeEntityFactValue(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func relationHasAny(relation string, needles ...string) bool {
+	if relation == "" {
+		return false
+	}
+	for _, needle := range needles {
+		needle = strings.TrimSpace(strings.ToLower(needle))
+		if needle == "" {
+			continue
+		}
+		if strings.Contains(relation, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildEntityFactRecord(memory domain.Memory, fact ParsedFact) (domain.EntityFact, bool) {
@@ -146,17 +218,22 @@ func buildEntityFactRecord(memory domain.Memory, fact ParsedFact) (domain.Entity
 		return domain.EntityFact{}, false
 	}
 	entity := normalizeEntityFactEntity(fact.Entity)
+	relationRaw := normalizeEntityFactRawRelation(fact.Relation)
 	relation := normalizeEntityFactRelation(fact.Relation)
 	value := normalizeEntityFactValue(fact.Value)
 	if entity == "" || relation == "" || value == "" {
 		return domain.EntityFact{}, false
 	}
+	if relationRaw == "" {
+		relationRaw = relation
+	}
 	return domain.EntityFact{
-		TenantID: memory.TenantID,
-		Entity:   entity,
-		Relation: relation,
-		Value:    value,
-		MemoryID: memory.ID,
+		TenantID:    memory.TenantID,
+		Entity:      entity,
+		Relation:    relation,
+		RelationRaw: relationRaw,
+		Value:       value,
+		MemoryID:    memory.ID,
 	}, true
 }
 
@@ -168,6 +245,10 @@ func normalizedRelationTupleKey(fact ParsedFact) (string, bool) {
 		return "", false
 	}
 	return entity + "|" + relation + "|" + value, true
+}
+
+func normalizeEntityFactRawRelation(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
 func (s *Service) findMemoryByRelationTuple(
