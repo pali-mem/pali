@@ -1,72 +1,127 @@
+<div align="center">
+
 # Pali
 
-Persistent memory layer for LLM applications.
+[![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-v0.1-blue)](README.md)
 
-v0.1 currently ships a working local server with REST + MCP + dashboard on SQLite.
+<img src="pali_banner.png" alt="Pali" width="830" />
 
-## Current Status
+*Open memory for your LLM.*
 
-Implemented and tested now:
-- `GET /` redirects to `/dashboard`
-- `GET /health` returns status
-- `GET /dashboard` renders a simple web dashboard
-- `POST /v1/tenants` creates tenant records
-- `POST /v1/memory` / `POST /v1/memory/batch` / `POST /v1/memory/search` / `DELETE /v1/memory/:id` are wired to core+sqlite
-- `POST /v1/memory/ingest` / `POST /v1/memory/ingest/batch` provide async post-upload processing
-- `GET /v1/memory/jobs/:id` / `GET /v1/memory/jobs` expose postprocess job state
-- `GET /v1/tenants/:id/stats` returns tenant memory counts
-- Retrieval uses two-phase search: lexical + dense candidate fusion (RRF) followed by WMR reranking
-- `tier=auto` is resolved at store time to `episodic` or `semantic` using deterministic signals
-- Config-driven importance scorer selection (`heuristic` default, `ollama` optional)
-- Config-driven vector backend selection (`sqlite`, `qdrant` implemented; `pgvector` currently fail-fast placeholder)
-- Dashboard pages for tenants and memories are functional (list/create/search/delete flows)
+</div>
 
-## Repository Layout
+> **Early Beta** — Pali is functional but under active development. APIs and configuration formats may change between releases. If you run into problems with your setup, config, or provider combination, please [open an issue](https://github.com/pali-mem/pali/issues) — it helps a lot.
 
-Key top-level paths:
-- `cmd/pali`: main API server binary
-- `cmd/setup`: setup bootstrap command
-- `internal/domain`: entities + interfaces
-- `internal/core`: use-case/service layer
-- `internal/repository/sqlite`: SQLite repository implementation
-- `internal/vectorstore`: sqlite-vec + qdrant implementations, pgvector placeholder
-- `internal/embeddings`: embedding provider implementations (ollama/onnx/lexical)
-- `internal/scorer`: heuristic and ollama importance scorers
-- `internal/api`: Gin router, middleware, handlers, DTOs
-- `internal/mcp`: MCP server + tool handlers
-- `internal/dashboard`: dashboard handlers + templates
-- `internal/config`: config defaults/validation/loading
-- `pkg/client`: Go API client SDK for `/health` and `/v1/*` endpoints
-- `test`: integration/e2e fixtures + test utilities
-- `docs`: architecture/API/MCP/deployment docs
+Pali is infrastructure-first:
+- Multi-tenant memory APIs
+- Hybrid retrieval (lexical + dense + reranking)
+- MCP server with memory-first tools
+- Dashboard for operators
+- Plug-and-play extension points for vector stores, embedders, and scoring/routing
 
-## Prerequisites
+The core is fully open source — built to be embedded, self-hosted, and extended.
 
-- Go 1.24+
+## Why Pali
 
-## Setup
+Most projects treat memory as an app feature. Pali treats it as foundational infrastructure:
+- You can run it as a local service, in a container, or behind your own gateway.
+- You can swap retrieval components without changing your app contract.
+- You can use REST, MCP, or the Go client against the same memory core.
+- You keep control of storage, tenancy boundaries, and model/provider decisions.
 
-1. Initialize local config + dependency checks:
+## Current Core Capabilities (v0.1)
+
+- Memory CRUD and batch ingest APIs
+- Async post-processing pipeline with job tracking
+- Two-phase retrieval:
+  - Lexical + dense candidate fusion via RRF
+  - WMR reranking
+- Tenant statistics and routing support
+- Tier auto-resolution (`episodic` vs `semantic`) from deterministic signals
+- Optional JWT tenant-scoped auth
+- Operator dashboard with full visibility into tenant and memory flows
+
+## Plug-and-Play Extensions
+
+| Layer | Options | Notes |
+|---|---|---|
+| Vector backend | `sqlite`, `qdrant` | `pgvector` is scaffolded and fail-fast placeholder in v0.1 |
+| Graph backend (entity facts) | `sqlite`, `neo4j` | Batch-first entity fact writes; `sqlite` remains default |
+| Embeddings | `ollama`, `onnx`, `lexical`, `openrouter` | `mock` alias is supported for legacy config |
+| Importance scorer | `heuristic`, `ollama`, `openrouter` | Config-driven swap |
+| Retrieval scoring | `wal`, `match` | Runtime algorithm switch |
+| Parsing | `heuristic`, `ollama` | Optional extraction before persistence |
+| Structured memory | observation/event dual-write | Optional query routing boosts |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["LLM App / Agent"] --> B["Pali API (REST)"]
+    A --> C["Pali MCP Server"]
+    C --> D["Core Memory Services"]
+    B --> D
+    D --> E["Retrieval Pipeline<br/>Lexical + Dense + RRF + WMR"]
+    D --> F["Postprocess Workers"]
+    D --> G["Storage Layer"]
+    G --> H["SQLite"]
+    G --> I["Qdrant"]
+    G --> J["Neo4j (Entity Graph)"]
+    G --> K["(Future) PGVector"]
+```
+
+## Quickstart
+
+### 1) Prerequisites
+
+- Go `1.24+`
+
+### 2) Bootstrap local config and checks
 
 ```bash
 make setup
 ```
 
-2. Start API server:
+### 3) Run the API server
 
 ```bash
 make run
 ```
 
-Optional MCP server over stdio:
+Default address: `http://127.0.0.1:8080`
 
+Health:
 ```bash
-make mcp
-# or directly:
-go run ./cmd/pali mcp run -config pali.yaml.example
+curl http://127.0.0.1:8080/health
 ```
 
-MCP toolset currently exposes 11 common operations:
+Dashboard:
+```bash
+open http://127.0.0.1:8080/dashboard
+```
+
+## Single-Binary Runtime (Optional)
+
+Pali can also be run as a single compiled binary (helpful for ops and local packaging):
+
+```bash
+make build
+./bin/pali -config pali.yaml
+```
+
+MCP server mode:
+
+```bash
+./bin/pali mcp run -config pali.yaml
+```
+
+This is an installation/runtime convenience, not the project identity. The project is open memory infrastructure with fully extensible components.
+
+## MCP Tooling
+
+Current MCP toolset:
 - `memory_store`
 - `memory_store_preference`
 - `memory_search`
@@ -79,178 +134,50 @@ MCP toolset currently exposes 11 common operations:
 - `health_check`
 - `pali_capabilities`
 
-Pali also exposes built-in MCP guidance for better default adoption:
-- `initialize.instructions` with memory-first policy hints
-- `prompts/get` prompt: `pali_memory_autopilot`
+Built-in MCP guidance:
+- `initialize.instructions` includes memory-first policy hints
+- `prompts/get` exposes `pali_memory_autopilot`
 
-For tenant-aware MCP tools, `tenant_id` is optional when a fallback is available. Resolution order:
+Tenant-aware MCP tool resolution order:
 1. `tenant_id` in tool input
-2. JWT tenant claim (if auth is enabled and provided by transport)
+2. JWT tenant claim (when auth is enabled)
 3. MCP session default tenant
 4. `default_tenant_id` in config
-5. otherwise the tool returns an error
+5. otherwise, tool returns an error
 
-Server default address: `http://127.0.0.1:8080`
+## Config
 
-Health check:
+- Canonical guide: [`docs/configuration.md`](docs/configuration.md)
+- Canonical template: [`pali.yaml.example`](pali.yaml.example)
+- Local runtime file: `pali.yaml` (created by `make setup` if missing)
 
-```bash
-curl http://127.0.0.1:8080/health
-```
+## Embedding Setup Notes
 
-Home route:
+- `make setup` checks configured embedder readiness
+- ONNX model files are downloaded only when `embedding.provider=onnx` (unless forced)
+- Ollama server/model readiness checks run by default
 
-```bash
-curl http://127.0.0.1:8080/
-```
-
-Dashboard:
-
-```bash
-open http://127.0.0.1:8080/dashboard
-```
-
-### Embedding setup behavior
-
-`make setup` (and `go run ./cmd/setup`) checks your configured embedder and only downloads ONNX model files when `embedding.provider=onnx`.
-To force ONNX model prefetch for advanced usage, run:
+Useful setup flags:
 
 ```bash
 go run ./cmd/setup -download-model
-```
-
-To always skip model download, use:
-
-```bash
 go run ./cmd/setup -skip-model-download
-```
-
-`cmd/setup` also checks ONNX Runtime shared library availability and prints install hints when missing.
-Skip that check with:
-
-```bash
 go run ./cmd/setup -skip-runtime-check
-```
-
-`cmd/setup` checks Ollama server + model readiness by default (`/api/version`, `/api/tags`).
-Skip that check with:
-
-```bash
 go run ./cmd/setup -skip-ollama-check
 ```
 
-This fetches:
-
+If you use ONNX, required files are:
 - `models/all-MiniLM-L6-v2/model.onnx`
 - `models/all-MiniLM-L6-v2/tokenizer.json`
-
-Without these files, selecting `embedding.provider: onnx` will fail at startup.
-
-Embedding provider selection (in `pali.yaml`):
-
-```yaml
-default_tenant_id: default
-vector_backend: sqlite
-importance_scorer: heuristic # heuristic | ollama
-postprocess:
-  enabled: true
-  poll_interval_ms: 250
-  batch_size: 32
-  worker_count: 2
-  lease_ms: 30000
-  max_attempts: 5
-  retry_base_ms: 500
-  retry_max_ms: 60000
-structured_memory:
-  enabled: false
-  dual_write_observations: false
-  dual_write_events: false
-  query_routing_enabled: false
-  max_observations: 3
-
-retrieval:
-  scoring:
-    algorithm: wal # wal | match
-    wal:
-      recency: 1.0
-      relevance: 1.0
-      importance: 1.0
-    match:
-      recency: 0.05
-      relevance: 0.70
-      importance: 0.10
-      query_overlap: 0.10
-      routing: 0.05
-
-parser:
-  enabled: false
-  provider: heuristic # heuristic | ollama
-  ollama_base_url: http://127.0.0.1:11434
-  ollama_model: qwen2.5:7b
-  ollama_timeout_ms: 20000
-  store_raw_turn: true
-  max_facts: 4
-  dedupe_threshold: 0.88
-  update_threshold: 0.94
-
-qdrant:
-  base_url: http://127.0.0.1:6333
-  api_key: ""
-  collection: pali_memories
-  timeout_ms: 2000
-
-embedding:
-  provider: ollama # ollama | onnx | lexical (mock alias supported)
-  fallback_provider: "" # optional explicit fallback, e.g. lexical
-  ollama_base_url: http://127.0.0.1:11434
-  ollama_model: mxbai-embed-large
-  ollama_timeout_seconds: 10
-
-ollama:
-  base_url: http://127.0.0.1:11434
-  model: qwen2.5:7b
-  timeout_ms: 2000
-```
-
-Current behavior:
-
-- `ollama` is the default embedding provider (requires local Ollama server).
-- `fallback_provider` is opt-in; leave it empty to fail fast when the primary provider is unavailable.
-- `lexical` is the pure-Go local fallback provider (legacy `mock` alias still works).
-- `importance_scorer` controls importance scoring (`heuristic` default, `ollama` opt-in).
-- `retrieval.scoring.algorithm` switches reranking mode (`wal` default, `match` for QA-heavy relevance-first behavior).
-- `parser.enabled` enables an extraction stage before write-time persistence to reduce raw-turn noise.
-- `structured_memory.enabled` + `dual_write_observations` can dual-write concise derived observation memories at store time.
-- `structured_memory.dual_write_events` can derive time-anchored event memories from annotated turns.
-- `structured_memory.query_routing_enabled` applies light query-intent boosts (temporal/person/multi-hop) during ranking.
-- retrieval uses hybrid fusion: lexical ranking + dense vector ranking merged with Reciprocal Rank Fusion (RRF, `k=60`) before WMR reranking.
-- `vector_backend=sqlite` and `vector_backend=qdrant` are implemented in v0.1.
-- `vector_backend=pgvector` currently returns a startup error until the adapter is completed.
-- `tier=auto` resolves to:
-  - `semantic` when preference/profile signals are present (`created_by=user|system`, semantic tags, or preference-like phrases)
-  - otherwise `episodic`
 
 Ollama quick start:
 
 ```bash
-# install: https://ollama.com/download
 ollama serve
 ollama pull mxbai-embed-large
 ```
 
-Set runtime library path when needed:
-
-```bash
-export ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/libonnxruntime.dylib   # macOS
-export ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/libonnxruntime.so      # Linux
-```
-
-Install notes:
-- macOS: `brew install onnxruntime` typically provides `/opt/homebrew/lib/libonnxruntime.dylib`
-- Windows: use ONNX Runtime release zip for `onnxruntime.dll` and install Microsoft Visual C++ runtime
-- Full advanced setup (macOS + Windows + Linux): `docs/onnx.md`
-
-JWT auth (optional, per-tenant):
+## Auth (Optional JWT)
 
 ```yaml
 auth:
@@ -259,69 +186,82 @@ auth:
   issuer: "pali"
 ```
 
-JWT must include `tenant_id`; request tenant must match token tenant.
+JWT must include `tenant_id`, and request tenant must match token tenant.
 
-Mint a dev JWT quickly:
+Mint dev JWT:
 
 ```bash
-# Uses auth.jwt_secret and auth.issuer from pali.yaml when present
 go run ./cmd/jwt -tenant tenant_1
-
-# Explicit secret + ttl
 go run ./cmd/jwt -tenant tenant_1 -secret "change-me" -ttl 2h
-
-# Makefile shortcut
 TENANT=tenant_1 JWT_SECRET=change-me make jwt
 ```
 
-## Go Client (`pkg/client`)
+## Go Client
 
 ```go
 import (
-	"context"
-	"log"
+  "context"
+  "log"
 
-	"github.com/pali-mem/pali/pkg/client"
+  "github.com/pali-mem/pali/pkg/client"
 )
 
 func main() {
-	c, err := client.NewClient("http://127.0.0.1:8080")
-	if err != nil {
-		log.Fatal(err)
-	}
+  c, err := client.NewClient("http://127.0.0.1:8080")
+  if err != nil {
+    log.Fatal(err)
+  }
 
-	ctx := context.Background()
-	if _, err := c.CreateTenant(ctx, client.CreateTenantRequest{
-		ID:   "tenant_1",
-		Name: "Tenant One",
-	}); err != nil {
-		log.Fatal(err)
-	}
+  ctx := context.Background()
+  if _, err := c.CreateTenant(ctx, client.CreateTenantRequest{
+    ID:   "tenant_1",
+    Name: "Tenant One",
+  }); err != nil {
+    log.Fatal(err)
+  }
 }
 ```
 
-When auth is enabled, set bearer token once:
+When auth is enabled:
 
 ```go
 c.SetBearerToken("<jwt>")
 ```
 
-Client documentation:
-- `docs/client/README.md`
+Client docs: [`docs/client/README.md`](docs/client/README.md)
 
-## Build and Test
+## Repository Layout
+
+- `cmd/pali`: main API server binary entrypoint
+- `cmd/setup`: setup/bootstrap checks
+- `internal/domain`: entities and interfaces
+- `internal/core`: service and use-case layer
+- `internal/repository/sqlite`: SQLite repository implementation
+- `internal/vectorstore`: sqlite-vec and qdrant implementations
+- `internal/embeddings`: embedding providers
+- `internal/scorer`: importance scoring providers
+- `internal/api`: Gin router, middleware, handlers, DTOs
+- `internal/mcp`: MCP server and tool handlers
+- `internal/dashboard`: dashboard handlers and templates
+- `pkg/client`: Go API client SDK
+- `test`: integration and e2e suites
+- `docs`: architecture, API, MCP, deployment docs
+
+## Build, Test, and Benchmark
+
+Build:
 
 ```bash
 make build
 ```
 
-Tests are split by scope using build tags:
+Tests:
 
 | Command | Scope |
 |---|---|
-| `make test` | Unit tests only — `internal/` and `pkg/`, always fast |
-| `make test-integration` | Integration tests — requires real DB (`-tags integration`) |
-| `make test-e2e` | End-to-end tests (`-tags e2e`, self-contained/in-process) |
+| `make test` | Unit tests (`internal/` and `pkg/`) |
+| `make test-integration` | Integration tests (`-tags integration`) |
+| `make test-e2e` | End-to-end tests (`-tags e2e`) |
 | `make test-all` | Everything |
 
 Release smoke gate:
@@ -330,16 +270,20 @@ Release smoke gate:
 make test && make test-integration && make test-e2e && make build
 ```
 
-```bash
-make test
-make test-integration
-make test-e2e
-make test-all
-```
+## Production Readiness Checklist
 
-Integration and e2e test files carry a `//go:build integration` or `//go:build e2e` tag at the top — they are not compiled at all unless the matching tag is passed.
+- Keep `pali.yaml` outside the repo and inject sensitive values through your deployment platform.
+- Set `auth.enabled: true` and a long, random `jwt_secret` in non-dev environments.
+- Run with a process supervisor (systemd, Docker restart policy, Kubernetes) and explicit liveness/readiness checks.
+- Put TLS termination at a reverse proxy (for example Nginx/Caddy) and keep Pali on an internal network.
+- Use dedicated persistent storage for `database.sqlite_dsn`; `pali.db` must persist across restarts.
+- Schedule DB backups and restore drills from file snapshots.
+- Enable monitoring on `/health` and track startup logs for counts and migration status.
+- Gate promotion with config validation (`go run ./cmd/setup -config pali.yaml`) before rollout.
+- Pin runtime dependencies and avoid running unverified `model.onnx`/`tokenizer.json` artifacts from untrusted sources.
+- Run integration smoke checks against `/health`, `POST /v1/tenants`, and `POST /v1/memory/search` after deploy.
 
-## Benchmarks
+Benchmarks:
 
 ```bash
 make bench-setup
@@ -347,39 +291,19 @@ make benchmark
 make retrieval-quality
 ```
 
-Or run directly with flags:
+Result output: `test/benchmarks/results/<timestamp>/`
 
-```bash
-scripts/gen_fixtures.sh --model phi4-mini --count 1000 --tenants 100 --parallel 8 --out test/fixtures/memories_real.json
-scripts/benchmark.sh --fixture test/fixtures/memories_real.json --backend sqlite --search-ops 500 --top-k 5 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_quality.sh --fixture test/fixtures/memories_real.json --top-k 5 --max-queries 200 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_quality.sh --fixture test/fixtures/memories_real.json --eval-set test/fixtures/retrieval_eval.sample.json --top-k 5 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_quality.sh --fixture test/fixtures/memories.json --eval-set test/fixtures/retrieval_eval.curated.json --top-k 5 --max-queries 0 --embedding-provider ollama --embedding-model all-minilm
-scripts/retrieval_trend.sh --label "curated-eval-run" --fixture test/fixtures/memories.json --eval-set test/fixtures/retrieval_eval.curated.json --top-k 5 --max-queries 0 --embedding-provider ollama --embedding-model all-minilm
-```
+## Docs
 
-Results are written to `test/benchmarks/results/` as JSON and text summary files.
-
-## Database Docs
-
-- SQLite implementation notes: `docs/db/sqlite.md`
-- Performance/behavior change records: `docs/changes/`
-- MCP integration notes + testing checklist: `docs/mcp.md`
-- ONNX advanced setup notes: `docs/onnx.md`
-- Go client SDK usage + structure: `docs/client/README.md`
-
-## Important Next Steps
-
-1. Curate and grow retrieval eval coverage over real workloads and tougher negatives.
-2. Add dashboard pagination, richer filters, and inline edit flows.
-3. Expand tenant stats with tier/tag/recall breakdowns.
+- SQLite notes: [`docs/internal/sqlite.md`](docs/internal/sqlite.md)
+- Operations/runbook: [`docs/operations.md`](docs/operations.md)
+- Configuration guide: [`docs/configuration.md`](docs/configuration.md)
+- MCP notes: [`docs/mcp.md`](docs/mcp.md)
+- ONNX setup: [`docs/onnx.md`](docs/onnx.md)
+- Go client docs: [`docs/client/README.md`](docs/client/README.md)
+- Change/perf records: [`docs/changes/`](docs/changes/)
+- Research/dependencies: [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md)
 
 ## Module Path
 
-`go.mod` is initialized as:
-
 `github.com/pali-mem/pali`
-
----
-
-See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) for research papers, models, and open-source dependencies.
