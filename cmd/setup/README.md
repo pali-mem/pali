@@ -13,6 +13,8 @@
 
 It is safe to run multiple times.
 
+Canonical config reference: `docs/configuration.md`.
+
 Flags:
 
 - `-skip-model-download`: do not download model files

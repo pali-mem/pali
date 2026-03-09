@@ -91,27 +91,35 @@ func main() {
 
 	ollamaMessage := "skipped Ollama check (--skip-ollama-check)"
 	if !opts.skipOllamaCheck {
-		ollamaBaseURL := strings.TrimSpace(opts.ollamaBaseURL)
-		if ollamaBaseURL == "" {
-			ollamaBaseURL = strings.TrimSpace(cfg.Embedding.OllamaBaseURL)
+		needsOllama := strings.EqualFold(strings.TrimSpace(cfg.Embedding.Provider), "ollama") ||
+			strings.EqualFold(strings.TrimSpace(cfg.ImportanceScorer), "ollama") ||
+			(cfg.Parser.Enabled && strings.EqualFold(strings.TrimSpace(cfg.Parser.Provider), "ollama"))
+		if !needsOllama {
+			ollamaMessage = "skipped Ollama check (ollama provider not enabled in current config)"
 		}
-		if ollamaBaseURL == "" {
-			ollamaBaseURL = defaultOllamaBaseURL
-		}
-		ollamaModel := strings.TrimSpace(opts.ollamaModel)
-		if ollamaModel == "" {
-			ollamaModel = strings.TrimSpace(cfg.Embedding.OllamaModel)
-		}
-		if ollamaModel == "" {
-			ollamaModel = defaultOllamaModel
-		}
-		if err := ensureOllamaReady(ollamaBaseURL, ollamaModel); err != nil {
-			ollamaMessage = "Ollama embedder is not ready (needed when embedding.provider=ollama)"
-			fmt.Println()
-			fmt.Println(err.Error())
-			fmt.Println()
-		} else {
-			ollamaMessage = fmt.Sprintf("detected Ollama + model %q at %s", ollamaModel, ollamaBaseURL)
+		if needsOllama {
+			ollamaBaseURL := strings.TrimSpace(opts.ollamaBaseURL)
+			if ollamaBaseURL == "" {
+				ollamaBaseURL = strings.TrimSpace(cfg.Embedding.OllamaBaseURL)
+			}
+			if ollamaBaseURL == "" {
+				ollamaBaseURL = defaultOllamaBaseURL
+			}
+			ollamaModel := strings.TrimSpace(opts.ollamaModel)
+			if ollamaModel == "" {
+				ollamaModel = strings.TrimSpace(cfg.Embedding.OllamaModel)
+			}
+			if ollamaModel == "" {
+				ollamaModel = defaultOllamaModel
+			}
+			if err := ensureOllamaReady(ollamaBaseURL, ollamaModel); err != nil {
+				ollamaMessage = "Ollama embedder is not ready (needed when embedding.provider=ollama)"
+				fmt.Println()
+				fmt.Println(err.Error())
+				fmt.Println()
+			} else {
+				ollamaMessage = fmt.Sprintf("detected Ollama + model %q at %s", ollamaModel, ollamaBaseURL)
+			}
 		}
 	}
 
