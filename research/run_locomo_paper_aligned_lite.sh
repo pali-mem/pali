@@ -11,7 +11,7 @@ STATS_OUT="research/data/locomo10.paperlite.stats.json"
 NUM_CONVS=0
 OUT_DIR="research/results/paperlite"
 TOP_K=60
-MAX_QUERIES=400
+MAX_QUERIES=150
 EMBED_MODEL="all-minilm"
 ANSWER_MODEL="qwen2.5:7b"
 ANSWER_MODE="hybrid"
@@ -49,7 +49,7 @@ Flags:
   --locomo-json <path>      LOCOMO source JSON (default: research/data/locomo10.json)
   --out-dir <path>          Output directory for run artifacts
   --top-k <n>               Retrieval top_k (default: 60)
-  --max-queries <n>         Max eval queries (default: 400, -1 for all)
+  --max-queries <n>         Max eval queries (default: 150, -1 for all)
   --embed-model <name>      Embedding model for ollama provider (default: all-minilm)
   --answer-mode <mode>      Answer mode: extractive|generate|hybrid (default: hybrid)
   --answer-model <name>     Ollama model for answer generation (default: qwen2.5:7b)
