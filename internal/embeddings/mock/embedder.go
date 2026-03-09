@@ -6,7 +6,6 @@ import (
 	"math"
 	"regexp"
 	"strings"
-	"sync"
 )
 
 const defaultDimension = 256
@@ -15,16 +14,12 @@ var tokenPattern = regexp.MustCompile(`[a-zA-Z0-9_]+`)
 
 // Embedder is the pure-Go lexical provider implementation (legacy name: mock).
 type Embedder struct {
-	mu       sync.RWMutex
-	dim      int
-	docCount int
-	docFreq  map[string]int
+	dim int
 }
 
 func NewEmbedder() *Embedder {
 	return &Embedder{
-		dim:     defaultDimension,
-		docFreq: map[string]int{},
+		dim: defaultDimension,
 	}
 }
 
@@ -37,16 +32,11 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	}
 
 	tf := termFrequency(tokens)
-	e.observeDocument(tokens)
-
-	e.mu.RLock()
-	docCount := e.docCount
-	e.mu.RUnlock()
-
 	for token, count := range tf {
 		idx := hashToken(token) % uint32(e.dim)
-		idf := e.inverseDocFreq(token, docCount)
-		vec[idx] += float64(count) * idf
+		// Keep lexical embeddings stateless so stored vectors and query vectors are
+		// generated in the same space regardless of ingest order or prior queries.
+		vec[idx] += 1 + math.Log(float64(count))
 	}
 
 	normalize(vec)
@@ -63,32 +53,6 @@ func (e *Embedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32,
 		out = append(out, vec)
 	}
 	return out, nil
-}
-
-func (e *Embedder) observeDocument(tokens []string) {
-	seen := make(map[string]struct{}, len(tokens))
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	e.docCount++
-	for _, token := range tokens {
-		if _, ok := seen[token]; ok {
-			continue
-		}
-		seen[token] = struct{}{}
-		e.docFreq[token]++
-	}
-}
-
-func (e *Embedder) inverseDocFreq(token string, docCount int) float64 {
-	e.mu.RLock()
-	df := e.docFreq[token]
-	e.mu.RUnlock()
-
-	if docCount <= 0 || df <= 0 {
-		return 1
-	}
-	return 1 + math.Log(float64(docCount+1)/float64(df+1))
 }
 
 func tokenize(text string) []string {
