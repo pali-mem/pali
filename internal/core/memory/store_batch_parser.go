@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mattn/go-isatty"
-	"github.com/schollz/progressbar/v2"
 	"github.com/pali-mem/pali/internal/domain"
+	"github.com/schollz/progressbar/v2"
 )
+
+// parserBatchConcurrency is the max number of parallel parser calls issued
+// when processing a batch. Network-bound parsers (OpenRouter, Ollama) benefit
+// from high concurrency; the heuristic parser is CPU-bound but fast enough
+// that 8 concurrent goroutines won't cause contention.
+const parserBatchConcurrency = 8
 
 type parserBatchItem struct {
 	item             preparedStoreInput
@@ -56,9 +63,10 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		return s.storeBatchWithParserSequential(ctx, items)
 	}
 
-	parsed := make([]parserBatchItem, 0, len(items))
-	uniqueTexts := make([]string, 0, len(items)*(s.parser.MaxFacts+1))
-	seenTexts := make(map[string]struct{}, len(uniqueTexts))
+	// Phase 1: parse all items in parallel, up to parserBatchConcurrency at once.
+	// Each goroutine writes to its own pre-allocated slot so no mutex is needed
+	// on the slice itself.
+	parsed := make([]parserBatchItem, len(items))
 	var parseProgress *progressbar.ProgressBar
 	if s.devVerbose && s.progress && len(items) > 1 && isatty.IsTerminal(os.Stdout.Fd()) {
 		parseProgress = progressbar.NewOptions(
@@ -71,6 +79,53 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 			progressbar.OptionClearOnFinish(),
 		)
 	}
+	{
+		sem := make(chan struct{}, parserBatchConcurrency)
+		var wg sync.WaitGroup
+		for i, item := range items {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int, item preparedStoreInput) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				parseStart := time.Now()
+				parseResult, parseErr := s.parseFactsWithFallback(ctx, item.input.Content, i+1)
+				parserMS := time.Since(parseStart).Milliseconds()
+				facts := parseResult.Facts
+				entityTriples := 0
+				for _, fact := range facts {
+					if parsedFactHasEntityTriple(fact) {
+						entityTriples++
+					}
+				}
+				s.logInfof(
+					"[pali-store] turn=%d raw_turns=1 facts=%d entity_triples=%d",
+					i+1,
+					len(facts),
+					entityTriples,
+				)
+				s.logDebugf("[pali-store] turn=%d parser_ms=%d facts=%d", i+1, parserMS, len(facts))
+				for _, fact := range facts {
+					s.logDebugf("[pali-parser] turn=%d fact=%q", i+1, sanitizeLogSnippet(fact.Content, 220))
+				}
+				if parseProgress != nil {
+					_ = parseProgress.Add(1)
+				}
+				parsed[i] = parserBatchItem{
+					item:             item,
+					facts:            facts,
+					extractor:        parseResult.Extractor,
+					extractorVersion: parseResult.ExtractorVersion,
+					parseErr:         parseErr,
+				}
+			}(i, item)
+		}
+		wg.Wait()
+	}
+
+	// Phase 2: collect unique embedding texts in original order (sequential, no locking needed).
+	uniqueTexts := make([]string, 0, len(items)*(s.parser.MaxFacts+1))
+	seenTexts := make(map[string]struct{}, len(uniqueTexts))
 	pushText := func(text string) {
 		if text == "" {
 			return
@@ -81,43 +136,12 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		seenTexts[text] = struct{}{}
 		uniqueTexts = append(uniqueTexts, text)
 	}
-
-	for i, item := range items {
-		parseStart := time.Now()
-		parseResult, parseErr := s.parseFactsWithFallback(ctx, item.input.Content, i+1)
-		parserMS := time.Since(parseStart).Milliseconds()
-		facts := parseResult.Facts
-		entityTriples := 0
-		for _, fact := range facts {
-			if parsedFactHasEntityTriple(fact) {
-				entityTriples++
-			}
-		}
-		s.logInfof(
-			"[pali-store] turn=%d raw_turns=1 facts=%d entity_triples=%d",
-			i+1,
-			len(facts),
-			entityTriples,
-		)
-		s.logDebugf("[pali-store] turn=%d parser_ms=%d facts=%d", i+1, parserMS, len(facts))
-		for _, fact := range facts {
-			s.logDebugf("[pali-parser] turn=%d fact=%q", i+1, sanitizeLogSnippet(fact.Content, 220))
-		}
-		if parseProgress != nil {
-			_ = parseProgress.Add(1)
-		}
-		parsed = append(parsed, parserBatchItem{
-			item:             item,
-			facts:            facts,
-			extractor:        parseResult.Extractor,
-			extractorVersion: parseResult.ExtractorVersion,
-			parseErr:         parseErr,
-		})
-		pushText(item.input.Content)
-		if parseErr != nil {
+	for _, p := range parsed {
+		pushText(p.item.input.Content)
+		if p.parseErr != nil {
 			continue
 		}
-		for _, fact := range facts {
+		for _, fact := range p.facts {
 			pushText(embeddingTextForParsedFact(fact))
 		}
 	}
@@ -276,18 +300,27 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	embeddingsToStore := make([][]float32, 0, len(pending))
 	pendingToStoreIdx := make(map[int]int, len(pending))
 	writeStart := time.Now()
+	pendingContents := make([]string, 0, len(pending))
+	pendingIdxOrder := make([]int, 0, len(pending))
 	for i := range pending {
 		if pending[i].dropped {
 			continue
 		}
-		importance, err := s.scorer.Score(ctx, pending[i].memory.Content)
-		if err != nil {
-			return nil, err
-		}
-		pending[i].memory.Importance = importance
-		pendingToStoreIdx[i] = len(memoriesToStore)
-		memoriesToStore = append(memoriesToStore, pending[i].memory)
-		embeddingsToStore = append(embeddingsToStore, pending[i].embedding)
+		pendingContents = append(pendingContents, pending[i].memory.Content)
+		pendingIdxOrder = append(pendingIdxOrder, i)
+	}
+	importanceScores, err := s.scoreContents(ctx, pendingContents)
+	if err != nil {
+		return nil, err
+	}
+	if len(importanceScores) != len(pendingIdxOrder) {
+		return nil, fmt.Errorf("parser batch importance score count mismatch: got %d for %d memories", len(importanceScores), len(pendingIdxOrder))
+	}
+	for orderIdx, pendingIdx := range pendingIdxOrder {
+		pending[pendingIdx].memory.Importance = importanceScores[orderIdx]
+		pendingToStoreIdx[pendingIdx] = len(memoriesToStore)
+		memoriesToStore = append(memoriesToStore, pending[pendingIdx].memory)
+		embeddingsToStore = append(embeddingsToStore, pending[pendingIdx].embedding)
 	}
 
 	if len(memoriesToStore) > 0 {
