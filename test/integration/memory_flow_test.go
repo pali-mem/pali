@@ -12,16 +12,15 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/api"
-	"github.com/pali-mem/pali/internal/config"
+	"github.com/pali-mem/pali/test/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMemoryCRUDFlow_RealSQLite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	cfg := config.Defaults()
-	cfg.Embedding.Provider = "mock"
+	cfg := testutil.MustLoadProviderConfig(t, "mock")
 	dbPath := filepath.Join(t.TempDir(), "integration.sqlite")
 	cfg.Database.SQLiteDSN = fmt.Sprintf("file:%s?cache=shared", dbPath)
 
