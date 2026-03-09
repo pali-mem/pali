@@ -6,6 +6,7 @@ Current implementation follows `repo.md` with an operational retrieval path.
 
 - `embedding.provider: ollama` (default): offline HTTP embedder via local Ollama server (`/api/embed`).
 - `embedding.provider: onnx`: advanced local inference path; validates model/tokenizer paths and runs ONNX Runtime inference.
+- `embedding.provider: openrouter`: remote embeddings via OpenRouter (`/api/v1/embeddings`).
 - `embedding.provider: lexical` (legacy alias: `mock`): pure-Go lexical fallback provider.
 - `embedding.fallback_provider: lexical` (default): used automatically when primary provider initialization fails.
 

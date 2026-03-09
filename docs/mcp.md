@@ -1,12 +1,12 @@
 # MCP Integration
 
-Pali ships an MCP server over `stdio`, launched from the unified CLI at [cmd/pali/main.go](/Users/vein/Documents/pali/cmd/pali/main.go) using `pali mcp run`.
+Pali ships an MCP server over `stdio`, launched from the unified CLI at [`cmd/pali/main.go`](../cmd/pali/main.go) using `pali mcp run`.
 
 ## Runtime Wiring
 
 Server implementation:
-- [server.go](/Users/vein/Documents/pali/internal/mcp/server.go)
-- [registry.go](/Users/vein/Documents/pali/internal/mcp/tools/registry.go)
+- [`internal/mcp/server.go`](../internal/mcp/server.go)
+- [`internal/mcp/tools/registry.go`](../internal/mcp/tools/registry.go)
 
 Startup path (`pali mcp run`):
 1. Load config (`pali.yaml`)
@@ -20,6 +20,7 @@ Startup path (`pali mcp run`):
 Production command pattern:
 - `pali mcp run -config /etc/pali/pali.yaml`
 - This is the stable command to reference from MCP hosts (Claude Desktop/Cursor/etc.).
+- Config reference: [`docs/configuration.md`](configuration.md)
 
 ## Built-In Agent Guidance
 
@@ -73,7 +74,7 @@ Tool input schemas are derived from typed Go structs in `internal/mcp/tools/regi
 ## Automated Testing
 
 Code tests:
-- [server_test.go](/Users/vein/Documents/pali/internal/mcp/server_test.go)
+- [`internal/mcp/server_test.go`](../internal/mcp/server_test.go)
   - validates tool registry contains expected tools
   - runs end-to-end tool calls via in-memory MCP transports
   - executes tenant + memory flow (`tenant_create`, `memory_store`, `memory_search`)
