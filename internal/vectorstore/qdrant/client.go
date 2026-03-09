@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -112,7 +113,11 @@ func (c *Client) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert)
 	}
 
 	payload := map[string]any{"points": points}
-	_, err := c.request(ctx, http.MethodPut, "/collections/"+c.collection+"/points?wait=true", payload, false)
+	// wait=false: Qdrant acks immediately; points are searchable via segment scan
+	// while HNSW index builds asynchronously in the background. This is the
+	// correct mode for bulk ingestion - wait=true blocks ~300-400ms per batch
+	// waiting for full optimizer/index commit, which kills throughput at scale.
+	_, err := c.request(ctx, http.MethodPut, "/collections/"+c.collection+"/points?wait=false", payload, false)
 	if err != nil {
 		return fmt.Errorf("qdrant upsert batch: %w", err)
 	}
@@ -229,6 +234,9 @@ func (c *Client) ensureCollection(ctx context.Context, vectorSize int) error {
 		if _, err := c.request(ctx, http.MethodPut, "/collections/"+c.collection, createReq, false); err != nil {
 			return fmt.Errorf("create qdrant collection %q: %w", c.collection, err)
 		}
+		if err := c.waitForCollectionReady(ctx, vectorSize); err != nil {
+			return err
+		}
 		c.collectionSize = vectorSize
 		return nil
 	}
@@ -242,6 +250,57 @@ func (c *Client) ensureCollection(ctx context.Context, vectorSize int) error {
 	}
 	c.collectionSize = size
 	return nil
+}
+
+func (c *Client) waitForCollectionReady(ctx context.Context, vectorSize int) error {
+	if vectorSize <= 0 {
+		return domain.ErrInvalidInput
+	}
+	readyBy := time.Now().Add(collectionReadyTimeout(c.httpClient))
+	sleep := 20 * time.Millisecond
+
+	for {
+		body, err := c.request(ctx, http.MethodGet, "/collections/"+c.collection, nil, true)
+		if err == nil {
+			if len(body) == 0 {
+				// Collection create has been accepted but is not materialized yet.
+			} else {
+				size, parseErr := parseCollectionVectorSize(body)
+				if parseErr == nil {
+					if size != vectorSize {
+						return fmt.Errorf("qdrant collection %q vector size mismatch: existing=%d new=%d", c.collection, size, vectorSize)
+					}
+					return nil
+				}
+			}
+		}
+
+		if time.Now().After(readyBy) {
+			if err != nil {
+				return fmt.Errorf("wait for qdrant collection %q readiness: %w", c.collection, err)
+			}
+			return fmt.Errorf("wait for qdrant collection %q readiness: timed out", c.collection)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(sleep):
+			sleep = time.Duration(math.Min(float64(200*time.Millisecond), float64(sleep*2)))
+		}
+	}
+}
+
+func collectionReadyTimeout(httpClient *http.Client) time.Duration {
+	if httpClient != nil && httpClient.Timeout > 0 {
+		if httpClient.Timeout < 250*time.Millisecond {
+			return 250 * time.Millisecond
+		}
+		if httpClient.Timeout > 5*time.Second {
+			return 5 * time.Second
+		}
+		return httpClient.Timeout
+	}
+	return 2 * time.Second
 }
 
 func parseCollectionVectorSize(body []byte) (int, error) {

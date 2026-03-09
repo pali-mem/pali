@@ -9,11 +9,12 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 type fakePoint struct {
@@ -314,4 +315,92 @@ func TestStoreUpsertBatchValidation(t *testing.T) {
 	// Empty embedding.
 	err = store.UpsertBatch(ctx, []domain.VectorUpsert{{TenantID: "t1", MemoryID: "m1", Embedding: nil}})
 	require.Error(t, err)
+}
+
+type eventuallyReadyQdrant struct {
+	mu            sync.Mutex
+	createCalls   int
+	getCalls      int
+	notReadyGets  int
+	pointsUpserts int
+	size          int
+}
+
+func (f *eventuallyReadyQdrant) readyLocked() bool {
+	if f.createCalls == 0 {
+		return false
+	}
+	return f.getCalls > f.notReadyGets
+}
+
+func (f *eventuallyReadyQdrant) handler(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/collections/"):
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.createCalls == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		f.getCalls++
+		if !f.readyLocked() {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"result": map[string]any{
+				"config": map[string]any{
+					"params": map[string]any{
+						"vectors": map[string]any{
+							"size":     f.size,
+							"distance": "Cosine",
+						},
+					},
+				},
+			},
+			"status": "ok",
+		})
+	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/collections/") && !strings.Contains(r.URL.Path, "/points"):
+		f.mu.Lock()
+		f.createCalls++
+		f.mu.Unlock()
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "acknowledged"})
+	case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/points"):
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if !f.readyLocked() {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"status":"error","result":"collection not ready"}`))
+			return
+		}
+		f.pointsUpserts++
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "acknowledged"})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func TestStoreUpsertBatch_WaitsForCollectionReadiness(t *testing.T) {
+	fake := &eventuallyReadyQdrant{
+		notReadyGets: 2,
+		size:         2,
+	}
+	server := httptest.NewServer(http.HandlerFunc(fake.handler))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "", "test_collection", 2*time.Second)
+	require.NoError(t, err)
+	store := NewStore(client)
+
+	ctx := context.Background()
+	err = store.UpsertBatch(ctx, []domain.VectorUpsert{
+		{TenantID: "tenant_1", MemoryID: "m1", Embedding: []float32{1, 0}},
+	})
+	require.NoError(t, err)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	require.Equal(t, 1, fake.createCalls)
+	require.Equal(t, 1, fake.pointsUpserts)
+	require.GreaterOrEqual(t, fake.getCalls, fake.notReadyGets+1)
 }
