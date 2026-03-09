@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 type retrievalRepoStub struct {
@@ -151,10 +151,48 @@ func (retrievalEmbedderStub) Embed(ctx context.Context, text string) ([]float32,
 	return []float32{0.2, 0.3, 0.4}, nil
 }
 
+type retrievalBatchEmbedderStub struct {
+	embedCalls int
+	batchCalls int
+	batchSizes []int
+}
+
+func (e *retrievalBatchEmbedderStub) Embed(ctx context.Context, text string) ([]float32, error) {
+	e.embedCalls++
+	return []float32{0.2, 0.3, 0.4}, nil
+}
+
+func (e *retrievalBatchEmbedderStub) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
+	e.batchCalls++
+	e.batchSizes = append(e.batchSizes, len(texts))
+	out := make([][]float32, 0, len(texts))
+	for range texts {
+		out = append(out, []float32{0.2, 0.3, 0.4})
+	}
+	return out, nil
+}
+
 type retrievalScorerStub struct{}
 
 func (retrievalScorerStub) Score(ctx context.Context, text string) (float64, error) {
 	return 0.6, nil
+}
+
+type retrievalDecomposerStub struct {
+	queries []string
+	err     error
+	calls   int
+}
+
+func (d *retrievalDecomposerStub) Decompose(ctx context.Context, query string, maxQueries int) ([]string, error) {
+	d.calls++
+	if d.err != nil {
+		return nil, d.err
+	}
+	if len(d.queries) <= maxQueries {
+		return append([]string{}, d.queries...), nil
+	}
+	return append([]string{}, d.queries[:maxQueries]...), nil
 }
 
 type retrievalEntityFactRepoStub struct {
@@ -182,6 +220,53 @@ func (r *retrievalEntityFactRepoStub) ListByEntityRelation(
 		}
 	}
 	return out, nil
+}
+
+func TestSearchUsesBatchEmbeddingForExpandedQueries(t *testing.T) {
+	query := "When did Alex and Bob travel after the meeting?"
+	planned := buildSearchQueries(query, classifyQuery(query))
+	require.Greater(t, len(planned), 1)
+
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"m1": {ID: "m1", TenantID: "tenant_1", Content: "Alex and Bob traveled in June"},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{{MemoryID: "m1", Similarity: 0.9}},
+	}
+	embedder := &retrievalBatchEmbedderStub{}
+	svc := NewService(repo, retrievalTenantRepoStub{}, vector, embedder, retrievalScorerStub{})
+
+	results, err := svc.Search(context.Background(), "tenant_1", query, 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, 1, embedder.batchCalls)
+	require.Equal(t, 0, embedder.embedCalls)
+	require.Greater(t, embedder.batchSizes[0], 1)
+}
+
+func TestSearchQueryEmbeddingCacheSkipsRepeatEmbeds(t *testing.T) {
+	query := "When did Alex and Bob travel after the meeting?"
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"m1": {ID: "m1", TenantID: "tenant_1", Content: "Alex and Bob traveled in June"},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{{MemoryID: "m1", Similarity: 0.9}},
+	}
+	embedder := &retrievalBatchEmbedderStub{}
+	svc := NewService(repo, retrievalTenantRepoStub{}, vector, embedder, retrievalScorerStub{})
+
+	_, err := svc.Search(context.Background(), "tenant_1", query, 5)
+	require.NoError(t, err)
+	require.Equal(t, 1, embedder.batchCalls)
+
+	_, err = svc.Search(context.Background(), "tenant_1", query, 5)
+	require.NoError(t, err)
+	require.Equal(t, 1, embedder.batchCalls)
+	require.Equal(t, 0, embedder.embedCalls)
 }
 
 func TestSearchRanksByWMRAndTouches(t *testing.T) {
@@ -400,6 +485,85 @@ func TestSearchPrefersCanonicalUnitsOverRawTurnsByDefault(t *testing.T) {
 	require.Equal(t, "raw", results[1].ID)
 }
 
+func TestSearchImplicitCanonicalKindsForEntityFactsFiltersRawByDefault(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"raw": {
+				ID:             "raw",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindRawTurn,
+				Content:        "Alex: I live in Austin.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+			"obs": {
+				ID:             "obs",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Alex lives in Austin.",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{
+			{MemoryID: "raw", Similarity: 0.95},
+			{MemoryID: "obs", Similarity: 0.95},
+		},
+	}
+
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		vector,
+		retrievalEmbedderStub{},
+		retrievalScorerStub{},
+		WithEntityFactRepository(&retrievalEntityFactRepoStub{}),
+		WithImplicitCanonicalKindsForEntityFacts(true),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "where does Alex live?", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "obs", results[0].ID)
+}
+
+func TestSearchImplicitCanonicalKindsForEntityFactsFallsBackToRawWhenNoCanonicalFound(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"raw": {
+				ID:             "raw",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindRawTurn,
+				Content:        "Alex: I only mentioned this in chat.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{
+			{MemoryID: "raw", Similarity: 0.95},
+		},
+	}
+
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		vector,
+		retrievalEmbedderStub{},
+		retrievalScorerStub{},
+		WithEntityFactRepository(&retrievalEntityFactRepoStub{}),
+		WithImplicitCanonicalKindsForEntityFacts(true),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "what did Alex mention?", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "raw", results[0].ID)
+}
+
 func TestSearchWithQueryRoutingBoostsTemporalKinds(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &retrievalRepoStub{
@@ -491,6 +655,58 @@ func TestSearchWithMatchRankingPrioritizesQueryOverlap(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	require.Equal(t, "m1", results[0].ID)
+}
+
+func TestSearchWithPairwiseRerankPromotesBetterQueryDocumentFit(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"generic": {
+				ID:             "generic",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "General life update and weekend plans.",
+				Importance:     0.9,
+				LastAccessedAt: now.Add(-10 * time.Minute),
+			},
+			"support_group": {
+				ID:             "support_group",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Caroline joined an LGBTQ support group yesterday.",
+				QueryViewText:  "caroline joined support group",
+				Importance:     0.2,
+				LastAccessedAt: now.Add(-24 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{
+			{ID: "generic", TenantID: "tenant_1"},
+			{ID: "support_group", TenantID: "tenant_1"},
+		},
+	}
+	vector := retrievalVectorStub{
+		candidates: []domain.VectorstoreCandidate{
+			{MemoryID: "generic", Similarity: 0.95},
+			{MemoryID: "support_group", Similarity: 0.20},
+		},
+	}
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		vector,
+		retrievalEmbedderStub{},
+		retrievalScorerStub{},
+		RerankOptions{
+			Enabled:  true,
+			Provider: "pairwise",
+			Window:   50,
+			Blend:    1.0,
+		},
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "which group did caroline join", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	require.Equal(t, "support_group", results[0].ID)
 }
 
 func TestSearchCanonicalPriorityKeepsRawTurnsBehindFacts(t *testing.T) {
@@ -800,6 +1016,143 @@ func TestSearchBuildsIterativeQueriesForMultiHopQuestion(t *testing.T) {
 	_, err := svc.Search(context.Background(), "tenant_1", "who met Jordan before moving to Austin?", 3)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(repo.searchedQueries), 2)
+}
+
+func TestSearchMultiHopUsesLLMDecompositionQueriesWhenConfigured(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"m1": {
+				ID:             "m1",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Jordan moved to Austin in 2024.",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+		searchResultsByQuery: map[string][]domain.Memory{
+			"jordan move austin": {
+				{ID: "m1", TenantID: "tenant_1", Kind: domain.MemoryKindObservation, Content: "Jordan moved to Austin in 2024."},
+			},
+		},
+	}
+	decomposer := &retrievalDecomposerStub{
+		queries: []string{"jordan move austin"},
+	}
+
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		MultiHopOptions{
+			EntityFactBridgeEnabled: true,
+			LLMDecompositionEnabled: true,
+			MaxDecompositionQueries: 3,
+			EnablePairwiseRerank:    true,
+			TokenExpansionFallback:  false,
+		},
+		WithMultiHopQueryDecomposer(decomposer),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "who met Jordan before moving to Austin?", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, 1, decomposer.calls)
+	require.Contains(t, repo.searchedQueries, "jordan move austin")
+}
+
+func TestSearchGraphEntityBridgeUsesQueryEntityWhenAvailable(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"bridge": {
+				ID:             "bridge",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Melanie joined a support group after the trip.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-2 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{},
+	}
+	entityFacts := &retrievalEntityFactRepoStub{
+		facts: []domain.EntityFact{
+			{
+				TenantID: "tenant_1",
+				Entity:   "melanie",
+				Relation: "event",
+				Value:    "support group",
+				MemoryID: "bridge",
+			},
+		},
+	}
+
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		WithEntityFactRepository(entityFacts),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "who did Melanie meet and what event did she join?", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, "bridge", results[0].ID)
+}
+
+func TestSearchGraphEntityBridgeFallsBackToFirstHopEntityWhenQueryEntityMissing(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"seed": {
+				ID:             "seed",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Melanie planned a trip to Denver.",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-3 * time.Hour),
+			},
+			"bridge": {
+				ID:             "bridge",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Melanie joined a support group after the trip.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-2 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{
+			{ID: "seed", TenantID: "tenant_1", Kind: domain.MemoryKindObservation, Content: "Melanie planned a trip to Denver."},
+		},
+	}
+	entityFacts := &retrievalEntityFactRepoStub{
+		facts: []domain.EntityFact{
+			{
+				TenantID: "tenant_1",
+				Entity:   "melanie",
+				Relation: "event",
+				Value:    "support group",
+				MemoryID: "bridge",
+			},
+		},
+	}
+
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		WithEntityFactRepository(entityFacts),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "who planned the trip and joined the support group?", 3)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	require.Equal(t, "bridge", results[0].ID)
 }
 
 func TestSearchUsesEntityHintCandidatesForSingleHopQuestion(t *testing.T) {

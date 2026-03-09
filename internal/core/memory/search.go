@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"sort"
@@ -16,6 +18,13 @@ const reciprocalRankFusionK = 60
 
 var rankingTokenPattern = regexp.MustCompile(`[a-zA-Z0-9_]+`)
 var conversationalNoisePattern = regexp.MustCompile(`(?i)\b(?:said that|totally agree|absolutely|thanks|thank you|yeah|yep|wow|great|sounds good)\b`)
+var factoidQueryPattern = regexp.MustCompile(`(?i)^\s*(?:what|who|which|whose|where|when)\b`)
+var rankingStopwordPattern = map[string]struct{}{
+	"a": {}, "an": {}, "the": {}, "what": {}, "when": {}, "where": {}, "who": {}, "why": {}, "how": {}, "which": {}, "whose": {},
+	"did": {}, "does": {}, "do": {}, "is": {}, "are": {}, "was": {}, "were": {}, "to": {}, "of": {}, "in": {}, "on": {}, "at": {},
+	"for": {}, "with": {}, "about": {}, "tell": {}, "me": {}, "it": {}, "this": {}, "that": {}, "and": {}, "or": {}, "if": {},
+	"be": {}, "been": {}, "being": {}, "as": {}, "from": {}, "by": {},
+}
 
 type SearchOptions struct {
 	MinScore     float64
@@ -112,6 +121,21 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	if err := s.ensureTenantExists(ctx, tenantID); err != nil {
 		return nil, err
 	}
+	if s.shouldApplyImplicitCanonicalKinds(opts) {
+		canonicalOpts := opts
+		canonicalOpts.Kinds = []domain.MemoryKind{
+			domain.MemoryKindObservation,
+			domain.MemoryKindEvent,
+			domain.MemoryKindSummary,
+		}
+		canonicalResults, err := s.SearchWithFilters(ctx, tenantID, query, topK, canonicalOpts)
+		if err != nil {
+			return nil, err
+		}
+		if len(canonicalResults) > 0 {
+			return canonicalResults, nil
+		}
+	}
 	if topK <= 0 {
 		topK = 10
 	}
@@ -170,13 +194,16 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	}
 	lexicalCandidates = append(lexicalCandidates, initialLexical...)
 	if profile.MultiHop {
-		iterativeQueries := buildIterativeMultiHopQueries(query, lexicalCandidates, 2)
-		if len(iterativeQueries) > 0 {
-			plannedQueries = appendUniqueSearchQueries(plannedQueries, iterativeQueries)
-			iterativeLexical, err := s.collectLexicalCandidates(
+		decomposedQueries, err := s.buildLLMMultiHopQueries(ctx, query)
+		if err != nil {
+			s.logDebugf("[pali-search] multihop_llm_decomposition_error=%v", err)
+		}
+		if len(decomposedQueries) > 0 {
+			plannedQueries = appendUniqueSearchQueries(plannedQueries, decomposedQueries)
+			decomposedLexical, err := s.collectLexicalCandidates(
 				ctx,
 				tenantID,
-				iterativeQueries,
+				decomposedQueries,
 				candidateTopK,
 				opts,
 				tierFilter,
@@ -185,7 +212,42 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			if err != nil {
 				return nil, err
 			}
-			lexicalCandidates = append(lexicalCandidates, iterativeLexical...)
+			lexicalCandidates = append(lexicalCandidates, decomposedLexical...)
+		}
+		if s.entityRepo != nil && s.multiHop.EntityFactBridgeEnabled {
+			bridgeCandidates, err := s.collectGraphEntityBridgeCandidates(
+				ctx,
+				tenantID,
+				query,
+				plan,
+				lexicalCandidates,
+				candidateTopK,
+				tierFilter,
+				kindFilter,
+			)
+			if err != nil {
+				return nil, err
+			}
+			lexicalCandidates = append(lexicalCandidates, bridgeCandidates...)
+		}
+		if s.multiHop.TokenExpansionFallback {
+			iterativeQueries := buildIterativeMultiHopQueries(query, lexicalCandidates, 2)
+			if len(iterativeQueries) > 0 {
+				plannedQueries = appendUniqueSearchQueries(plannedQueries, iterativeQueries)
+				iterativeLexical, err := s.collectLexicalCandidates(
+					ctx,
+					tenantID,
+					iterativeQueries,
+					candidateTopK,
+					opts,
+					tierFilter,
+					kindFilter,
+				)
+				if err != nil {
+					return nil, err
+				}
+				lexicalCandidates = append(lexicalCandidates, iterativeLexical...)
+			}
 		}
 	}
 	bm25Dur = time.Since(bm25Start)
@@ -193,13 +255,9 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	var denseCandidates []domain.VectorstoreCandidate
 	if s.vector != nil && s.embedder != nil {
 		embedStart := time.Now()
-		embeddings := make([][]float32, 0, len(plannedQueries))
-		for _, searchQuery := range plannedQueries {
-			queryEmbedding, err := s.embedder.Embed(ctx, searchQuery)
-			if err != nil {
-				return nil, err
-			}
-			embeddings = append(embeddings, queryEmbedding)
+		embeddings, err := s.embedSearchQueries(ctx, plannedQueries)
+		if err != nil {
+			return nil, err
 		}
 		embedDur = time.Since(embedStart)
 		vectorStart := time.Now()
@@ -277,6 +335,9 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			return 0
 		}
 	})
+	if shouldApplyPairwiseRerank(profile, s.multiHop) {
+		scored = s.rerankScoredCandidates(scored, query, topK)
+	}
 
 	filtered := make([]scoredMemory, 0, len(scored))
 	for _, item := range scored {
@@ -335,6 +396,45 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		s.logDebugf("[pali-search] tenant=%s memory_count_error=%v", tenantID, err)
 	}
 
+	return out, nil
+}
+
+func (s *Service) shouldApplyImplicitCanonicalKinds(opts SearchOptions) bool {
+	if s == nil || !s.preferCanonicalEntityKinds || s.entityRepo == nil {
+		return false
+	}
+	return len(opts.Kinds) == 0
+}
+
+func (s *Service) embedSearchQueries(ctx context.Context, queries []string) ([][]float32, error) {
+	if len(queries) == 0 {
+		return [][]float32{}, nil
+	}
+	out := make([][]float32, len(queries))
+	pendingQueries := make([]string, 0, len(queries))
+	pendingIdx := make([]int, 0, len(queries))
+	for i, query := range queries {
+		if embedding, ok := s.getCachedQueryEmbedding(query); ok {
+			out[i] = embedding
+			continue
+		}
+		pendingQueries = append(pendingQueries, query)
+		pendingIdx = append(pendingIdx, i)
+	}
+	if len(pendingQueries) == 0 {
+		return out, nil
+	}
+	embeddings, err := s.embedContents(ctx, pendingQueries)
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) != len(pendingQueries) {
+		return nil, fmt.Errorf("search query embedding count mismatch: got %d for %d queries", len(embeddings), len(pendingQueries))
+	}
+	for i := range embeddings {
+		out[pendingIdx[i]] = cloneEmbedding(embeddings[i])
+		s.setCachedQueryEmbedding(pendingQueries[i], embeddings[i])
+	}
 	return out, nil
 }
 
@@ -417,7 +517,8 @@ func (s *Service) searchByEntityFacts(
 			RRFScore:     1,
 		}
 	}
-	scored := rankMemories(filtered, signalByID, maxInt(topK, len(filtered)), query, classifyQuery(query), plan, s.ranking)
+	profile := classifyQuery(query)
+	scored := rankMemories(filtered, signalByID, maxInt(topK, len(filtered)), query, profile, plan, s.ranking)
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -428,6 +529,9 @@ func (s *Service) searchByEntityFacts(
 			return 0
 		}
 	})
+	if shouldApplyPairwiseRerank(profile, s.multiHop) {
+		scored = s.rerankScoredCandidates(scored, query, topK)
+	}
 	ranked := make([]domain.Memory, 0, len(scored))
 	for _, item := range scored {
 		if item.Score < opts.MinScore {
@@ -716,6 +820,181 @@ func (s *Service) collectEntityHintCandidates(
 	return candidates, nil
 }
 
+func (s *Service) buildLLMMultiHopQueries(ctx context.Context, query string) ([]string, error) {
+	if !s.multiHop.LLMDecompositionEnabled || s.queryDecomposer == nil {
+		return []string{}, nil
+	}
+	maxQueries := s.multiHop.MaxDecompositionQueries
+	if maxQueries <= 0 {
+		maxQueries = defaultMultiHopOptions().MaxDecompositionQueries
+	}
+	queries, err := s.queryDecomposer.Decompose(ctx, query, maxQueries)
+	if err != nil {
+		return nil, err
+	}
+	base := condenseSearchQuery(query)
+	out := make([]string, 0, len(queries))
+	for _, candidate := range queries {
+		candidate = condenseSearchQuery(candidate)
+		if candidate == "" {
+			continue
+		}
+		if strings.EqualFold(candidate, base) {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return out, nil
+}
+
+func (s *Service) collectGraphEntityBridgeCandidates(
+	ctx context.Context,
+	tenantID, query string,
+	plan queryPlan,
+	lexical []lexicalCandidate,
+	topK int,
+	tierFilter map[domain.MemoryTier]struct{},
+	kindFilter map[domain.MemoryKind]struct{},
+) ([]lexicalCandidate, error) {
+	if s.entityRepo == nil || plan.Intent != "graph_entity_expansion" {
+		return []lexicalCandidate{}, nil
+	}
+	entities := graphEntityBridgeSeeds(query, plan, lexical)
+	if len(entities) == 0 {
+		return []lexicalCandidate{}, nil
+	}
+	relations := []string{"activity", "event", "plan", "identity", "role", "place", "book"}
+	lookupLimit := topK / 10
+	if lookupLimit < 8 {
+		lookupLimit = 8
+	}
+	if lookupLimit > 24 {
+		lookupLimit = 24
+	}
+	ids := make([]string, 0, len(entities)*len(relations)*lookupLimit)
+	seen := make(map[string]struct{}, len(entities)*len(relations)*lookupLimit)
+	for _, entity := range entities {
+		for _, relation := range relations {
+			facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
+			if err != nil {
+				return nil, err
+			}
+			for _, fact := range facts {
+				memoryID := strings.TrimSpace(fact.MemoryID)
+				if memoryID == "" {
+					continue
+				}
+				if _, ok := seen[memoryID]; ok {
+					continue
+				}
+				seen[memoryID] = struct{}{}
+				ids = append(ids, memoryID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return []lexicalCandidate{}, nil
+	}
+	memories, err := s.repo.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]lexicalCandidate, 0, len(memories))
+	for _, memory := range memories {
+		if len(kindFilter) > 0 {
+			if _, ok := kindFilter[memory.Kind]; !ok {
+				continue
+			}
+		}
+		if len(tierFilter) > 0 {
+			if _, ok := tierFilter[memory.Tier]; !ok {
+				continue
+			}
+		}
+		lexicalScore := lexicalContentScore(query, memory.Content)
+		entityHit := 0.0
+		lowered := strings.ToLower(memory.Content)
+		for _, entity := range entities {
+			if strings.Contains(lowered, entity) {
+				entityHit = 1
+				break
+			}
+		}
+		score := clamp01((0.72 * lexicalScore) + (0.28 * entityHit))
+		if score < 0.16 {
+			continue
+		}
+		candidates = append(candidates, lexicalCandidate{
+			Memory: memory,
+			Score:  score,
+		})
+	}
+	slices.SortFunc(candidates, func(a, b lexicalCandidate) int {
+		switch {
+		case a.Score > b.Score:
+			return -1
+		case a.Score < b.Score:
+			return 1
+		default:
+			return strings.Compare(a.Memory.ID, b.Memory.ID)
+		}
+	})
+	maxBridgeCandidates := topK
+	if maxBridgeCandidates < 12 {
+		maxBridgeCandidates = 12
+	}
+	if len(candidates) > maxBridgeCandidates {
+		candidates = candidates[:maxBridgeCandidates]
+	}
+	return candidates, nil
+}
+
+func graphEntityBridgeSeeds(query string, plan queryPlan, lexical []lexicalCandidate) []string {
+	seeds := make([]string, 0, 6)
+	seen := make(map[string]struct{}, 6)
+	add := func(entity string) {
+		entity = normalizeEntityFactEntity(entity)
+		if entity == "" {
+			return
+		}
+		if _, ok := seen[entity]; ok {
+			return
+		}
+		seen[entity] = struct{}{}
+		seeds = append(seeds, entity)
+	}
+
+	for _, entity := range plan.Entities {
+		add(entity)
+	}
+	for _, match := range entityNamePattern.FindAllString(query, -1) {
+		add(match)
+	}
+
+	ordered := append([]lexicalCandidate{}, lexical...)
+	slices.SortFunc(ordered, func(a, b lexicalCandidate) int {
+		switch {
+		case a.Score > b.Score:
+			return -1
+		case a.Score < b.Score:
+			return 1
+		default:
+			return strings.Compare(a.Memory.ID, b.Memory.ID)
+		}
+	})
+	maxSeedScan := 8
+	if len(ordered) < maxSeedScan {
+		maxSeedScan = len(ordered)
+	}
+	for i := 0; i < maxSeedScan; i++ {
+		add(inferEntityFromFact(ordered[i].Memory.Content))
+	}
+	if len(seeds) > 4 {
+		return seeds[:4]
+	}
+	return seeds
+}
+
 func lexicalContentScore(query, content string) float64 {
 	queryTokens := normalizedRankingTokens(query)
 	contentTokens := normalizedRankingTokens(content)
@@ -738,6 +1017,192 @@ func lexicalContentScore(query, content string) float64 {
 		jaccard = float64(matches) / float64(union)
 	}
 	return clamp01((0.7 * recall) + (0.3 * jaccard))
+}
+
+func (s *Service) rerankScoredCandidates(items []scoredMemory, query string, topK int) []scoredMemory {
+	if len(items) < 2 {
+		return items
+	}
+	opts := s.rerank
+
+	window := opts.Window
+	if window <= 0 {
+		window = defaultRerankOptions().Window
+	}
+	if topK > window {
+		window = topK
+	}
+	if window > len(items) {
+		window = len(items)
+	}
+	blend := opts.Blend
+	if blend < 0 {
+		blend = 0
+	}
+	if blend > 1 {
+		blend = 1
+	}
+	if blend == 0 {
+		blend = defaultRerankOptions().Blend
+	}
+
+	head := append([]scoredMemory{}, items[:window]...)
+	tail := append([]scoredMemory{}, items[window:]...)
+	idfByToken := buildLocalIDFMap(query, head)
+	for i := range head {
+		pairwise := pairwiseRerankScore(query, head[i].Memory, idfByToken)
+		head[i].Score = clamp01(((1 - blend) * head[i].Score) + (blend * pairwise))
+	}
+	slices.SortFunc(head, func(a, b scoredMemory) int {
+		switch {
+		case a.Score > b.Score:
+			return -1
+		case a.Score < b.Score:
+			return 1
+		default:
+			return strings.Compare(a.Memory.ID, b.Memory.ID)
+		}
+	})
+	return append(head, tail...)
+}
+
+func pairwiseRerankScore(query string, memory domain.Memory, idfByToken map[string]float64) float64 {
+	content := strings.TrimSpace(memory.Content)
+	queryView := strings.TrimSpace(memory.QueryViewText)
+	doc := content
+	if queryView != "" {
+		if doc != "" {
+			doc += "\n"
+		}
+		doc += queryView
+	}
+	lexical := lexicalContentScore(query, doc)
+	phrase := orderedBigramCoverage(query, doc)
+	proximity := queryTokenProximityScore(query, doc)
+	queryViewMatch := lexicalContentScore(query, queryView)
+	idfCoverage := idfCoverageScore(query, doc, idfByToken)
+	idfQueryView := idfCoverageScore(query, queryView, idfByToken)
+	return weightedAverage(
+		[]float64{lexical, phrase, proximity, queryViewMatch, idfCoverage, idfQueryView},
+		[]float64{0.28, 0.16, 0.15, 0.11, 0.20, 0.10},
+	)
+}
+
+func buildLocalIDFMap(query string, candidates []scoredMemory) map[string]float64 {
+	queryTokens := normalizedRankingTokenList(query)
+	if len(queryTokens) == 0 || len(candidates) == 0 {
+		return map[string]float64{}
+	}
+	seenQuery := make(map[string]struct{}, len(queryTokens))
+	uniqueQuery := make([]string, 0, len(queryTokens))
+	for _, token := range queryTokens {
+		if _, ok := seenQuery[token]; ok {
+			continue
+		}
+		seenQuery[token] = struct{}{}
+		uniqueQuery = append(uniqueQuery, token)
+	}
+	docFreq := make(map[string]int, len(uniqueQuery))
+	for _, item := range candidates {
+		docTokens := normalizedRankingTokens(item.Memory.Content + "\n" + item.Memory.QueryViewText)
+		for _, token := range uniqueQuery {
+			if _, ok := docTokens[token]; ok {
+				docFreq[token]++
+			}
+		}
+	}
+	n := float64(len(candidates))
+	idf := make(map[string]float64, len(uniqueQuery))
+	for _, token := range uniqueQuery {
+		df := float64(docFreq[token])
+		// BM25-style local IDF with +1 smoothing to keep values positive.
+		idf[token] = math.Log(1+((n-df+0.5)/(df+0.5))) + 1
+	}
+	return idf
+}
+
+func idfCoverageScore(query, content string, idfByToken map[string]float64) float64 {
+	queryTokens := normalizedRankingTokens(query)
+	docTokens := normalizedRankingTokens(content)
+	if len(queryTokens) == 0 || len(docTokens) == 0 {
+		return 0
+	}
+	total := 0.0
+	matched := 0.0
+	for token := range queryTokens {
+		w := idfByToken[token]
+		if w <= 0 {
+			w = 1
+		}
+		total += w
+		if _, ok := docTokens[token]; ok {
+			matched += w
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return clamp01(matched / total)
+}
+
+func queryTokenProximityScore(query, content string) float64 {
+	queryTokens := normalizedRankingTokenList(query)
+	contentTokens := normalizedRankingTokenList(content)
+	if len(queryTokens) == 0 || len(contentTokens) == 0 {
+		return 0
+	}
+	seen := make(map[string]struct{}, len(queryTokens))
+	orderedUnique := make([]string, 0, len(queryTokens))
+	for _, token := range queryTokens {
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		orderedUnique = append(orderedUnique, token)
+	}
+	if len(orderedUnique) == 0 {
+		return 0
+	}
+
+	prev := -1
+	matched := 0
+	totalGap := 0
+	for _, token := range orderedUnique {
+		pos := findTokenPositionAfter(contentTokens, token, prev+1)
+		if pos < 0 {
+			continue
+		}
+		if prev >= 0 && pos > prev {
+			totalGap += pos - prev - 1
+		}
+		prev = pos
+		matched++
+	}
+	if matched == 0 {
+		return 0
+	}
+	coverage := float64(matched) / float64(len(orderedUnique))
+	if matched == 1 {
+		return clamp01(coverage * 0.5)
+	}
+	avgGap := float64(totalGap) / float64(matched-1)
+	compactness := 1.0 / (1.0 + avgGap)
+	return clamp01((0.65 * coverage) + (0.35 * compactness))
+}
+
+func findTokenPositionAfter(tokens []string, target string, start int) int {
+	if target == "" || start >= len(tokens) {
+		return -1
+	}
+	if start < 0 {
+		start = 0
+	}
+	for i := start; i < len(tokens); i++ {
+		if tokens[i] == target {
+			return i
+		}
+	}
+	return -1
 }
 
 func appendUniqueSearchQueries(base, extra []string) []string {
@@ -778,6 +1243,13 @@ func rankMemories(
 	ranking RankingOptions,
 ) []scoredMemory {
 	now := time.Now().UTC()
+	hasNonRawKinds := false
+	for _, memory := range memories {
+		if memory.Kind != domain.MemoryKindRawTurn {
+			hasNonRawKinds = true
+			break
+		}
+	}
 	recencyRaw := make([]float64, len(memories))
 	relevanceRaw := make([]float64, len(memories))
 	rawRelevance := make([]float64, len(memories))
@@ -806,10 +1278,6 @@ func rankMemories(
 		lexicalRankNorm := rankToNormalized(signal.LexicalRank, candidateLimit)
 		routeFit := normalizedRouteBoost(routeBoost(m, profile))
 		entitySlotHit := entityRelationSignal(plan, m.Content)
-		// Fix 4: when no dense embedder is active, DenseScore and DenseRank are
-		// both zero for every item. Including their weights deflates rawRel by ~42%
-		// uniformly, which misaligns the applyLowEvidencePenalty thresholds. Zero
-		// out their weights; weightedAverage normalises over remaining signals.
 		denseScoreW, denseRankW := 0.34, 0.08
 		if signal.DenseScore == 0 && signal.DenseRank == 0 {
 			denseScoreW, denseRankW = 0, 0
@@ -824,9 +1292,6 @@ func rankMemories(
 				entitySlotHit,
 				routeFit,
 			},
-			// Fix 3: BM25 rank (lexicalRankNorm) reflects IDF-weighted ordering from
-			// SQLite FTS5; bag-of-words lexicalScore does not. Raise lexicalRankNorm
-			// weight (0.08→0.20) at the expense of lexicalScore (0.24→0.12).
 			[]float64{denseScoreW, 0.12, denseRankW, 0.20, 0.10, 0.10, 0.06},
 		)
 		rel := scoring.Relevance(rawRel)
@@ -866,6 +1331,10 @@ func rankMemories(
 	scored := make([]scoredMemory, 0, len(memories))
 	queryTokens := normalizedRankingTokens(query)
 	for i, m := range memories {
+		docTokens := normalizedRankingTokens(m.Content)
+		overlap := queryOverlapScore(queryTokens, docTokens)
+		dependency := orderedBigramCoverage(query, m.Content)
+
 		rec := scoring.MinMax(recencyRaw[i], minRec, maxRec)
 		rel := scoring.MinMax(relevanceRaw[i], minRel, maxRel)
 		imp := scoring.MinMax(importanceRaw[i], minImp, maxImp)
@@ -874,7 +1343,9 @@ func rankMemories(
 		switch ranking.Algorithm {
 		case "match":
 			route := normalizedRouteBoost(routeBoost(m, profile))
-			overlap := queryOverlapScore(queryTokens, normalizedRankingTokens(m.Content))
+			if dependency > 0 {
+				overlap = clamp01((0.8 * overlap) + (0.2 * dependency))
+			}
 			total = weightedAverage(
 				[]float64{rec, rel, imp, overlap, route},
 				[]float64{
@@ -886,20 +1357,28 @@ func rankMemories(
 				},
 			)
 		default:
-			overlap := queryOverlapScore(queryTokens, normalizedRankingTokens(m.Content))
+			recencyW := ranking.WAL.Recency
+			relevanceW := ranking.WAL.Relevance
+			importanceW := ranking.WAL.Importance
+			// For factoid-style non-temporal questions, prioritize retrieval
+			// relevance over freshness/importance to avoid recency noise.
+			if shouldUseRelevanceFirst(query, profile) {
+				recencyW *= 0.20
+				importanceW *= 0.25
+				relevanceW *= 1.75
+			}
 			total = weightedAverage(
 				[]float64{rec, rel, imp},
 				[]float64{
-					ranking.WAL.Recency,
-					ranking.WAL.Relevance,
-					ranking.WAL.Importance,
+					recencyW,
+					relevanceW,
+					importanceW,
 				},
 			)
 			if !profile.Temporal && !profile.MultiHop {
-				total = applySingleHopPrecisionBoost(total, overlap, m)
+				total = applySingleHopPrecisionBoost(total, overlap, dependency, m, hasNonRawKinds)
 			}
 			if !profile.Temporal && !profile.MultiHop {
-				// Fix 1: pass RRF score so well-ranked items are never penalised.
 				total = applyLowEvidencePenalty(total, rawRelevance[i], overlap, signalByID[m.ID].RRFScore)
 			}
 			if profile.Temporal || profile.Person || profile.MultiHop {
@@ -978,11 +1457,14 @@ func relationHintTokens(relation string) []string {
 	}
 }
 
-func applySingleHopPrecisionBoost(total, overlap float64, memory domain.Memory) float64 {
-	adjusted := clamp01((0.85 * clamp01(total)) + (0.15 * clamp01(overlap)))
+func applySingleHopPrecisionBoost(total, overlap, dependency float64, memory domain.Memory, hasNonRawKinds bool) float64 {
+	adjusted := clamp01((0.76 * clamp01(total)) + (0.14 * clamp01(overlap)) + (0.10 * clamp01(dependency)))
 	kindMultiplier := 1.0
 	if isCanonicalFactMemory(memory) {
 		kindMultiplier *= 1.12
+	}
+	if dependency >= 0.50 {
+		kindMultiplier *= 1.04
 	}
 	switch memory.Kind {
 	case domain.MemoryKindObservation:
@@ -992,16 +1474,39 @@ func applySingleHopPrecisionBoost(total, overlap float64, memory domain.Memory) 
 	case domain.MemoryKindSummary:
 		kindMultiplier *= 0.96
 	case domain.MemoryKindRawTurn:
-		kindMultiplier *= 0.86
-		if conversationalNoisePattern.MatchString(strings.ToLower(memory.Content)) {
-			kindMultiplier *= 0.80
+		if hasNonRawKinds {
+			kindMultiplier *= 0.86
+			if conversationalNoisePattern.MatchString(strings.ToLower(memory.Content)) {
+				kindMultiplier *= 0.80
+			}
 		}
 	}
 	return clamp01(adjusted * kindMultiplier)
 }
 
+func shouldUseRelevanceFirst(query string, profile queryProfile) bool {
+	if profile.MultiHop || profile.Temporal {
+		return false
+	}
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return false
+	}
+	return profile.Person || factoidQueryPattern.MatchString(q)
+}
+
 func shouldExpandGroundedContext(profile queryProfile) bool {
 	return profile.Temporal || profile.MultiHop
+}
+
+func shouldApplyPairwiseRerank(profile queryProfile, multiHop MultiHopOptions) bool {
+	if profile.Temporal {
+		return false
+	}
+	if profile.MultiHop {
+		return multiHop.EnablePairwiseRerank
+	}
+	return true
 }
 
 func weightedAverage(values []float64, weights []float64) float64 {
@@ -1043,15 +1548,67 @@ func normalizedRouteBoost(v float64) float64 {
 }
 
 func normalizedRankingTokens(text string) map[string]struct{} {
-	tokens := rankingTokenPattern.FindAllString(strings.ToLower(strings.TrimSpace(text)), -1)
+	tokens := normalizedRankingTokenList(text)
 	out := make(map[string]struct{}, len(tokens))
 	for _, token := range tokens {
-		if len(token) < 2 {
-			continue
-		}
 		out[token] = struct{}{}
 	}
 	return out
+}
+
+func normalizedRankingTokenList(text string) []string {
+	rawTokens := rankingTokenPattern.FindAllString(strings.ToLower(strings.TrimSpace(text)), -1)
+	if len(rawTokens) == 0 {
+		return []string{}
+	}
+	filtered := make([]string, 0, len(rawTokens))
+	for _, token := range rawTokens {
+		if len(token) < 2 {
+			continue
+		}
+		if _, stop := rankingStopwordPattern[token]; stop {
+			continue
+		}
+		filtered = append(filtered, token)
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+	// Fallback for short queries that collapse to only stopwords.
+	out := make([]string, 0, len(rawTokens))
+	for _, token := range rawTokens {
+		if len(token) < 2 {
+			continue
+		}
+		out = append(out, token)
+	}
+	return out
+}
+
+func orderedBigramCoverage(query, content string) float64 {
+	queryTokens := normalizedRankingTokenList(query)
+	if len(queryTokens) < 2 {
+		return 0
+	}
+	contentTokens := normalizedRankingTokenList(content)
+	if len(contentTokens) < 2 {
+		return 0
+	}
+	docBigrams := make(map[string]struct{}, len(contentTokens)-1)
+	for i := 0; i < len(contentTokens)-1; i++ {
+		docBigrams[contentTokens[i]+" "+contentTokens[i+1]] = struct{}{}
+	}
+	matches := 0
+	total := len(queryTokens) - 1
+	for i := 0; i < total; i++ {
+		if _, ok := docBigrams[queryTokens[i]+" "+queryTokens[i+1]]; ok {
+			matches++
+		}
+	}
+	if total <= 0 {
+		return 0
+	}
+	return clamp01(float64(matches) / float64(total))
 }
 
 func queryOverlapScore(queryTokens, docTokens map[string]struct{}) float64 {
