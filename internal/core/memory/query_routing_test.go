@@ -21,6 +21,13 @@ func TestClassifyQueryTwoClauseAndIsMultiHop(t *testing.T) {
 	require.True(t, profile.MultiHop)
 }
 
+func TestBuildQueryPlanMultiHopCapturesNamedEntities(t *testing.T) {
+	profile := classifyQuery("who did Melanie meet and where did she move?")
+	plan := buildQueryPlan("who did Melanie meet and where did she move?", profile)
+	require.Equal(t, "graph_entity_expansion", plan.Intent)
+	require.Equal(t, "melanie", plan.primaryEntity())
+}
+
 func TestClassifyEntityHintQueryForSingleHopReturnsName(t *testing.T) {
 	profile := classifyQuery("What is Melanie's reason for getting into running?")
 	entity, ok := classifyEntityHintQuery("What is Melanie's reason for getting into running?", profile)
@@ -43,4 +50,14 @@ func TestBuildQueryPlanTemporalRoute(t *testing.T) {
 	plan := buildQueryPlan("when did Alex move to Austin?", profile)
 	require.Equal(t, "temporal_lookup", plan.Intent)
 	require.Equal(t, "time_anchored_fact", plan.RequiredEvidence)
+}
+
+func TestClassifyAggregationQuery_DoesNotHijackFactualQuestion(t *testing.T) {
+	_, ok := classifyAggregationQuery("What did Caroline research?")
+	require.False(t, ok)
+}
+
+func TestClassifyAggregationQuery_RequiresExplicitSetIntent(t *testing.T) {
+	_, ok := classifyAggregationQuery("When did Caroline attend a support group?")
+	require.False(t, ok)
 }

@@ -14,7 +14,7 @@ var (
 	entityNamePattern = regexp.MustCompile(`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b`)
 	timeTagPattern    = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
 
-	aggregationIntentPattern           = regexp.MustCompile(`\b(what all|list|activities?|events?|things?|places?|books?|hobbies?|interests?|participated|attended|done)\b`)
+	aggregationIntentPattern           = regexp.MustCompile(`(?i)\b(what all|list|activities?|events?|places?|books?|hobbies?|interests?)\b`)
 	aggregationEntityDoesDoPattern     = regexp.MustCompile(`(?i)\b(?:does|did)\s+([a-z][a-z0-9'\-]*(?:\s+[a-z][a-z0-9'\-]*){0,2})\s+do\b`)
 	aggregationEntityAfterVerbPattern  = regexp.MustCompile(`(?i)\b(?:does|did|do|for|of)\s+([a-z][a-z0-9'\-]*(?:\s+[a-z][a-z0-9'\-]*){0,2})\b`)
 	aggregationEntityBeforeVerbPattern = regexp.MustCompile(`(?i)\b([a-z][a-z0-9'\-]*(?:\s+[a-z][a-z0-9'\-]*){0,2})\s+(?:attended|participated|did|does)\b`)
@@ -92,6 +92,7 @@ func buildQueryPlan(query string, profile queryProfile) queryPlan {
 	if profile.MultiHop {
 		plan.Intent = "graph_entity_expansion"
 		plan.Confidence = 0.74
+		plan.Entities = extractMultiHopRouteEntities(query)
 		plan.RequiredEvidence = "multi_hop_supporting_facts"
 		plan.FallbackPath = []string{"direct_fact_lookup", "hybrid_vector_fallback"}
 		return plan
@@ -162,6 +163,27 @@ func isLikelyMultiHopQuery(q string) bool {
 	return informativeParts >= 2
 }
 
+func extractMultiHopRouteEntities(query string) []string {
+	matches := entityNamePattern.FindAllString(query, -1)
+	if len(matches) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(matches))
+	seen := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		entity := normalizeEntityFactEntity(match)
+		if entity == "" {
+			continue
+		}
+		if _, ok := seen[entity]; ok {
+			continue
+		}
+		seen[entity] = struct{}{}
+		out = append(out, entity)
+	}
+	return out
+}
+
 func classifyEntityHintQuery(query string, profile queryProfile) (string, bool) {
 	query = strings.TrimSpace(query)
 	if query == "" || profile.Temporal || profile.MultiHop {
@@ -193,6 +215,9 @@ func classifyAggregationQuery(query string) (aggregationQuery, bool) {
 	if !aggregationIntentPattern.MatchString(lowered) {
 		return aggregationQuery{}, false
 	}
+	if !isExplicitAggregationSetQuery(lowered) {
+		return aggregationQuery{}, false
+	}
 
 	entity := extractAggregationEntity(q)
 	relation := inferAggregationRelation(lowered)
@@ -203,6 +228,34 @@ func classifyAggregationQuery(query string) (aggregationQuery, bool) {
 		Entity:   normalizeEntityFactEntity(entity),
 		Relation: normalizeEntityFactRelation(relation),
 	}, true
+}
+
+func isExplicitAggregationSetQuery(loweredQuery string) bool {
+	if strings.TrimSpace(loweredQuery) == "" {
+		return false
+	}
+	// Keep graph-route short-circuit for explicit "list/set" requests only.
+	// This avoids hijacking factual/temporal queries that should stay on hybrid retrieval.
+	if strings.Contains(loweredQuery, "what all") || strings.Contains(loweredQuery, "list") {
+		return true
+	}
+	if strings.Contains(loweredQuery, "all activities") ||
+		strings.Contains(loweredQuery, "all events") ||
+		strings.Contains(loweredQuery, "all places") ||
+		strings.Contains(loweredQuery, "all books") ||
+		strings.Contains(loweredQuery, "all hobbies") ||
+		strings.Contains(loweredQuery, "all interests") {
+		return true
+	}
+	if strings.Contains(loweredQuery, "activities does") ||
+		strings.Contains(loweredQuery, "events does") ||
+		strings.Contains(loweredQuery, "places does") ||
+		strings.Contains(loweredQuery, "books does") ||
+		strings.Contains(loweredQuery, "hobbies does") ||
+		strings.Contains(loweredQuery, "interests does") {
+		return true
+	}
+	return false
 }
 
 func inferAggregationRelation(loweredQuery string) string {
