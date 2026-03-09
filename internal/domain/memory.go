@@ -52,11 +52,12 @@ type Memory struct {
 }
 
 type EntityFact struct {
-	ID        string
-	TenantID  string
-	Entity    string
-	Relation  string
-	Value     string
-	MemoryID  string
-	CreatedAt time.Time
+	ID          string
+	TenantID    string
+	Entity      string
+	Relation    string
+	RelationRaw string
+	Value       string
+	MemoryID    string
+	CreatedAt   time.Time
 }

@@ -13,6 +13,12 @@ type MemoryRepository interface {
 	Touch(ctx context.Context, tenantID string, ids []string) error
 }
 
+// MemoryCountRepository is an optional extension for repositories that can
+// return a total count across all tenants.
+type MemoryCountRepository interface {
+	Count(ctx context.Context) (int64, error)
+}
+
 type MemorySearchFilters struct {
 	Tiers []MemoryTier
 	Kinds []MemoryKind
@@ -195,4 +201,10 @@ type TenantRepository interface {
 	Exists(ctx context.Context, tenantID string) (bool, error)
 	MemoryCount(ctx context.Context, tenantID string) (int64, error)
 	List(ctx context.Context, limit int) ([]Tenant, error)
+}
+
+// TenantCountRepository is an optional extension for repositories that can
+// return a total tenant count.
+type TenantCountRepository interface {
+	Count(ctx context.Context) (int64, error)
 }
