@@ -15,14 +15,19 @@ type Service struct {
 	vector     domain.VectorStore
 	embedder   domain.Embedder
 	scorer     domain.ImportanceScorer
+	queryCache *queryEmbeddingCache
 
-	structured StructuredMemoryOptions
-	ranking    RankingOptions
-	parser     ParserOptions
-	infoParser InfoParser
-	logger     *log.Logger
-	devVerbose bool
-	progress   bool
+	structured                 StructuredMemoryOptions
+	ranking                    RankingOptions
+	rerank                     RerankOptions
+	multiHop                   MultiHopOptions
+	parser                     ParserOptions
+	preferCanonicalEntityKinds bool
+	infoParser                 InfoParser
+	queryDecomposer            MultiHopQueryDecomposer
+	logger                     *log.Logger
+	devVerbose                 bool
+	progress                   bool
 }
 
 type StructuredMemoryOptions struct {
@@ -50,6 +55,21 @@ type MatchWeights struct {
 	Importance   float64
 	QueryOverlap float64
 	Routing      float64
+}
+
+type RerankOptions struct {
+	Enabled  bool
+	Provider string
+	Window   int
+	Blend    float64
+}
+
+type MultiHopOptions struct {
+	EntityFactBridgeEnabled bool
+	LLMDecompositionEnabled bool
+	MaxDecompositionQueries int
+	EnablePairwiseRerank    bool
+	TokenExpansionFallback  bool
 }
 
 type ParserOptions struct {
@@ -84,6 +104,10 @@ type parserImplOption struct {
 	parser InfoParser
 }
 
+type decomposerOption struct {
+	decomposer MultiHopQueryDecomposer
+}
+
 type entityFactRepoOption struct {
 	repo domain.EntityFactRepository
 }
@@ -95,6 +119,10 @@ type loggerOption struct {
 type debugOptions struct {
 	verbose  bool
 	progress bool
+}
+
+type canonicalEntityKindsOption struct {
+	enabled bool
 }
 
 func (o StructuredMemoryOptions) apply(s *Service) {
@@ -114,6 +142,13 @@ func (o RankingOptions) apply(s *Service) {
 	s.ranking = normalizeRankingOptions(o)
 }
 
+func (o RerankOptions) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.rerank = normalizeRerankOptions(o)
+}
+
 func (o ParserOptions) apply(s *Service) {
 	if s == nil {
 		return
@@ -126,6 +161,13 @@ func (o parserImplOption) apply(s *Service) {
 		return
 	}
 	s.infoParser = o.parser
+}
+
+func (o decomposerOption) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.queryDecomposer = o.decomposer
 }
 
 func (o entityFactRepoOption) apply(s *Service) {
@@ -150,8 +192,19 @@ func (o debugOptions) apply(s *Service) {
 	s.progress = o.progress
 }
 
+func (o canonicalEntityKindsOption) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.preferCanonicalEntityKinds = o.enabled
+}
+
 func WithInfoParser(parser InfoParser) ServiceOption {
 	return parserImplOption{parser: parser}
+}
+
+func WithMultiHopQueryDecomposer(decomposer MultiHopQueryDecomposer) ServiceOption {
+	return decomposerOption{decomposer: decomposer}
 }
 
 func WithEntityFactRepository(repo domain.EntityFactRepository) ServiceOption {
@@ -167,6 +220,10 @@ func WithDebug(verbose bool, progress bool) ServiceOption {
 		verbose:  verbose,
 		progress: progress,
 	}
+}
+
+func WithImplicitCanonicalKindsForEntityFacts(enabled bool) ServiceOption {
+	return canonicalEntityKindsOption{enabled: enabled}
 }
 
 func defaultStructuredMemoryOptions() StructuredMemoryOptions {
@@ -205,6 +262,25 @@ func defaultParserOptions() ParserOptions {
 		MaxFacts:        4,
 		DedupeThreshold: 0.88,
 		UpdateThreshold: 0.94,
+	}
+}
+
+func defaultMultiHopOptions() MultiHopOptions {
+	return MultiHopOptions{
+		EntityFactBridgeEnabled: true,
+		LLMDecompositionEnabled: false,
+		MaxDecompositionQueries: 3,
+		EnablePairwiseRerank:    true,
+		TokenExpansionFallback:  true,
+	}
+}
+
+func defaultRerankOptions() RerankOptions {
+	return RerankOptions{
+		Enabled:  true,
+		Provider: "pairwise",
+		Window:   50,
+		Blend:    0.40,
 	}
 }
 
@@ -254,6 +330,42 @@ func normalizeParserOptions(in ParserOptions) ParserOptions {
 	return out
 }
 
+func (o MultiHopOptions) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.multiHop = normalizeMultiHopOptions(o)
+}
+
+func normalizeMultiHopOptions(in MultiHopOptions) MultiHopOptions {
+	def := defaultMultiHopOptions()
+	out := in
+	if out.MaxDecompositionQueries <= 0 {
+		out.MaxDecompositionQueries = def.MaxDecompositionQueries
+	}
+	return out
+}
+
+func normalizeRerankOptions(in RerankOptions) RerankOptions {
+	def := defaultRerankOptions()
+	out := in
+	out.Enabled = true
+	out.Provider = def.Provider
+	if out.Window <= 0 {
+		out.Window = def.Window
+	}
+	if out.Blend < 0 {
+		out.Blend = 0
+	}
+	if out.Blend > 1 {
+		out.Blend = 1
+	}
+	if out.Blend == 0 {
+		out.Blend = def.Blend
+	}
+	return out
+}
+
 func NewService(
 	repo domain.MemoryRepository,
 	tenantRepo domain.TenantRepository,
@@ -268,8 +380,11 @@ func NewService(
 		vector:     vector,
 		embedder:   embedder,
 		scorer:     scorer,
+		queryCache: newQueryEmbeddingCache(defaultQueryEmbeddingCacheCapacity),
 		structured: defaultStructuredMemoryOptions(),
 		ranking:    defaultRankingOptions(),
+		rerank:     defaultRerankOptions(),
+		multiHop:   defaultMultiHopOptions(),
 		parser:     defaultParserOptions(),
 	}
 	for _, opt := range options {
@@ -279,6 +394,8 @@ func NewService(
 		opt.apply(svc)
 	}
 	svc.ranking = normalizeRankingOptions(svc.ranking)
+	svc.rerank = normalizeRerankOptions(svc.rerank)
+	svc.multiHop = normalizeMultiHopOptions(svc.multiHop)
 	svc.parser = normalizeParserOptions(svc.parser)
 	return svc
 }
