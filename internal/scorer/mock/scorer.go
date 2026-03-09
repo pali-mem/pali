@@ -13,3 +13,15 @@ func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
 	}
 	return 0.5, nil
 }
+
+func (s *Scorer) BatchScore(ctx context.Context, texts []string) ([]float64, error) {
+	out := make([]float64, 0, len(texts))
+	for _, text := range texts {
+		score, err := s.Score(ctx, text)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, score)
+	}
+	return out, nil
+}
