@@ -48,7 +48,7 @@ var migrationStatements = []string{
 		content,
 		tenant_id UNINDEXED,
 		memory_id UNINDEXED,
-		tokenize='unicode61'
+		tokenize='porter unicode61'
 	);`,
 	`INSERT INTO memory_fts(content, tenant_id, memory_id)
 	SELECT m.content, m.tenant_id, m.id
@@ -89,10 +89,12 @@ var migrationStatements = []string{
 		tenant_id TEXT NOT NULL,
 		entity TEXT NOT NULL,
 		relation TEXT NOT NULL,
+		relation_raw TEXT NOT NULL DEFAULT '',
 		value TEXT NOT NULL,
 		memory_id TEXT REFERENCES memories(id) ON DELETE CASCADE,
 		created_at TEXT NOT NULL
 	);`,
+	`ALTER TABLE entity_facts ADD COLUMN relation_raw TEXT NOT NULL DEFAULT '';`,
 	`CREATE INDEX IF NOT EXISTS entity_facts_lookup ON entity_facts(tenant_id, entity, relation);`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS entity_facts_dedupe ON entity_facts(tenant_id, entity, relation, value, memory_id);`,
 	`CREATE TABLE IF NOT EXISTS memory_index_jobs (

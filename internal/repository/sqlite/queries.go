@@ -10,6 +10,10 @@ VALUES (?, ?, ?)
 SELECT EXISTS(SELECT 1 FROM tenants WHERE id = ?)
 `
 
+	CountTenantsSQL = `
+SELECT COUNT(1) FROM tenants
+`
+
 	CountTenantMemoriesSQL = `
 SELECT COUNT(1) FROM memories WHERE tenant_id = ?
 `
@@ -19,6 +23,10 @@ SELECT id, name, created_at
 FROM tenants
 ORDER BY created_at DESC
 LIMIT ?
+`
+
+	CountMemoriesSQL = `
+SELECT COUNT(1) FROM memories
 `
 
 	InsertMemorySQL = `
@@ -92,12 +100,17 @@ LIMIT ?
 `
 
 	InsertEntityFactSQL = `
-INSERT OR IGNORE INTO entity_facts(id, tenant_id, entity, relation, value, memory_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO entity_facts(id, tenant_id, entity, relation, relation_raw, value, memory_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(tenant_id, entity, relation, value, memory_id) DO UPDATE SET
+	relation_raw = CASE
+		WHEN excluded.relation_raw <> '' THEN excluded.relation_raw
+		ELSE entity_facts.relation_raw
+	END
 `
 
 	ListEntityFactsByEntityRelationSQL = `
-SELECT id, tenant_id, entity, relation, value, memory_id, created_at
+SELECT id, tenant_id, entity, relation, relation_raw, value, memory_id, created_at
 FROM entity_facts
 WHERE tenant_id = ?
   AND entity = ?
