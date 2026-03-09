@@ -15,6 +15,11 @@ func Validate(cfg Config) error {
 	default:
 		return fmt.Errorf("invalid vector_backend: %q", cfg.VectorBackend)
 	}
+	switch cfg.EntityFactBackend {
+	case "sqlite", "neo4j":
+	default:
+		return fmt.Errorf("invalid entity_fact_backend: %q", cfg.EntityFactBackend)
+	}
 	provider := normalizeProvider(cfg.Embedding.Provider)
 	if !isSupportedEmbeddingProvider(provider) {
 		return fmt.Errorf("invalid embedding.provider: %q", cfg.Embedding.Provider)
@@ -41,6 +46,11 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("embedding.ollama_timeout_seconds must be >= 0")
 		}
 	}
+	if provider == "openrouter" {
+		if err := validateOpenRouterConfig(cfg, true, false); err != nil {
+			return err
+		}
+	}
 
 	importanceScorer := normalizeImportanceScorer(cfg.ImportanceScorer)
 	if !isSupportedImportanceScorer(importanceScorer) {
@@ -54,6 +64,11 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("ollama.timeout_ms must be >= 0")
 		}
 	}
+	if importanceScorer == "openrouter" {
+		if err := validateOpenRouterConfig(cfg, false, true); err != nil {
+			return err
+		}
+	}
 
 	rankingAlgorithm := normalizeRankingAlgorithm(cfg.Retrieval.Scoring.Algorithm)
 	if !isSupportedRankingAlgorithm(rankingAlgorithm) {
@@ -64,6 +79,40 @@ func Validate(cfg Config) error {
 	}
 	if err := validateMatchScoringWeights(cfg.Retrieval.Scoring.Match, "retrieval.scoring.match"); err != nil {
 		return err
+	}
+	if cfg.Retrieval.MultiHop.OllamaTimeoutMS < 0 {
+		return fmt.Errorf("retrieval.multi_hop.ollama_timeout_ms must be >= 0")
+	}
+	if cfg.Retrieval.MultiHop.MaxDecompositionQueries <= 0 {
+		return fmt.Errorf("retrieval.multi_hop.max_decomposition_queries must be > 0")
+	}
+	decompositionProvider := normalizeMultiHopDecompositionProvider(cfg.Retrieval.MultiHop.DecompositionProvider)
+	if !isSupportedMultiHopDecompositionProvider(decompositionProvider) {
+		return fmt.Errorf("invalid retrieval.multi_hop.decomposition_provider: %q", cfg.Retrieval.MultiHop.DecompositionProvider)
+	}
+	if cfg.Retrieval.MultiHop.LLMDecompositionEnabled {
+		switch decompositionProvider {
+		case "", "openrouter":
+			if err := validateOpenRouterConfig(cfg, false, false); err != nil {
+				return err
+			}
+			if strings.TrimSpace(cfg.Retrieval.MultiHop.OpenRouterModel) == "" &&
+				strings.TrimSpace(cfg.OpenRouter.ScoringModel) == "" {
+				return fmt.Errorf("retrieval.multi_hop.openrouter_model or openrouter.scoring_model is required when retrieval.multi_hop.llm_decomposition_enabled=true and decomposition_provider=openrouter")
+			}
+		case "ollama":
+			if strings.TrimSpace(cfg.Retrieval.MultiHop.OllamaBaseURL) == "" {
+				return fmt.Errorf("retrieval.multi_hop.ollama_base_url is required when retrieval.multi_hop.llm_decomposition_enabled=true and decomposition_provider=ollama")
+			}
+			if _, err := url.ParseRequestURI(cfg.Retrieval.MultiHop.OllamaBaseURL); err != nil {
+				return fmt.Errorf("invalid retrieval.multi_hop.ollama_base_url: %w", err)
+			}
+			if strings.TrimSpace(cfg.Retrieval.MultiHop.OllamaModel) == "" {
+				return fmt.Errorf("retrieval.multi_hop.ollama_model is required when retrieval.multi_hop.llm_decomposition_enabled=true and decomposition_provider=ollama")
+			}
+		case "none":
+			return fmt.Errorf("retrieval.multi_hop.decomposition_provider=none cannot be used when retrieval.multi_hop.llm_decomposition_enabled=true")
+		}
 	}
 
 	if cfg.VectorBackend == "sqlite" && strings.TrimSpace(cfg.Database.SQLiteDSN) == "" {
@@ -81,6 +130,26 @@ func Validate(cfg Config) error {
 		}
 		if cfg.Qdrant.TimeoutMS < 0 {
 			return fmt.Errorf("qdrant.timeout_ms must be >= 0")
+		}
+	}
+	if cfg.EntityFactBackend == "neo4j" {
+		if strings.TrimSpace(cfg.Neo4j.URI) == "" {
+			return fmt.Errorf("neo4j.uri is required when entity_fact_backend=neo4j")
+		}
+		if _, err := url.ParseRequestURI(cfg.Neo4j.URI); err != nil {
+			return fmt.Errorf("invalid neo4j.uri: %w", err)
+		}
+		if strings.TrimSpace(cfg.Neo4j.Username) == "" {
+			return fmt.Errorf("neo4j.username is required when entity_fact_backend=neo4j")
+		}
+		if strings.TrimSpace(cfg.Neo4j.Password) == "" {
+			return fmt.Errorf("neo4j.password is required when entity_fact_backend=neo4j (or set NEO4J_PASSWORD)")
+		}
+		if cfg.Neo4j.TimeoutMS < 0 {
+			return fmt.Errorf("neo4j.timeout_ms must be >= 0")
+		}
+		if cfg.Neo4j.BatchSize <= 0 {
+			return fmt.Errorf("neo4j.batch_size must be > 0")
 		}
 	}
 	if cfg.Auth.Enabled && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
@@ -147,6 +216,14 @@ func Validate(cfg Config) error {
 				return fmt.Errorf("parser.ollama_model is required when parser.provider=ollama")
 			}
 		}
+		if parserProvider == "openrouter" {
+			if err := validateOpenRouterConfig(cfg, false, false); err != nil {
+				return err
+			}
+			if strings.TrimSpace(cfg.Parser.OpenRouterModel) == "" && strings.TrimSpace(cfg.OpenRouter.ScoringModel) == "" {
+				return fmt.Errorf("parser.openrouter_model or openrouter.scoring_model is required when parser.provider=openrouter")
+			}
+		}
 	}
 	return nil
 }
@@ -179,9 +256,17 @@ func normalizeParserProvider(in string) string {
 	return normalized
 }
 
+func normalizeMultiHopDecompositionProvider(in string) string {
+	normalized := strings.ToLower(strings.TrimSpace(in))
+	if normalized == "disabled" {
+		return "none"
+	}
+	return normalized
+}
+
 func isSupportedEmbeddingProvider(provider string) bool {
 	switch provider {
-	case "lexical", "mock", "onnx", "ollama":
+	case "lexical", "mock", "onnx", "ollama", "openrouter":
 		return true
 	default:
 		return false
@@ -190,7 +275,7 @@ func isSupportedEmbeddingProvider(provider string) bool {
 
 func isSupportedImportanceScorer(provider string) bool {
 	switch provider {
-	case "heuristic", "ollama":
+	case "heuristic", "ollama", "openrouter":
 		return true
 	default:
 		return false
@@ -208,7 +293,16 @@ func isSupportedRankingAlgorithm(algorithm string) bool {
 
 func isSupportedParserProvider(provider string) bool {
 	switch provider {
-	case "heuristic", "ollama":
+	case "heuristic", "ollama", "openrouter":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedMultiHopDecompositionProvider(provider string) bool {
+	switch provider {
+	case "", "openrouter", "ollama", "none":
 		return true
 	default:
 		return false
@@ -221,6 +315,28 @@ func validateScoringWeights(weights ScoringWeightsConfig, path string) error {
 	}
 	if weights.Recency+weights.Relevance+weights.Importance == 0 {
 		return fmt.Errorf("%s weights must not all be zero", path)
+	}
+	return nil
+}
+
+func validateOpenRouterConfig(cfg Config, requireEmbeddingModel, requireScoringModel bool) error {
+	if strings.TrimSpace(cfg.OpenRouter.APIKey) == "" {
+		return fmt.Errorf("openrouter.api_key is required when using openrouter providers (or set OPENROUTER_API_KEY)")
+	}
+	if strings.TrimSpace(cfg.OpenRouter.BaseURL) == "" {
+		return fmt.Errorf("openrouter.base_url is required when using openrouter providers")
+	}
+	if _, err := url.ParseRequestURI(cfg.OpenRouter.BaseURL); err != nil {
+		return fmt.Errorf("invalid openrouter.base_url: %w", err)
+	}
+	if cfg.OpenRouter.TimeoutMS < 0 {
+		return fmt.Errorf("openrouter.timeout_ms must be >= 0")
+	}
+	if requireEmbeddingModel && strings.TrimSpace(cfg.OpenRouter.EmbeddingModel) == "" {
+		return fmt.Errorf("openrouter.embedding_model is required when embedding.provider=openrouter")
+	}
+	if requireScoringModel && strings.TrimSpace(cfg.OpenRouter.ScoringModel) == "" {
+		return fmt.Errorf("openrouter.scoring_model is required when importance_scorer=openrouter")
 	}
 	return nil
 }

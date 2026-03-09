@@ -3,25 +3,29 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server           ServerConfig           `yaml:"server"`
-	VectorBackend    string                 `yaml:"vector_backend"`
-	DefaultTenantID  string                 `yaml:"default_tenant_id"`
-	ImportanceScorer string                 `yaml:"importance_scorer"`
-	Postprocess      PostprocessConfig      `yaml:"postprocess"`
-	StructuredMemory StructuredMemoryConfig `yaml:"structured_memory"`
-	Retrieval        RetrievalConfig        `yaml:"retrieval"`
-	Parser           ParserConfig           `yaml:"parser"`
-	Database         Database               `yaml:"database"`
-	Qdrant           QdrantConfig           `yaml:"qdrant"`
-	Embedding        Embedding              `yaml:"embedding"`
-	Ollama           OllamaConfig           `yaml:"ollama"`
-	Auth             AuthConfig             `yaml:"auth"`
-	Logging          LoggingConfig          `yaml:"logging"`
+	Server            ServerConfig           `yaml:"server"`
+	VectorBackend     string                 `yaml:"vector_backend"`
+	EntityFactBackend string                 `yaml:"entity_fact_backend"`
+	DefaultTenantID   string                 `yaml:"default_tenant_id"`
+	ImportanceScorer  string                 `yaml:"importance_scorer"`
+	Postprocess       PostprocessConfig      `yaml:"postprocess"`
+	StructuredMemory  StructuredMemoryConfig `yaml:"structured_memory"`
+	Retrieval         RetrievalConfig        `yaml:"retrieval"`
+	Parser            ParserConfig           `yaml:"parser"`
+	Database          Database               `yaml:"database"`
+	Qdrant            QdrantConfig           `yaml:"qdrant"`
+	Neo4j             Neo4jConfig            `yaml:"neo4j"`
+	Embedding         Embedding              `yaml:"embedding"`
+	OpenRouter        OpenRouterConfig       `yaml:"openrouter"`
+	Ollama            OllamaConfig           `yaml:"ollama"`
+	Auth              AuthConfig             `yaml:"auth"`
+	Logging           LoggingConfig          `yaml:"logging"`
 }
 
 type ServerConfig struct {
@@ -45,11 +49,28 @@ type OllamaConfig struct {
 	TimeoutMS int    `yaml:"timeout_ms"`
 }
 
+type OpenRouterConfig struct {
+	BaseURL        string `yaml:"base_url"`
+	APIKey         string `yaml:"api_key"`
+	EmbeddingModel string `yaml:"embedding_model"`
+	ScoringModel   string `yaml:"scoring_model"`
+	TimeoutMS      int    `yaml:"timeout_ms"`
+}
+
 type QdrantConfig struct {
 	BaseURL    string `yaml:"base_url"`
 	APIKey     string `yaml:"api_key"`
 	Collection string `yaml:"collection"`
 	TimeoutMS  int    `yaml:"timeout_ms"`
+}
+
+type Neo4jConfig struct {
+	URI       string `yaml:"uri"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	Database  string `yaml:"database"`
+	TimeoutMS int    `yaml:"timeout_ms"`
+	BatchSize int    `yaml:"batch_size"`
 }
 
 type AuthConfig struct {
@@ -81,13 +102,27 @@ type PostprocessConfig struct {
 }
 
 type RetrievalConfig struct {
-	Scoring RetrievalScoringConfig `yaml:"scoring"`
+	Scoring  RetrievalScoringConfig  `yaml:"scoring"`
+	MultiHop RetrievalMultiHopConfig `yaml:"multi_hop"`
 }
 
 type RetrievalScoringConfig struct {
 	Algorithm string                    `yaml:"algorithm"`
 	WAL       ScoringWeightsConfig      `yaml:"wal"`
 	Match     MatchScoringWeightsConfig `yaml:"match"`
+}
+
+type RetrievalMultiHopConfig struct {
+	EntityFactBridgeEnabled bool   `yaml:"entity_fact_bridge_enabled"`
+	LLMDecompositionEnabled bool   `yaml:"llm_decomposition_enabled"`
+	DecompositionProvider   string `yaml:"decomposition_provider"`
+	OpenRouterModel         string `yaml:"openrouter_model"`
+	OllamaBaseURL           string `yaml:"ollama_base_url"`
+	OllamaModel             string `yaml:"ollama_model"`
+	OllamaTimeoutMS         int    `yaml:"ollama_timeout_ms"`
+	MaxDecompositionQueries int    `yaml:"max_decomposition_queries"`
+	EnablePairwiseRerank    bool   `yaml:"enable_pairwise_rerank"`
+	TokenExpansionFallback  bool   `yaml:"token_expansion_fallback"`
 }
 
 type ScoringWeightsConfig struct {
@@ -109,6 +144,7 @@ type ParserConfig struct {
 	Provider        string  `yaml:"provider"`
 	OllamaBaseURL   string  `yaml:"ollama_base_url"`
 	OllamaModel     string  `yaml:"ollama_model"`
+	OpenRouterModel string  `yaml:"openrouter_model"`
 	OllamaTimeoutMS int     `yaml:"ollama_timeout_ms"`
 	StoreRawTurn    bool    `yaml:"store_raw_turn"`
 	MaxFacts        int     `yaml:"max_facts"`
@@ -125,6 +161,7 @@ func Load(path string) (Config, error) {
 	cfg := Defaults()
 
 	if path == "" {
+		applyEnvironment(&cfg)
 		return cfg, nil
 	}
 
@@ -135,8 +172,21 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
+	applyEnvironment(&cfg)
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func applyEnvironment(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if strings.TrimSpace(cfg.OpenRouter.APIKey) == "" {
+		cfg.OpenRouter.APIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	}
+	if strings.TrimSpace(cfg.Neo4j.Password) == "" {
+		cfg.Neo4j.Password = strings.TrimSpace(os.Getenv("NEO4J_PASSWORD"))
+	}
 }
