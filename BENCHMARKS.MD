@@ -58,6 +58,10 @@ scripts/retrieval_quality.sh \
   --embedding-model all-minilm
 ```
 
+Both `scripts/retrieval_quality.sh` and `scripts/benchmark.sh` now render runtime configs
+from provider profiles under `test/config/providers/` using `cmd/configrender`, then
+apply run-specific overrides (host/port/db/backend).
+
 ### Throughput + Latency Run
 
 ```bash
@@ -69,6 +73,23 @@ scripts/benchmark.sh \
   --embedding-provider ollama \
   --embedding-model all-minilm
 ```
+
+### Raw Mode Run (No Ollama Models)
+
+Use raw mode when you want baseline behavior without Ollama dependency.
+Set `--embedding-provider lexical` (or `mock` alias) to force local lexical embeddings only.
+
+```bash
+scripts/benchmark.sh \
+  --fixture research/data/locomo10.paperlite.mini1.fixture.json \
+  --eval-set research/data/locomo10.paperlite.mini1.eval.json \
+  --backend sqlite \
+  --search-ops 100 \
+  --top-k 5 \
+  --embedding-provider lexical
+```
+
+Raw mode is diagnostic only and is not the default promotion gate.
 
 ### Trend Tracking
 
@@ -112,8 +133,10 @@ Promotion allowed only if Gate B passes and:
 
 Outputs are written to:
 
-- `test/benchmarks/results/*.json`
-- `test/benchmarks/results/*.summary.txt`
+- `test/benchmarks/results/<timestamp>/benchmark.json`
+- `test/benchmarks/results/<timestamp>/benchmark.summary.txt`
+- `test/benchmarks/results/<timestamp>/retrieval_quality.json`
+- `test/benchmarks/results/<timestamp>/retrieval_quality.summary.txt`
 - `test/benchmarks/trends/retrieval_quality_history.jsonl`
 
 Required fields for reviews:

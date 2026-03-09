@@ -3,10 +3,10 @@ APP=pali
 .PHONY: run mcp setup build test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring
 
 run:
-	go run ./cmd/pali -config pali.yaml.example
+	go run ./cmd/pali -config pali.yaml
 
 mcp:
-	go run ./cmd/pali mcp run -config pali.yaml.example
+	go run ./cmd/pali mcp run -config pali.yaml
 
 setup:
 	go run ./cmd/setup -skip-model-download

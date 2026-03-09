@@ -64,3 +64,6 @@ test/fixtures/
 # Built binaries (root-level)
 genfix
 /pali
+
+
+.vscode/
