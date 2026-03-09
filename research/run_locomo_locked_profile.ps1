@@ -108,8 +108,9 @@ for ($i = 1; $i -le $runsResolved; $i++) {
 }
 
 function Get-Median([double[]]$values) {
-    if (-not $values -or $values.Count -eq 0) { return 0.0 }
-    $sorted = $values | Sort-Object
+    $arr = @($values)
+    if ($arr.Count -eq 0) { return 0.0 }
+    $sorted = $arr | Sort-Object
     $n = $sorted.Count
     if ($n % 2 -eq 1) { return [double]$sorted[[int]($n / 2)] }
     $left = [double]$sorted[[int]($n / 2) - 1]
@@ -123,10 +124,10 @@ $summary = [PSCustomObject]@{
     created_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     run_dirs = $capturedRuns.run_dir
     metrics = [PSCustomObject]@{
-        ollama_f1_paper_median = Get-Median @([double[]]$capturedRuns.ollama_f1_paper)
-        lexical_f1_paper_median = Get-Median @([double[]]$capturedRuns.lexical_f1_paper)
-        ollama_recall_median = Get-Median @([double[]]$capturedRuns.ollama_recall)
-        lexical_recall_median = Get-Median @([double[]]$capturedRuns.lexical_recall)
+        ollama_f1_paper_median = Get-Median ([double[]]@($capturedRuns.ollama_f1_paper))
+        lexical_f1_paper_median = Get-Median ([double[]]@($capturedRuns.lexical_f1_paper))
+        ollama_recall_median = Get-Median ([double[]]@($capturedRuns.ollama_recall))
+        lexical_recall_median = Get-Median ([double[]]@($capturedRuns.lexical_recall))
     }
     runs_detail = $capturedRuns
 }
