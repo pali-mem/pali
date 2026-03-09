@@ -30,6 +30,7 @@ func (r *EntityFactRepository) Store(ctx context.Context, fact domain.EntityFact
 		fact.TenantID,
 		fact.Entity,
 		fact.Relation,
+		fact.RelationRaw,
 		fact.Value,
 		nullString(fact.MemoryID),
 		fact.CreatedAt.Format(time.RFC3339Nano),
@@ -64,6 +65,7 @@ func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.En
 			fact.TenantID,
 			fact.Entity,
 			fact.Relation,
+			fact.RelationRaw,
 			fact.Value,
 			nullString(fact.MemoryID),
 			fact.CreatedAt.Format(time.RFC3339Nano),
@@ -112,6 +114,7 @@ func (r *EntityFactRepository) ListByEntityRelation(
 			&fact.TenantID,
 			&fact.Entity,
 			&fact.Relation,
+			&fact.RelationRaw,
 			&fact.Value,
 			&memoryIDRaw,
 			&createdAtRaw,
@@ -139,10 +142,14 @@ func prepareEntityFactForStore(fact *domain.EntityFact, now time.Time) error {
 	fact.TenantID = strings.TrimSpace(fact.TenantID)
 	fact.Entity = normalizeEntityFactKey(fact.Entity)
 	fact.Relation = normalizeEntityFactKey(fact.Relation)
+	fact.RelationRaw = normalizeEntityFactRawRelation(fact.RelationRaw)
 	fact.Value = normalizeEntityFactValue(fact.Value)
 	fact.MemoryID = strings.TrimSpace(fact.MemoryID)
 	if fact.TenantID == "" || fact.Entity == "" || fact.Relation == "" || fact.Value == "" {
 		return domain.ErrInvalidInput
+	}
+	if fact.RelationRaw == "" {
+		fact.RelationRaw = fact.Relation
 	}
 	if fact.ID == "" {
 		fact.ID = newID("ef")
@@ -159,6 +166,10 @@ func normalizeEntityFactKey(value string) string {
 
 func normalizeEntityFactValue(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func normalizeEntityFactRawRelation(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
 func nullString(value string) any {
