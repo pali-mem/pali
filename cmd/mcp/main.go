@@ -36,7 +36,15 @@ func main() {
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
-	entityFactRepo := sqliterepo.NewEntityFactRepository(db)
+	entityFactRepo, entityFactCleanup, err := wiring.BuildEntityFactRepository(cfg, db)
+	if err != nil {
+		log.Fatalf("build entity fact repository: %v", err)
+	}
+	defer func() {
+		if err := entityFactCleanup(); err != nil {
+			log.Printf("entity fact repo close error: %v", err)
+		}
+	}()
 	vectorStore, err := wiring.BuildVectorStore(cfg, db)
 	if err != nil {
 		log.Fatalf("build vector store: %v", err)

@@ -17,6 +17,7 @@ import (
 	"github.com/pali-mem/pali/internal/embeddings"
 	palimcp "github.com/pali-mem/pali/internal/mcp"
 	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	"github.com/pali-mem/pali/internal/startup"
 	"github.com/pali-mem/pali/internal/wiring"
 )
 
@@ -83,7 +84,15 @@ func runMCP(cfg config.Config) {
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
-	entityFactRepo := sqliterepo.NewEntityFactRepository(db)
+	entityFactRepo, entityFactCleanup, err := wiring.BuildEntityFactRepository(cfg, db)
+	if err != nil {
+		log.Fatalf("build entity fact repository: %v", err)
+	}
+	defer func() {
+		if err := entityFactCleanup(); err != nil {
+			log.Printf("entity fact repo close error: %v", err)
+		}
+	}()
 	vectorStore, err := wiring.BuildVectorStore(cfg, db)
 	if err != nil {
 		log.Fatalf("build vector store: %v", err)
@@ -100,44 +109,11 @@ func runMCP(cfg config.Config) {
 	if err != nil {
 		log.Fatalf("build parser: %v", err)
 	}
-	serviceOptions := []corememory.ServiceOption{
-		corememory.StructuredMemoryOptions{
-			Enabled:               cfg.StructuredMemory.Enabled,
-			DualWriteObservations: cfg.StructuredMemory.DualWriteObservations,
-			DualWriteEvents:       cfg.StructuredMemory.DualWriteEvents,
-			MaxObservations:       cfg.StructuredMemory.MaxObservations,
-		},
-		corememory.RankingOptions{
-			Algorithm: cfg.Retrieval.Scoring.Algorithm,
-			WAL: corememory.WALWeights{
-				Recency:    cfg.Retrieval.Scoring.WAL.Recency,
-				Relevance:  cfg.Retrieval.Scoring.WAL.Relevance,
-				Importance: cfg.Retrieval.Scoring.WAL.Importance,
-			},
-			Match: corememory.MatchWeights{
-				Recency:      cfg.Retrieval.Scoring.Match.Recency,
-				Relevance:    cfg.Retrieval.Scoring.Match.Relevance,
-				Importance:   cfg.Retrieval.Scoring.Match.Importance,
-				QueryOverlap: cfg.Retrieval.Scoring.Match.QueryOverlap,
-				Routing:      cfg.Retrieval.Scoring.Match.Routing,
-			},
-		},
-		corememory.ParserOptions{
-			Enabled:         cfg.Parser.Enabled,
-			Provider:        cfg.Parser.Provider,
-			Model:           cfg.Parser.OllamaModel,
-			StoreRawTurn:    cfg.Parser.StoreRawTurn,
-			MaxFacts:        cfg.Parser.MaxFacts,
-			DedupeThreshold: cfg.Parser.DedupeThreshold,
-			UpdateThreshold: cfg.Parser.UpdateThreshold,
-		},
-		corememory.WithLogger(log.Default()),
-		corememory.WithDebug(cfg.Logging.DevVerbose, cfg.Logging.Progress),
+	decomposer, err := wiring.BuildMultiHopQueryDecomposer(cfg)
+	if err != nil {
+		log.Fatalf("build multi-hop decomposer: %v", err)
 	}
-	if infoParser != nil {
-		serviceOptions = append(serviceOptions, corememory.WithInfoParser(infoParser))
-	}
-	serviceOptions = append(serviceOptions, corememory.WithEntityFactRepository(entityFactRepo))
+	serviceOptions := wiring.BuildMemoryServiceOptions(cfg, infoParser, entityFactRepo, decomposer)
 	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
 	stopPostprocess := func() {}
 	if cfg.Postprocess.Enabled {
@@ -171,30 +147,7 @@ func runMCP(cfg config.Config) {
 		log.Fatalf("build mcp server: %v", err)
 	}
 
-	log.Printf("[pali-startup] pid=%d port=%d db=%s", os.Getpid(), cfg.Server.Port, cfg.Database.SQLiteDSN)
-	if embedMeta.UsedFallback {
-		log.Printf(
-			"[pali-startup] embedder=%s (fallback from %s) model=%s provider=%s",
-			embedMeta.ResolvedProvider,
-			embedMeta.PrimaryProvider,
-			cfg.Embedding.OllamaModel,
-			cfg.Embedding.OllamaBaseURL,
-		)
-	} else {
-		log.Printf(
-			"[pali-startup] embedder=%s model=%s provider=%s",
-			embedMeta.ResolvedProvider,
-			cfg.Embedding.OllamaModel,
-			cfg.Embedding.OllamaBaseURL,
-		)
-	}
-	var tenantCount int64
-	var memoryCount int64
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tenants").Scan(&tenantCount); err == nil {
-		if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM memories").Scan(&memoryCount); err == nil {
-			log.Printf("[pali-startup] tenant_count=%d memory_count=%d", tenantCount, memoryCount)
-		}
-	}
+	startup.Log(cfg, tenantRepo, memoryRepo, embedMeta)
 	log.Printf("starting pali mcp server over stdio")
 	if err := server.RunStdio(context.Background()); err != nil {
 		log.Fatalf("mcp server exited: %v", err)
