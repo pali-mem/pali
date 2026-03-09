@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	coreprompts "github.com/pali-mem/pali/internal/core/prompts"
 	"github.com/pali-mem/pali/internal/domain"
 )
 
@@ -64,7 +65,7 @@ func (p *ollamaInfoParser) Parse(ctx context.Context, content string, maxFacts i
 		return []ParsedFact{}, nil
 	}
 
-	prompt := buildOllamaParserPrompt(content, maxFacts)
+	prompt := coreprompts.Parser(content, maxFacts)
 	start := time.Now()
 	raw, err := p.generate(ctx, prompt)
 	if err != nil {
@@ -89,7 +90,22 @@ func (p *ollamaInfoParser) Parse(ctx context.Context, content string, maxFacts i
 		relation := strings.Join(strings.Fields(strings.TrimSpace(f.Relation)), " ")
 		value := strings.Join(strings.Fields(strings.TrimSpace(f.Value)), " ")
 		if entity == "" || relation == "" || value == "" {
-			entity, relation, value = inferEntityRelationValue(text, kind)
+			inferredEntity, inferredRelation, inferredValue := inferEntityRelationValue(text, kind)
+			if entity == "" {
+				entity = inferredEntity
+			}
+			if relation == "" {
+				relation = inferredRelation
+			}
+			if value == "" {
+				value = inferredValue
+			}
+		}
+		if entity == "" && (relation != "" || value != "") {
+			entity = inferEntityFromFact(text)
+			if entity == "" {
+				entity = "user"
+			}
 		}
 		key := strings.ToLower(text)
 		if _, ok := seen[key]; ok {
@@ -136,37 +152,6 @@ func normalizeFactTags(tags []string, kind domain.MemoryKind) []string {
 		base = append(base, "observation", "parser")
 	}
 	return mergeTags(nil, base...)
-}
-
-func buildOllamaParserPrompt(content string, maxFacts int) string {
-	return fmt.Sprintf(
-		"Extract high-signal factual memories from one dialogue turn.\n"+
-			"Rules:\n"+
-			"1) Return JSON only, matching the schema exactly.\n"+
-			"2) Exclude greetings, acknowledgements, compliments, chit-chat, standalone questions, and style-only text.\n"+
-			"3) Keep each fact standalone, explicit, and non-ambiguous.\n"+
-			"4) Resolve the subject whenever possible; avoid dangling pronouns like 'it', 'that', or 'do that'.\n"+
-			"5) Prefer facts with a specific predicate and object/value.\n"+
-			"6) If a fact is temporal, anchor it to an absolute or clearly provided time.\n"+
-			"7) Preserve negation and constraints (e.g., 'does not', 'avoids').\n"+
-			"8) Prefer concrete entities, preferences, commitments, plans, motivations, possessions, relationships, and dated events.\n"+
-			"9) Do not invent or infer facts not present in the turn.\n"+
-			"10) Output at most %d facts.\n"+
-			"11) kind must be either observation or event.\n"+
-			"12) If available, include entity/relation/value fields for aggregation lookups.\n"+
-			"13) If no high-signal fact exists, return {\"facts\":[]}.\n"+
-			"\n"+
-			"JSON schema:\n"+
-			"{\"facts\":[{\"content\":\"...\",\"kind\":\"observation|event\",\"tags\":[\"...\"],\"entity\":\"...\",\"relation\":\"...\",\"value\":\"...\"}]}\n"+
-			"\n"+
-			"Example:\n"+
-			"Turn: \"Alice: I am vegetarian and avoid dairy\"\n"+
-			"Output: {\"facts\":[{\"content\":\"Alice is vegetarian and avoids dairy.\",\"kind\":\"observation\",\"tags\":[\"preference\"],\"entity\":\"Alice\",\"relation\":\"activity\",\"value\":\"vegetarian and avoids dairy\"}]}\n"+
-			"\n"+
-			"Turn:\n%s",
-		maxFacts,
-		content,
-	)
 }
 
 type parserResponse struct {
