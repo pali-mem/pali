@@ -55,6 +55,14 @@ func (r *TenantRepository) MemoryCount(ctx context.Context, tenantID string) (in
 	return count, nil
 }
 
+func (r *TenantRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.QueryRowContext(ctx, CountTenantsSQL).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count tenants: %w", err)
+	}
+	return count, nil
+}
+
 func (r *TenantRepository) List(ctx context.Context, limit int) ([]domain.Tenant, error) {
 	if limit <= 0 {
 		limit = 100
@@ -86,3 +94,4 @@ func (r *TenantRepository) List(ctx context.Context, limit int) ([]domain.Tenant
 	}
 	return out, nil
 }
+
