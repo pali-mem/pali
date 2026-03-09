@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 type countingBatchEmbedder struct {
@@ -1113,4 +1113,45 @@ func TestStoreBatchWithParserRejectsShortFactsInBatchPath(t *testing.T) {
 	require.Equal(t, domain.MemoryKindRawTurn, stored[1].Kind)
 	require.Len(t, repo.stored, 2)
 	require.Equal(t, 1, embedder.batchCalls)
+}
+
+func TestPrepareParsedFactsForStoreSplitsCompoundFactWithRepeatedSubject(t *testing.T) {
+	source := "Alice likes tea and Alice moved to Austin."
+	prepared := prepareParsedFactsForStore(source, []ParsedFact{
+		{
+			Content: source,
+			Kind:    domain.MemoryKindObservation,
+		},
+	})
+	require.Len(t, prepared, 2)
+	require.Equal(t, "Alice likes tea", prepared[0].Content)
+	require.Equal(t, "Alice moved to Austin.", prepared[1].Content)
+}
+
+func TestPrepareParsedFactsForStoreKeepsCompoundFactWithImplicitSubject(t *testing.T) {
+	source := "Alice is vegetarian and avoids dairy."
+	prepared := prepareParsedFactsForStore(source, []ParsedFact{
+		{
+			Content: source,
+			Kind:    domain.MemoryKindObservation,
+		},
+	})
+	require.Len(t, prepared, 1)
+	require.Equal(t, "Alice is vegetarian and avoids dairy.", prepared[0].Content)
+}
+
+func TestPrepareParsedFactsForStoreBackfillsUserEntityWhenRelationPresent(t *testing.T) {
+	source := "I use TypeScript."
+	prepared := prepareParsedFactsForStore(source, []ParsedFact{
+		{
+			Content:  source,
+			Kind:     domain.MemoryKindObservation,
+			Relation: "tool",
+			Value:    "TypeScript",
+		},
+	})
+	require.Len(t, prepared, 1)
+	require.Equal(t, "user", strings.ToLower(prepared[0].Entity))
+	require.Equal(t, "tool", prepared[0].Relation)
+	require.Equal(t, "TypeScript", prepared[0].Value)
 }

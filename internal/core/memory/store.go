@@ -2,8 +2,8 @@ package memory
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +26,8 @@ var dualWriteNegationTokens = map[string]struct{}{
 	"no":    {},
 	"never": {},
 }
+
+var factCompoundSplitPattern = regexp.MustCompile(`(?i)\s+and\s+`)
 
 type StoreInput struct {
 	TenantID  string
@@ -134,13 +136,20 @@ func (s *Service) storeBatchWithoutParser(ctx context.Context, items []preparedS
 		return []domain.Memory{}, nil
 	}
 
-	memories := make([]domain.Memory, 0, len(items))
 	contents := make([]string, 0, len(items))
 	for _, item := range items {
-		importance, err := s.scorer.Score(ctx, item.input.Content)
-		if err != nil {
-			return nil, err
-		}
+		contents = append(contents, item.input.Content)
+	}
+	importanceScores, err := s.scoreContents(ctx, contents)
+	if err != nil {
+		return nil, err
+	}
+	if len(importanceScores) != len(items) {
+		return nil, fmt.Errorf("importance score count mismatch: got %d for %d inputs", len(importanceScores), len(items))
+	}
+
+	memories := make([]domain.Memory, 0, len(items))
+	for i, item := range items {
 		memories = append(memories, domain.Memory{
 			TenantID:   item.input.TenantID,
 			Content:    item.input.Content,
@@ -149,9 +158,8 @@ func (s *Service) storeBatchWithoutParser(ctx context.Context, items []preparedS
 			Tags:       item.input.Tags,
 			Source:     item.input.Source,
 			CreatedBy:  item.input.CreatedBy,
-			Importance: importance,
+			Importance: importanceScores[i],
 		})
-		contents = append(contents, item.input.Content)
 	}
 
 	embeddings, err := s.embedContents(ctx, contents)
@@ -490,51 +498,6 @@ func (s *Service) applyParsedFact(
 	return &stored, nil
 }
 
-func (s *Service) findSimilarMemory(
-	ctx context.Context,
-	tenantID, content string,
-	kind domain.MemoryKind,
-) (*domain.Memory, float64, error) {
-	candidates, err := s.repo.Search(ctx, tenantID, content, 8)
-	if err != nil {
-		return nil, 0, err
-	}
-	var best *domain.Memory
-	bestScore := 0.0
-	for i := range candidates {
-		candidate := candidates[i]
-		if candidate.Kind != kind {
-			continue
-		}
-		score := lexicalSimilarity(content, candidate.Content)
-		if score > bestScore {
-			bestScore = score
-			c := candidate
-			best = &c
-		}
-	}
-	return best, bestScore, nil
-}
-
-func lexicalSimilarity(a, b string) float64 {
-	ta := normalizedRankingTokens(a)
-	tb := normalizedRankingTokens(b)
-	if len(ta) == 0 || len(tb) == 0 {
-		return 0
-	}
-	inter := 0
-	for token := range ta {
-		if _, ok := tb[token]; ok {
-			inter++
-		}
-	}
-	union := len(ta) + len(tb) - inter
-	if union == 0 {
-		return 0
-	}
-	return float64(inter) / float64(union)
-}
-
 func shouldReplaceMemory(existing domain.Memory, nextContent string) bool {
 	existingLen := len(strings.TrimSpace(existing.Content))
 	nextLen := len(strings.TrimSpace(nextContent))
@@ -542,22 +505,6 @@ func shouldReplaceMemory(existing domain.Memory, nextContent string) bool {
 		return false
 	}
 	return nextLen >= existingLen+12
-}
-
-func (s *Service) deleteForReplacement(ctx context.Context, tenantID, memoryID string) error {
-	if strings.TrimSpace(memoryID) == "" {
-		return nil
-	}
-	err := s.repo.Delete(ctx, tenantID, memoryID)
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return err
-	}
-	if s.vector != nil {
-		if err := s.vector.Delete(ctx, tenantID, memoryID); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored domain.Memory) error {
@@ -727,13 +674,92 @@ func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact) []Pars
 				fact.Value = value
 			}
 		}
+		if strings.TrimSpace(fact.Entity) == "" &&
+			(strings.TrimSpace(fact.Relation) != "" || strings.TrimSpace(fact.Value) != "") {
+			fact.Entity = inferEntityFromFact(content)
+			if strings.TrimSpace(fact.Entity) == "" {
+				fact.Entity = "user"
+			}
+		}
 		if !passesCanonicalFactAdmission(sourceContent, fact) {
 			continue
 		}
 		fact.QueryViewText = buildFactQuestionView(fact)
-		prepared = append(prepared, fact)
+		prepared = append(prepared, expandCompoundPreparedFacts(sourceContent, fact)...)
 	}
 	return dedupePreparedFacts(prepared)
+}
+
+func expandCompoundPreparedFacts(sourceContent string, fact ParsedFact) []ParsedFact {
+	entity := strings.TrimSpace(fact.Entity)
+	if entity == "" {
+		entity = inferEntityFromFact(fact.Content)
+	}
+	clauses, ok := splitCompoundFactClauses(fact.Content, entity)
+	if !ok || len(clauses) < 2 {
+		return []ParsedFact{fact}
+	}
+
+	out := make([]ParsedFact, 0, len(clauses))
+	for _, clause := range clauses {
+		candidate := fact
+		candidate.Content = clause
+		inferredEntity, inferredRelation, inferredValue := inferEntityRelationValue(clause, candidate.Kind)
+		if strings.TrimSpace(inferredEntity) != "" {
+			candidate.Entity = inferredEntity
+		} else if strings.TrimSpace(candidate.Entity) == "" {
+			candidate.Entity = inferEntityFromFact(clause)
+		}
+		if strings.TrimSpace(inferredRelation) != "" {
+			candidate.Relation = inferredRelation
+		}
+		if strings.TrimSpace(inferredValue) != "" {
+			candidate.Value = inferredValue
+		}
+		if strings.TrimSpace(candidate.Entity) == "" &&
+			(strings.TrimSpace(candidate.Relation) != "" || strings.TrimSpace(candidate.Value) != "") {
+			candidate.Entity = inferEntityFromFact(clause)
+			if strings.TrimSpace(candidate.Entity) == "" {
+				candidate.Entity = "user"
+			}
+		}
+		if !passesCanonicalFactAdmission(sourceContent, candidate) {
+			// If one clause is noisy or malformed, keep the original fact to avoid data loss.
+			return []ParsedFact{fact}
+		}
+		candidate.QueryViewText = buildFactQuestionView(candidate)
+		out = append(out, candidate)
+	}
+	if len(out) == 0 {
+		return []ParsedFact{fact}
+	}
+	return out
+}
+
+func splitCompoundFactClauses(content, entity string) ([]string, bool) {
+	content = normalizeFactContent(content)
+	entity = normalizeFactContent(entity)
+	if content == "" || entity == "" {
+		return nil, false
+	}
+	parts := factCompoundSplitPattern.Split(content, -1)
+	if len(parts) < 2 || len(parts) > 3 {
+		return nil, false
+	}
+	loweredEntity := strings.ToLower(entity)
+	clauses := make([]string, 0, len(parts))
+	for _, part := range parts {
+		clause := normalizeFactContent(strings.Trim(part, " \t\r\n,;"))
+		if clause == "" {
+			return nil, false
+		}
+		loweredClause := strings.ToLower(clause)
+		if !strings.HasPrefix(loweredClause, loweredEntity+" ") {
+			return nil, false
+		}
+		clauses = append(clauses, clause)
+	}
+	return clauses, true
 }
 
 func dedupePreparedFacts(facts []ParsedFact) []ParsedFact {
@@ -853,6 +879,45 @@ func (s *Service) embedContents(ctx context.Context, contents []string) ([][]flo
 		embeddings = append(embeddings, vec)
 	}
 	return embeddings, nil
+}
+
+func (s *Service) scoreContents(ctx context.Context, contents []string) ([]float64, error) {
+	if len(contents) == 0 {
+		return []float64{}, nil
+	}
+	if batchScorer, ok := s.scorer.(domain.BatchImportanceScorer); ok && batchScorer != nil {
+		scores, err := batchScorer.BatchScore(ctx, contents)
+		if err == nil {
+			if len(scores) != len(contents) {
+				return nil, fmt.Errorf("batch importance score count mismatch: got %d for %d contents", len(scores), len(contents))
+			}
+			for i := range scores {
+				if scores[i] < 0 {
+					scores[i] = 0
+				}
+				if scores[i] > 1 {
+					scores[i] = 1
+				}
+			}
+			return scores, nil
+		}
+	}
+
+	scores := make([]float64, 0, len(contents))
+	for i := range contents {
+		score, err := s.scorer.Score(ctx, contents[i])
+		if err != nil {
+			return nil, err
+		}
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
+		scores = append(scores, score)
+	}
+	return scores, nil
 }
 
 func (s *Service) upsertStoredEmbeddings(ctx context.Context, stored []domain.Memory, embeddings [][]float32) error {
