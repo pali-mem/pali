@@ -1,0 +1,7 @@
+fix the promtps being here and there
+
+
+make sure our final node 4j imnpelemntion doesn't have such low results(maybe something wrong with how we are doing entiries)]
+-> after that plug this into evel and see if multi hop jumps or not proerply!
+
+making docs rsearch for any key improvements we do in the meanwhile

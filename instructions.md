@@ -80,62 +80,24 @@ Search behavior:
 
 ## Config Surface (Implemented)
 
-```yaml
-server:
-  host: 127.0.0.1
-  port: 8080
-
-vector_backend: sqlite              # sqlite | qdrant | pgvector
-default_tenant_id: default
-importance_scorer: heuristic        # heuristic | ollama
-postprocess:
-  enabled: true
-  poll_interval_ms: 250
-  batch_size: 32
-  worker_count: 2
-  lease_ms: 30000
-  max_attempts: 5
-  retry_base_ms: 500
-  retry_max_ms: 60000
-
-database:
-  sqlite_dsn: file:pali.db?cache=shared
-
-qdrant:
-  base_url: http://127.0.0.1:6333
-  api_key: ""
-  collection: pali_memories
-  timeout_ms: 2000
-
-embedding:
-  provider: ollama                  # ollama | onnx | lexical (mock alias supported)
-  fallback_provider: lexical
-  ollama_base_url: http://127.0.0.1:11434
-  ollama_model: all-minilm
-  ollama_timeout_seconds: 10
-  model_path: ./models/all-MiniLM-L6-v2/model.onnx
-  tokenizer_path: ./models/all-MiniLM-L6-v2/tokenizer.json
-
-ollama:
-  base_url: http://127.0.0.1:11434
-  model: qwen2.5:7b
-  timeout_ms: 2000
-
-auth:
-  enabled: false
-  jwt_secret: "change-me"
-  issuer: "pali"
-```
+Canonical config reference:
+- `docs/configuration.md` (authoritative)
+- `pali.yaml.example` (must stay aligned with `internal/config/defaults.go`)
 
 Runtime notes:
 - `vector_backend=sqlite` is implemented.
 - `vector_backend=qdrant` is implemented using Qdrant HTTP API (`collections`, `points upsert/search/delete`) with tenant payload filters.
 - `vector_backend=pgvector` currently returns fail-fast startup errors (adapter not implemented yet).
+- `entity_fact_backend=sqlite` is implemented.
+- `entity_fact_backend=neo4j` is implemented with batch-first UNWIND writes and relation lookup queries.
 - `importance_scorer=heuristic` is default.
 - `importance_scorer=ollama` calls local Ollama for score generation.
+- `importance_scorer=openrouter` calls OpenRouter chat completions for score generation.
 - `postprocess.enabled=true` runs in-process workers for async ingest queue jobs (`parser_extract`, `vector_upsert`).
 - default embedding provider is `ollama` with `lexical` fallback.
+- `embedding.provider=openrouter` calls OpenRouter embeddings API.
 - ONNX embedding path is implemented and requires ONNX Runtime shared library.
+- benchmark/eval scripts render runtime config from `test/config/providers/*.yaml` via `cmd/configrender`.
 
 ## Setup + Run + Validation
 
@@ -143,6 +105,7 @@ Setup:
 ```bash
 make setup
 ```
+Config reference: `docs/configuration.md`
 
 Run API:
 ```bash

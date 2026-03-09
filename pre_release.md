@@ -118,7 +118,7 @@ gh repo edit --description "Persistent memory layer for LLM applications" \
 ### Branch Protection (run once after repo is public)
 ```bash
 # Protect main: require PR + passing CI before merge
-gh api repos/{owner}/pali/branches/main/protection \
+gh api repos/vein05/pali/branches/main/protection \
   --method PUT \
   --field required_status_checks='{"strict":true,"contexts":["ci / test","ci / lint"]}' \
   --field enforce_admins=false \
@@ -197,10 +197,12 @@ git push origin v0.1.0
 - [ ] Create `.github/PULL_REQUEST_TEMPLATE.md` — checklist: tests added, docs updated, changelog entry
 - [ ] Create `.github/ISSUE_TEMPLATE/bug_report.yml` — structured bug form
 - [ ] Create `.github/ISSUE_TEMPLATE/feature_request.yml` — structured feature form
-- [ ] Enable GitHub auto-merge for PRs that pass CI:
-  ```bash
-  gh repo edit --enable-auto-merge
-  ```
+
+- [ ] Rely on branch protection rule requiring one approving review before merge
+
+This enforces manual review instead of automatic merging.
+
+
 - [ ] Add `stale` action — auto-label issues inactive for 30 days, close after 60:
   - Create `.github/workflows/stale.yml` using `actions/stale@v9`
 
