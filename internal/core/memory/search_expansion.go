@@ -25,6 +25,12 @@ const (
 	multiHopExpansionNovelTokenMinLength   = 3
 	multiHopExpansionMinNovelTokenCount    = 2
 	multiHopExpansionMaxNovelTokenPerQuery = 4
+	prfExpansionMinCandidates              = 6
+	prfExpansionMaxFeedbackDocs            = 8
+	prfExpansionMinBestScore               = 0.20
+	prfExpansionSkipStrongFirstPass        = 0.75
+	prfExpansionMinDocFrequency            = 3
+	prfExpansionMaxExtraTokens             = 2
 )
 
 func buildSearchQueries(query string, profile queryProfile) []string {
@@ -166,6 +172,116 @@ func buildIterativeMultiHopQueries(query string, lexical []lexicalCandidate, max
 		queries = append(queries, refined)
 	}
 	return queries
+}
+
+func buildPseudoRelevanceQueries(query string, profile queryProfile, lexical []lexicalCandidate, maxQueries int) []string {
+	if maxQueries <= 0 || len(lexical) < prfExpansionMinCandidates {
+		return []string{}
+	}
+	if profile.MultiHop {
+		return []string{}
+	}
+	ordered := append([]lexicalCandidate{}, lexical...)
+	slices.SortFunc(ordered, func(a, b lexicalCandidate) int {
+		switch {
+		case a.Score > b.Score:
+			return -1
+		case a.Score < b.Score:
+			return 1
+		default:
+			return strings.Compare(a.Memory.ID, b.Memory.ID)
+		}
+	})
+	best := ordered[0].Score
+	if best < prfExpansionMinBestScore || best >= prfExpansionSkipStrongFirstPass {
+		return []string{}
+	}
+	baseTokens := normalizedRankingTokens(query)
+	if len(baseTokens) == 0 {
+		return []string{}
+	}
+	type tokenStats struct {
+		token string
+		tf    int
+		df    int
+		score float64
+	}
+	statsByToken := make(map[string]*tokenStats, 32)
+	feedbackDocs := 0
+	for _, candidate := range ordered {
+		if feedbackDocs >= prfExpansionMaxFeedbackDocs {
+			break
+		}
+		feedbackDocs++
+		docTokens := normalizedRankingTokenList(candidate.Memory.Content + "\n" + candidate.Memory.QueryViewText)
+		seenInDoc := make(map[string]struct{}, len(docTokens))
+		for _, token := range docTokens {
+			if len(token) < 3 {
+				continue
+			}
+			if _, exists := baseTokens[token]; exists {
+				continue
+			}
+			if _, stop := searchStopwordPattern[token]; stop {
+				continue
+			}
+			if isAllDigits(token) {
+				continue
+			}
+			entry, ok := statsByToken[token]
+			if !ok {
+				entry = &tokenStats{token: token}
+				statsByToken[token] = entry
+			}
+			entry.tf++
+			if _, seen := seenInDoc[token]; !seen {
+				entry.df++
+				seenInDoc[token] = struct{}{}
+			}
+		}
+	}
+	if len(statsByToken) == 0 {
+		return []string{}
+	}
+	scored := make([]tokenStats, 0, len(statsByToken))
+	for _, stat := range statsByToken {
+		if stat.df < prfExpansionMinDocFrequency {
+			continue
+		}
+		// Prefer tokens that recur across feedback docs (df) while still
+		// using term frequency as a tiebreaker.
+		stat.score = (0.75 * float64(stat.df)) + (0.25 * float64(stat.tf))
+		scored = append(scored, *stat)
+	}
+	if len(scored) == 0 {
+		return []string{}
+	}
+	slices.SortFunc(scored, func(a, b tokenStats) int {
+		switch {
+		case a.score > b.score:
+			return -1
+		case a.score < b.score:
+			return 1
+		default:
+			return strings.Compare(a.token, b.token)
+		}
+	})
+	extraTokens := make([]string, 0, prfExpansionMaxExtraTokens)
+	for _, token := range scored {
+		if len(extraTokens) >= prfExpansionMaxExtraTokens {
+			break
+		}
+		extraTokens = append(extraTokens, token.token)
+	}
+	if len(extraTokens) == 0 {
+		return []string{}
+	}
+	base := condenseSearchQuery(query)
+	refined := condenseSearchQuery(query + " " + strings.Join(extraTokens, " "))
+	if refined == "" || strings.EqualFold(refined, base) {
+		return []string{}
+	}
+	return []string{refined}
 }
 
 func shouldExpandMultiHopQueries(query string, lexical []lexicalCandidate) bool {
