@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -20,6 +21,7 @@ func writeError(c *gin.Context, err error) {
 	case strings.Contains(strings.ToLower(err.Error()), "constraint failed"):
 		c.JSON(http.StatusConflict, gin.H{"error": "conflict"})
 	default:
+		log.Printf("[pali-api] internal error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
 }

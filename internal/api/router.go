@@ -2,11 +2,8 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +16,7 @@ import (
 	"github.com/pali-mem/pali/internal/dashboard"
 	"github.com/pali-mem/pali/internal/embeddings"
 	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
+	"github.com/pali-mem/pali/internal/startup"
 	"github.com/pali-mem/pali/internal/wiring"
 )
 
@@ -32,73 +30,56 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 		return nil, nil, fmt.Errorf("open sqlite for router: %w", err)
 	}
 	stopPostprocess := func() {}
+	closeEntityFactRepo := func() error { return nil }
 	cleanup := func() error {
 		stopPostprocess()
+		if err := closeEntityFactRepo(); err != nil {
+			_ = db.Close()
+			return err
+		}
 		return db.Close()
 	}
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
-	entityFactRepo := sqliterepo.NewEntityFactRepository(db)
+	entityFactRepo, entityFactCleanup, err := wiring.BuildEntityFactRepository(cfg, db)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	closeEntityFactRepo = entityFactCleanup
 	vectorStore, err := wiring.BuildVectorStore(cfg, db)
 	if err != nil {
+		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
 
 	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
 	if err != nil {
+		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
 	scorer, err := wiring.BuildImportanceScorer(cfg)
 	if err != nil {
+		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
 	infoParser, err := wiring.BuildInfoParser(cfg)
 	if err != nil {
+		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
-	serviceOptions := []corememory.ServiceOption{
-		corememory.StructuredMemoryOptions{
-			Enabled:               cfg.StructuredMemory.Enabled,
-			DualWriteObservations: cfg.StructuredMemory.DualWriteObservations,
-			DualWriteEvents:       cfg.StructuredMemory.DualWriteEvents,
-			MaxObservations:       cfg.StructuredMemory.MaxObservations,
-		},
-		corememory.RankingOptions{
-			Algorithm: cfg.Retrieval.Scoring.Algorithm,
-			WAL: corememory.WALWeights{
-				Recency:    cfg.Retrieval.Scoring.WAL.Recency,
-				Relevance:  cfg.Retrieval.Scoring.WAL.Relevance,
-				Importance: cfg.Retrieval.Scoring.WAL.Importance,
-			},
-			Match: corememory.MatchWeights{
-				Recency:      cfg.Retrieval.Scoring.Match.Recency,
-				Relevance:    cfg.Retrieval.Scoring.Match.Relevance,
-				Importance:   cfg.Retrieval.Scoring.Match.Importance,
-				QueryOverlap: cfg.Retrieval.Scoring.Match.QueryOverlap,
-				Routing:      cfg.Retrieval.Scoring.Match.Routing,
-			},
-		},
-		corememory.ParserOptions{
-			Enabled:         cfg.Parser.Enabled,
-			Provider:        cfg.Parser.Provider,
-			Model:           cfg.Parser.OllamaModel,
-			StoreRawTurn:    cfg.Parser.StoreRawTurn,
-			MaxFacts:        cfg.Parser.MaxFacts,
-			DedupeThreshold: cfg.Parser.DedupeThreshold,
-			UpdateThreshold: cfg.Parser.UpdateThreshold,
-		},
-		corememory.WithLogger(log.Default()),
-		corememory.WithDebug(cfg.Logging.DevVerbose, cfg.Logging.Progress),
+	decomposer, err := wiring.BuildMultiHopQueryDecomposer(cfg)
+	if err != nil {
+		_ = closeEntityFactRepo()
+		_ = db.Close()
+		return nil, nil, err
 	}
-	if infoParser != nil {
-		serviceOptions = append(serviceOptions, corememory.WithInfoParser(infoParser))
-	}
-	serviceOptions = append(serviceOptions, corememory.WithEntityFactRepository(entityFactRepo))
+	serviceOptions := wiring.BuildMemoryServiceOptions(cfg, infoParser, entityFactRepo, decomposer)
 	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
 	if cfg.Postprocess.Enabled {
 		stop, err := memoryService.StartPostprocessWorkers(context.Background(), corememory.PostprocessWorkerOptions{
@@ -112,13 +93,14 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 			RetryMax:     time.Duration(cfg.Postprocess.RetryMaxMS) * time.Millisecond,
 		})
 		if err != nil {
+			_ = closeEntityFactRepo()
 			_ = db.Close()
 			return nil, nil, fmt.Errorf("start postprocess workers: %w", err)
 		}
 		stopPostprocess = stop
 	}
 	tenantService := coretenant.NewService(tenantRepo)
-	logStartup(cfg, db, embedMeta)
+	startup.Log(cfg, tenantRepo, memoryRepo, embedMeta)
 
 	r := gin.New()
 	r.Use(apimiddleware.Logging())
@@ -148,6 +130,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	if cfg.Auth.Enabled {
 		authenticator, err := apiauth.NewJWTAuthenticator(cfg.Auth.JWTSecret, cfg.Auth.Issuer)
 		if err != nil {
+			_ = closeEntityFactRepo()
 			_ = db.Close()
 			return nil, nil, fmt.Errorf("initialize auth: %w", err)
 		}
@@ -168,36 +151,4 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	}
 
 	return r, cleanup, nil
-}
-
-func logStartup(cfg config.Config, db *sql.DB, embedMeta embeddings.BuildMetadata) {
-	logger := log.Default()
-	logger.Printf("[pali-startup] pid=%d port=%d db=%s", os.Getpid(), cfg.Server.Port, cfg.Database.SQLiteDSN)
-	if embedMeta.UsedFallback {
-		logger.Printf(
-			"[pali-startup] embedder=%s (fallback from %s) model=%s provider=%s",
-			embedMeta.ResolvedProvider,
-			embedMeta.PrimaryProvider,
-			cfg.Embedding.OllamaModel,
-			cfg.Embedding.OllamaBaseURL,
-		)
-	} else {
-		logger.Printf(
-			"[pali-startup] embedder=%s model=%s provider=%s",
-			embedMeta.ResolvedProvider,
-			cfg.Embedding.OllamaModel,
-			cfg.Embedding.OllamaBaseURL,
-		)
-	}
-	var tenantCount int64
-	var memoryCount int64
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM tenants").Scan(&tenantCount); err != nil {
-		logger.Printf("[pali-startup] tenant_count_error=%v", err)
-		return
-	}
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM memories").Scan(&memoryCount); err != nil {
-		logger.Printf("[pali-startup] memory_count_error=%v", err)
-		return
-	}
-	logger.Printf("[pali-startup] tenant_count=%d memory_count=%d", tenantCount, memoryCount)
 }
