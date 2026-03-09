@@ -29,6 +29,10 @@ func TestValidate_FallbackProviderSupported(t *testing.T) {
 	cfg.Embedding.FallbackProvider = "lexical"
 	require.NoError(t, Validate(cfg))
 
+	cfg.Embedding.FallbackProvider = "openrouter"
+	cfg.OpenRouter.APIKey = "test-key"
+	require.NoError(t, Validate(cfg))
+
 	cfg.Embedding.FallbackProvider = "unknown"
 	err := Validate(cfg)
 	require.Error(t, err)
@@ -42,6 +46,11 @@ func TestValidate_ImportanceScorerSupported(t *testing.T) {
 
 	cfg.ImportanceScorer = "ollama"
 	cfg.Ollama.Model = "llama3.1:8b"
+	require.NoError(t, Validate(cfg))
+
+	cfg.ImportanceScorer = "openrouter"
+	cfg.OpenRouter.APIKey = "test-key"
+	cfg.OpenRouter.ScoringModel = "openai/gpt-oss-120b:nitro"
 	require.NoError(t, Validate(cfg))
 
 	cfg.ImportanceScorer = "unknown"
@@ -60,6 +69,27 @@ func TestValidate_OllamaScorerModelRequired(t *testing.T) {
 	require.Contains(t, err.Error(), "ollama.model")
 }
 
+func TestValidate_OpenRouterEmbedderRequiresKey(t *testing.T) {
+	cfg := Defaults()
+	cfg.Embedding.Provider = "openrouter"
+	cfg.OpenRouter.APIKey = ""
+
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "openrouter.api_key")
+}
+
+func TestValidate_OpenRouterScorerRequiresModel(t *testing.T) {
+	cfg := Defaults()
+	cfg.ImportanceScorer = "openrouter"
+	cfg.OpenRouter.APIKey = "test-key"
+	cfg.OpenRouter.ScoringModel = ""
+
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "openrouter.scoring_model")
+}
+
 func TestValidate_QdrantBackendRequiresValidConfig(t *testing.T) {
 	cfg := Defaults()
 	cfg.VectorBackend = "qdrant"
@@ -76,6 +106,36 @@ func TestValidate_QdrantBackendRequiresValidConfig(t *testing.T) {
 	err = Validate(cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "qdrant.collection")
+}
+
+func TestValidate_EntityFactBackendRequiresValidConfig(t *testing.T) {
+	cfg := Defaults()
+	cfg.EntityFactBackend = "neo4j"
+	cfg.Neo4j.Password = "secret"
+	require.NoError(t, Validate(cfg))
+
+	cfg = Defaults()
+	cfg.EntityFactBackend = "neo4j"
+	cfg.Neo4j.Password = "secret"
+	cfg.Neo4j.URI = "://bad"
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "neo4j.uri")
+
+	cfg = Defaults()
+	cfg.EntityFactBackend = "neo4j"
+	cfg.Neo4j.Password = ""
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "neo4j.password")
+
+	cfg = Defaults()
+	cfg.EntityFactBackend = "neo4j"
+	cfg.Neo4j.Password = "secret"
+	cfg.Neo4j.BatchSize = 0
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "neo4j.batch_size")
 }
 
 func TestValidate_StructuredMemoryOptions(t *testing.T) {
