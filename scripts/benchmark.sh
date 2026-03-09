@@ -15,6 +15,8 @@ PORT="18080"
 BASE_URL=""
 START_SERVER=1
 EMBEDDING_PROVIDER="ollama"
+ENTITY_FACT_BACKEND=""
+CONFIG_PROFILE=""
 OLLAMA_BASE_URL="http://127.0.0.1:11434"
 OLLAMA_MODEL="all-minilm"
 OLLAMA_TIMEOUT_SECONDS=10
@@ -24,6 +26,10 @@ QDRANT_BASE_URL="http://127.0.0.1:6333"
 QDRANT_API_KEY=""
 QDRANT_COLLECTION="pali_memories"
 QDRANT_TIMEOUT_MS=2000
+QDRANT_ISOLATE_RUN="auto"
+PARSER_ENABLED=""
+PARSER_PROVIDER=""
+PARSER_OPENROUTER_MODEL=""
 
 usage() {
   cat <<'EOF'
@@ -40,7 +46,9 @@ Flags:
   --host <ip>              Server host for auto-start mode (default: 127.0.0.1)
   --port <port>            Server port for auto-start mode (default: 18080)
   --base-url <url>         Use an already-running server, disables auto-start
-  --embedding-provider <p> ollama | onnx | mock (default: ollama)
+  --embedding-provider <p> ollama | onnx | lexical | mock (default: ollama)
+  --entity-fact-backend <b> sqlite | neo4j (default: from selected profile)
+  --config-profile <path>  Base provider profile YAML (default: auto from provider/backend)
   --embedding-model <name> Ollama model name (default: all-minilm)
   --ollama-url <url>       Ollama base URL (default: http://127.0.0.1:11434)
   --onnx-model <path>      ONNX model path (default: ./models/all-MiniLM-L6-v2/model.onnx)
@@ -49,12 +57,17 @@ Flags:
   --qdrant-api-key <key>   Qdrant API key (default: empty)
   --qdrant-collection <n>  Qdrant collection name (default: pali_memories)
   --qdrant-timeout-ms <n>  Qdrant request timeout (default: 2000)
+  --qdrant-isolate-run <m> auto | true | false (default: auto; auto isolates when script starts server)
+  --parser-enabled <bool>  Force parser on/off (true|false). Overrides neo4j auto-mode.
+  --parser-provider <name> heuristic | ollama | openrouter (default: auto/heuristic for neo4j)
+  --parser-openrouter-model <name> Override parser.openrouter_model for parser provider openrouter
   --help                   Show this help
 
 Examples:
   scripts/benchmark.sh --fixture test/fixtures/memories.json --backend sqlite
   scripts/benchmark.sh --fixture test/fixtures/memories.json --search-ops 500
   scripts/benchmark.sh --base-url http://127.0.0.1:8080 --fixture test/fixtures/memories.json
+  scripts/benchmark.sh --fixture test/fixtures/memories.json --embedding-provider lexical  # raw mode (no Ollama)
 EOF
 }
 
@@ -101,6 +114,14 @@ while [[ $# -gt 0 ]]; do
       EMBEDDING_PROVIDER="$2"
       shift 2
       ;;
+    --entity-fact-backend)
+      ENTITY_FACT_BACKEND="$2"
+      shift 2
+      ;;
+    --config-profile)
+      CONFIG_PROFILE="$2"
+      shift 2
+      ;;
     --embedding-model)
       OLLAMA_MODEL="$2"
       shift 2
@@ -131,6 +152,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --qdrant-timeout-ms)
       QDRANT_TIMEOUT_MS="$2"
+      shift 2
+      ;;
+    --qdrant-isolate-run)
+      QDRANT_ISOLATE_RUN="$2"
+      shift 2
+      ;;
+    --parser-enabled)
+      PARSER_ENABLED="$2"
+      shift 2
+      ;;
+    --parser-provider)
+      PARSER_PROVIDER="$2"
+      shift 2
+      ;;
+    --parser-openrouter-model)
+      PARSER_OPENROUTER_MODEL="$2"
       shift 2
       ;;
     --help|-h)
@@ -195,6 +232,100 @@ case "$EMBEDDING_PROVIDER" in
     ;;
 esac
 
+case "$QDRANT_ISOLATE_RUN" in
+  auto|true|false)
+    ;;
+  *)
+    echo "ERROR: --qdrant-isolate-run must be one of: auto, true, false"
+    exit 1
+    ;;
+esac
+
+# Avoid cross-run vector-size collisions in shared Qdrant collections.
+if [[ "$EMBEDDING_PROVIDER" == "lexical" && "$QDRANT_COLLECTION" == "pali_memories" ]]; then
+  QDRANT_COLLECTION="pali_memories_lexical"
+fi
+
+if [[ -n "$ENTITY_FACT_BACKEND" ]]; then
+  case "$ENTITY_FACT_BACKEND" in
+    sqlite|neo4j)
+      ;;
+    *)
+      echo "ERROR: --entity-fact-backend must be one of: sqlite, neo4j"
+      exit 1
+      ;;
+  esac
+fi
+
+PARSER_ENABLED_OVERRIDE=""
+PARSER_PROVIDER_OVERRIDE=""
+if [[ "$ENTITY_FACT_BACKEND" == "neo4j" ]]; then
+  PARSER_ENABLED_OVERRIDE="true"
+  PARSER_PROVIDER_OVERRIDE="heuristic"
+fi
+if [[ -n "$PARSER_ENABLED" ]]; then
+  case "$PARSER_ENABLED" in
+    true|false)
+      PARSER_ENABLED_OVERRIDE="$PARSER_ENABLED"
+      if [[ "$PARSER_ENABLED" == "false" ]]; then
+        PARSER_PROVIDER_OVERRIDE=""
+      elif [[ -z "$PARSER_PROVIDER_OVERRIDE" ]]; then
+        PARSER_PROVIDER_OVERRIDE="heuristic"
+      fi
+      ;;
+    *)
+      echo "ERROR: --parser-enabled must be true or false"
+      exit 1
+      ;;
+  esac
+fi
+if [[ -n "$PARSER_PROVIDER" ]]; then
+  case "$PARSER_PROVIDER" in
+    heuristic|ollama|openrouter)
+      PARSER_PROVIDER_OVERRIDE="$PARSER_PROVIDER"
+      if [[ -z "$PARSER_ENABLED_OVERRIDE" ]]; then
+        PARSER_ENABLED_OVERRIDE="true"
+      fi
+      ;;
+    *)
+      echo "ERROR: --parser-provider must be one of: heuristic, ollama, openrouter"
+      exit 1
+      ;;
+  esac
+fi
+
+resolve_profile_path() {
+  if [[ -n "$CONFIG_PROFILE" ]]; then
+    printf '%s\n' "$CONFIG_PROFILE"
+    return
+  fi
+  if [[ "$ENTITY_FACT_BACKEND" == "neo4j" && "$BACKEND" == "qdrant" && "$EMBEDDING_PROVIDER" == "lexical" ]]; then
+    if [[ "$PARSER_PROVIDER_OVERRIDE" == "openrouter" ]]; then
+      printf 'test/config/providers/qdrant-neo4j-lexical-openrouter.yaml\n'
+    else
+      printf 'test/config/providers/qdrant-neo4j-lexical.yaml\n'
+    fi
+    return
+  fi
+  case "${BACKEND}:${EMBEDDING_PROVIDER}" in
+    qdrant:ollama)
+      printf 'test/config/providers/qdrant-ollama.yaml\n'
+      ;;
+    *:mock)
+      printf 'test/config/providers/mock.yaml\n'
+      ;;
+    *:lexical)
+      printf 'test/config/providers/lexical.yaml\n'
+      ;;
+    *:ollama)
+      printf 'test/config/providers/ollama.yaml\n'
+      ;;
+    *)
+      printf 'test/config/providers/ollama.yaml\n'
+      ;;
+  esac
+}
+
 mkdir -p "$OUT_DIR"
 
 tmp_dir="$(mktemp -d)"
@@ -205,6 +336,7 @@ tmp_search_lat="$tmp_dir/search_lat_ms.txt"
 tmp_tenants="$tmp_dir/tenants.txt"
 tmp_fixture_lines="$tmp_dir/fixture_lines.jsonl"
 tmp_search_pairs="$tmp_dir/search_pairs.tsv"
+tmp_batch_payload_json="$tmp_dir/batch_payload.json"
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then
@@ -319,6 +451,37 @@ run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 fixture_name="$(basename "$FIXTURE")"
 machine="$(uname -m)"
 os_name="$(uname -s)"
+run_dir="$OUT_DIR/$run_id"
+mkdir -p "$run_dir"
+raw_mode=false
+run_profile="standard"
+if [[ "$EMBEDDING_PROVIDER" == "lexical" || "$EMBEDDING_PROVIDER" == "mock" ]]; then
+  raw_mode=true
+  run_profile="raw_no_ollama"
+fi
+qdrant_collection_base="$QDRANT_COLLECTION"
+qdrant_collection_effective="$QDRANT_COLLECTION"
+qdrant_namespace_mode="shared"
+if [[ "$BACKEND" == "qdrant" ]]; then
+  isolate_qdrant=false
+  case "$QDRANT_ISOLATE_RUN" in
+    true)
+      isolate_qdrant=true
+      ;;
+    false)
+      isolate_qdrant=false
+      ;;
+    auto)
+      if [[ "$START_SERVER" -eq 1 ]]; then
+        isolate_qdrant=true
+      fi
+      ;;
+  esac
+  if [[ "$isolate_qdrant" == "true" ]]; then
+    qdrant_namespace_mode="isolated"
+    qdrant_collection_effective="${QDRANT_COLLECTION}_${run_id,,}"
+  fi
+fi
 
 if [[ "$START_SERVER" -eq 1 ]]; then
   if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
@@ -335,31 +498,43 @@ if [[ "$START_SERVER" -eq 1 ]]; then
     exit 1
   fi
   db_path="$tmp_dir/bench.sqlite"
+  sqlite_db_path="$db_path"
+  if command -v cygpath >/dev/null 2>&1; then
+    if converted_path="$(cygpath -m "$db_path" 2>/dev/null)"; then
+      sqlite_db_path="$converted_path"
+    fi
+  fi
   cfg_path="$tmp_dir/bench.yaml"
-  cat > "$cfg_path" <<EOF
-server:
-  host: "${HOST}"
-  port: ${PORT}
-vector_backend: "${BACKEND}"
-database:
-  sqlite_dsn: "file:${db_path}?cache=shared"
-qdrant:
-  base_url: "${QDRANT_BASE_URL}"
-  api_key: "${QDRANT_API_KEY}"
-  collection: "${QDRANT_COLLECTION}"
-  timeout_ms: ${QDRANT_TIMEOUT_MS}
-embedding:
-  provider: "${EMBEDDING_PROVIDER}"
-  ollama_base_url: "${OLLAMA_BASE_URL}"
-  ollama_model: "${OLLAMA_MODEL}"
-  ollama_timeout_seconds: ${OLLAMA_TIMEOUT_SECONDS}
-  model_path: "${ONNX_MODEL_PATH}"
-  tokenizer_path: "${ONNX_TOKENIZER_PATH}"
-auth:
-  enabled: false
-  jwt_secret: ""
-  issuer: "pali"
-EOF
+  config_profile_path="$(resolve_profile_path)"
+  if [[ ! -f "$config_profile_path" ]]; then
+    echo "ERROR: config profile file not found: $config_profile_path"
+    exit 1
+  fi
+  go run ./cmd/configrender \
+    -profile "$config_profile_path" \
+    -out "$cfg_path" \
+    -host "$HOST" \
+    -port "$PORT" \
+    -vector-backend "$BACKEND" \
+    ${ENTITY_FACT_BACKEND:+-entity-fact-backend} \
+    ${ENTITY_FACT_BACKEND:+$ENTITY_FACT_BACKEND} \
+    -sqlite-dsn "file:${sqlite_db_path}?cache=shared" \
+    -qdrant-url "$QDRANT_BASE_URL" \
+    -qdrant-api-key "$QDRANT_API_KEY" \
+    -qdrant-collection "$qdrant_collection_effective" \
+    -qdrant-timeout-ms "$QDRANT_TIMEOUT_MS" \
+    -embedding-provider "$EMBEDDING_PROVIDER" \
+    ${PARSER_ENABLED_OVERRIDE:+-parser-enabled} \
+    ${PARSER_ENABLED_OVERRIDE:+$PARSER_ENABLED_OVERRIDE} \
+    ${PARSER_PROVIDER_OVERRIDE:+-parser-provider} \
+    ${PARSER_PROVIDER_OVERRIDE:+$PARSER_PROVIDER_OVERRIDE} \
+    ${PARSER_OPENROUTER_MODEL:+-parser-openrouter-model} \
+    ${PARSER_OPENROUTER_MODEL:+$PARSER_OPENROUTER_MODEL} \
+    -embedding-ollama-url "$OLLAMA_BASE_URL" \
+    -embedding-ollama-model "$OLLAMA_MODEL" \
+    -embedding-ollama-timeout-seconds "$OLLAMA_TIMEOUT_SECONDS" \
+    -embedding-model-path "$ONNX_MODEL_PATH" \
+    -embedding-tokenizer-path "$ONNX_TOKENIZER_PATH"
 
   echo "==> Starting benchmark server on ${BASE_URL}"
   export GOCACHE="${GOCACHE:-$tmp_dir/gocache}"
@@ -387,7 +562,7 @@ if [[ "$fixture_count" -le 0 ]]; then
 fi
 fixture_sha256="$(file_sha256 "$FIXTURE")"
 
-jq -r '.[].tenant_id' "$FIXTURE" | sort -u > "$tmp_tenants"
+jq -r '.[].tenant_id' "$FIXTURE" | tr -d '\r' | sort -u > "$tmp_tenants"
 jq -c '.[]' "$FIXTURE" > "$tmp_fixture_lines"
 query_source="fixture_mid_window"
 if [[ -n "$EVAL_SET" ]]; then
@@ -412,6 +587,21 @@ echo "==> Benchmark run"
 echo "    fixture      : $FIXTURE (${fixture_count} memories, ${tenant_count} tenants)"
 echo "    fixture sha  : $fixture_sha256"
 echo "    backend      : $BACKEND"
+if [[ "$BACKEND" == "qdrant" ]]; then
+  echo "    qdrant base  : $QDRANT_BASE_URL"
+  echo "    qdrant coll  : $qdrant_collection_effective"
+  echo "    qdrant mode  : $qdrant_namespace_mode"
+fi
+if [[ -n "$ENTITY_FACT_BACKEND" ]]; then
+  echo "    fact backend : $ENTITY_FACT_BACKEND"
+  if [[ -n "$PARSER_ENABLED_OVERRIDE" ]]; then
+    if [[ "$PARSER_ENABLED_OVERRIDE" == "true" ]]; then
+      echo "    parser       : enabled"
+    else
+      echo "    parser       : disabled"
+    fi
+  fi
+fi
 echo "    embedder     : $EMBEDDING_PROVIDER"
 if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
   echo "    ollama model : $OLLAMA_MODEL"
@@ -419,6 +609,9 @@ fi
 echo "    search ops   : $SEARCH_OPS"
 echo "    top_k        : $TOP_K"
 echo "    query source : $query_source"
+echo "    config prof  : $(resolve_profile_path)"
+echo "    run profile  : $run_profile"
+echo "    run dir      : $run_dir"
 if [[ -n "$EVAL_SET" ]]; then
   echo "    eval set     : $EVAL_SET"
 fi
@@ -427,6 +620,7 @@ echo ""
 
 echo "==> Creating tenants"
 while IFS= read -r tenant_id; do
+  tenant_id="${tenant_id%$'\r'}"
   payload="$(jq -n --arg id "$tenant_id" --arg name "$tenant_id" '{id:$id,name:$name}')"
   http_code="$(curl -sS -o /dev/null -w '%{http_code}' \
     -X POST "$BASE_URL/v1/tenants" \
@@ -445,7 +639,7 @@ store_start_ns="$(now_ns)"
 batch_probe_code="$(curl -sS -o /dev/null -w '%{http_code}' \
   -X POST "$BASE_URL/v1/memory/batch" \
   -H 'Content-Type: application/json' \
-  --data '{"items":[]}')"
+  --data '{"items":[]}' | tr -d '\r')"
 store_batch_supported=0
 store_batch_size=64
 store_batch_fallbacks=0
@@ -468,15 +662,16 @@ if [[ "$store_batch_supported" -eq 1 ]]; then
       batch_count=$((total - i))
     fi
     payload="$(printf '%s\n' "${memory_rows[@]:i:batch_count}" | jq -s '{items:.}')"
+    printf '%s\n' "$payload" > "$tmp_batch_payload_json"
     req_start_ns="$(now_ns)"
     response="$(curl -sS -X POST "$BASE_URL/v1/memory/batch" \
       -H 'Content-Type: application/json' \
-      --data "$payload" \
+      --data-binary "@${tmp_batch_payload_json}" \
       -w '\n%{http_code}')"
     req_end_ns="$(now_ns)"
     latency_ms="$(awk -v s="$req_start_ns" -v e="$req_end_ns" 'BEGIN{printf "%.3f",(e-s)/1000000}')"
-    response_body="${response%$'\n'*}"
-    http_code="${response##*$'\n'}"
+    response_body="$(printf '%s\n' "$response" | sed '$d')"
+    http_code="$(printf '%s\n' "$response" | tail -n1 | tr -d '\r')"
     if [[ "$http_code" == "201" ]]; then
       stored_count="$(printf '%s' "$response_body" | jq -r '.items | length' 2>/dev/null || echo "0")"
       if [[ "$stored_count" =~ ^[0-9]+$ ]] && (( stored_count == batch_count )); then
@@ -508,7 +703,7 @@ else
     http_code="$(curl -sS -o /dev/null -w '%{http_code}' \
       -X POST "$BASE_URL/v1/memory" \
       -H 'Content-Type: application/json' \
-      --data "$memory_json")"
+      --data "$memory_json" | tr -d '\r')"
     req_end_ns="$(now_ns)"
     latency_ms="$(awk -v s="$req_start_ns" -v e="$req_end_ns" 'BEGIN{printf "%.3f",(e-s)/1000000}')"
     echo "$latency_ms" >> "$tmp_store_lat"
@@ -528,6 +723,7 @@ printf "\n"
 echo "==> Search benchmark (${SEARCH_OPS} ops)"
 search_pairs=()
 while IFS= read -r line; do
+  line="${line%$'\r'}"
   search_pairs+=("$line")
 done < "$tmp_search_pairs"
 pair_count="${#search_pairs[@]}"
@@ -544,6 +740,8 @@ for ((op=0; op<SEARCH_OPS; op++)); do
   line="${search_pairs[$idx]}"
   tenant_id="${line%%$'\t'*}"
   query="${line#*$'\t'}"
+  tenant_id="${tenant_id%$'\r'}"
+  query="${query%$'\r'}"
   if [[ -z "${query// }" ]]; then
     query="memory recall details"
   fi
@@ -554,7 +752,7 @@ for ((op=0; op<SEARCH_OPS; op++)); do
   http_code="$(curl -sS -o /dev/null -w '%{http_code}' \
     -X POST "$BASE_URL/v1/memory/search" \
     -H 'Content-Type: application/json' \
-    --data "$payload")"
+    --data "$payload" | tr -d '\r')"
   req_end_ns="$(now_ns)"
   latency_ms="$(awk -v s="$req_start_ns" -v e="$req_end_ns" 'BEGIN{printf "%.3f",(e-s)/1000000}')"
   echo "$latency_ms" >> "$tmp_search_lat"
@@ -603,13 +801,20 @@ search_p99="${search_rest#*|}"
 store_throughput="$(awk -v ok="$store_ok" -v ms="$store_total_ms" 'BEGIN{if(ms<=0) print "0"; else printf "%.3f", ok/(ms/1000)}')"
 search_throughput="$(awk -v ok="$search_ok" -v ms="$search_total_ms" 'BEGIN{if(ms<=0) print "0"; else printf "%.3f", ok/(ms/1000)}')"
 
-result_json="$OUT_DIR/${run_id}_${BACKEND}_${fixture_name%.json}.json"
-summary_txt="$OUT_DIR/${run_id}_${BACKEND}_${fixture_name%.json}.summary.txt"
+result_json="$run_dir/benchmark.json"
+summary_txt="$run_dir/benchmark.summary.txt"
 
 cat > "$result_json" <<EOF
 {
+  "run_id": "$run_id",
+  "run_dir": "$run_dir",
+  "run_profile": "$run_profile",
+  "raw_mode": $raw_mode,
   "timestamp_utc": "$timestamp_utc",
   "backend": "$BACKEND",
+  "qdrant_namespace_mode": "$qdrant_namespace_mode",
+  "qdrant_collection_base": "$qdrant_collection_base",
+  "qdrant_collection_effective": "$qdrant_collection_effective",
   "fixture": "$FIXTURE",
   "fixture_sha256": "$fixture_sha256",
   "eval_set": "$EVAL_SET",
@@ -664,8 +869,13 @@ EOF
 cat > "$summary_txt" <<EOF
 Pali Benchmark Summary
 ======================
+Run ID         : $run_id
+Run dir        : $run_dir
+Run profile    : $run_profile
 Timestamp (UTC): $timestamp_utc
 Backend        : $BACKEND
+Qdrant mode    : $qdrant_namespace_mode
+Qdrant coll    : $qdrant_collection_effective
 Embedder       : $EMBEDDING_PROVIDER
 Embed model    : $OLLAMA_MODEL
 Fixture        : $FIXTURE
