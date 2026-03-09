@@ -13,9 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/api"
-	"github.com/pali-mem/pali/internal/config"
 	corememory "github.com/pali-mem/pali/internal/core/memory"
 	coretenant "github.com/pali-mem/pali/internal/core/tenant"
 	embedmock "github.com/pali-mem/pali/internal/embeddings/mock"
@@ -24,6 +22,8 @@ import (
 	heuristicscorer "github.com/pali-mem/pali/internal/scorer/heuristic"
 	"github.com/pali-mem/pali/internal/vectorstore/sqlitevec"
 	paliclient "github.com/pali-mem/pali/pkg/client"
+	"github.com/pali-mem/pali/test/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type e2eEnvironment struct {
@@ -36,9 +36,8 @@ func newE2EEnvironment(t *testing.T) *e2eEnvironment {
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:%s?cache=shared", t.TempDir()+"/e2e.sqlite")
-	cfg := config.Defaults()
+	cfg := testutil.MustLoadProviderConfig(t, "mock")
 	cfg.Database.SQLiteDSN = dsn
-	cfg.Embedding.Provider = "mock"
 
 	gin.SetMode(gin.TestMode)
 	router, apiCleanup, err := api.NewRouter(cfg)
