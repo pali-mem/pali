@@ -14,6 +14,8 @@
 
 > **Early Beta** — Pali is functional but under active development. APIs and configuration formats may change between releases. If you run into problems with your setup, config, or provider combination, please [open an issue](https://github.com/pali-mem/pali/issues) — it helps a lot.
 
+Pali is very early in development and not yet a complete memory solution. Current focus is getting the infrastructure right first.
+
 Pali is infrastructure-first:
 - Multi-tenant memory APIs
 - Hybrid retrieval (lexical + dense + reranking)

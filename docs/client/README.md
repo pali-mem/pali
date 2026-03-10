@@ -2,6 +2,9 @@
 
 This document describes the Go client in `pkg/client` for calling Pali API endpoints.
 
+Pali is still very early in development and is not yet a complete memory solution.
+Current focus is infrastructure correctness and reliability first.
+
 ## File Layout
 
 - `pkg/client/client.go`: client construction and options

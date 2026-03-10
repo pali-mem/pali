@@ -65,5 +65,7 @@ test/fixtures/
 genfix
 /pali
 
-
 .vscode/
+
+# Internal planning docs
+pre_release.md
