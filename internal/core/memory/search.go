@@ -27,11 +27,33 @@ var rankingStopwordPattern = map[string]struct{}{
 }
 
 type SearchOptions struct {
-	MinScore     float64
-	Tiers        []domain.MemoryTier
-	Kinds        []domain.MemoryKind
-	DisableTouch bool
-	Debug        bool
+	MinScore      float64
+	Tiers         []domain.MemoryTier
+	Kinds         []domain.MemoryKind
+	RetrievalKind SearchRetrievalKind
+	DisableTouch  bool
+	Debug         bool
+}
+
+type SearchRetrievalKind string
+
+const (
+	SearchRetrievalKindAuto   SearchRetrievalKind = "auto"
+	SearchRetrievalKindVector SearchRetrievalKind = "vector"
+	SearchRetrievalKindEntity SearchRetrievalKind = "entity"
+)
+
+func normalizeSearchRetrievalKind(kind SearchRetrievalKind) (SearchRetrievalKind, bool) {
+	switch strings.ToLower(strings.TrimSpace(string(kind))) {
+	case "", string(SearchRetrievalKindAuto):
+		return SearchRetrievalKindAuto, true
+	case string(SearchRetrievalKindVector):
+		return SearchRetrievalKindVector, true
+	case string(SearchRetrievalKindEntity):
+		return SearchRetrievalKindEntity, true
+	default:
+		return SearchRetrievalKindAuto, false
+	}
 }
 
 type SearchDebugInfo struct {
@@ -42,6 +64,7 @@ type SearchDebugInfo struct {
 type SearchPlanDebug struct {
 	Intent           string   `json:"intent"`
 	Confidence       float64  `json:"confidence"`
+	AnswerType       string   `json:"answer_type,omitempty"`
 	Entities         []string `json:"entities,omitempty"`
 	Relations        []string `json:"relations,omitempty"`
 	TimeConstraints  []string `json:"time_constraints,omitempty"`
@@ -79,6 +102,7 @@ func (s *Service) SearchWithFiltersDebug(
 		Plan: SearchPlanDebug{
 			Intent:           plan.Intent,
 			Confidence:       clamp01(plan.Confidence),
+			AnswerType:       plan.AnswerType,
 			Entities:         append([]string{}, plan.Entities...),
 			Relations:        append([]string{}, plan.Relations...),
 			TimeConstraints:  append([]string{}, plan.TimeConstraints...),
@@ -96,7 +120,7 @@ func (s *Service) SearchWithFiltersDebug(
 			Tier:         string(memory.Tier),
 			LexicalScore: clamp01(lexicalContentScore(query, memory.Content)),
 			QueryOverlap: clamp01(queryOverlapScore(queryTokens, normalizedRankingTokens(memory.Content))),
-			RouteFit:     clamp01(normalizedRouteBoost(routeBoost(memory, profile))),
+			RouteFit:     clamp01(normalizedRouteBoost(routeBoost(memory, profile, plan, s.retrieval))),
 		})
 	}
 
@@ -117,6 +141,10 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	kindFilter, err := buildKindFilter(opts.Kinds)
 	if err != nil {
 		return nil, err
+	}
+	retrievalKind, ok := normalizeSearchRetrievalKind(opts.RetrievalKind)
+	if !ok {
+		return nil, domain.ErrInvalidInput
 	}
 	if err := s.ensureTenantExists(ctx, tenantID); err != nil {
 		return nil, err
@@ -150,7 +178,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		fuseDur   time.Duration
 	)
 
-	if s.entityRepo != nil {
+	if s.entityRepo != nil && retrievalKind != SearchRetrievalKindVector {
 		aggregated, handled, err := s.searchByEntityFacts(ctx, tenantID, query, topK, opts, tierFilter, kindFilter, plan)
 		if err != nil {
 			return nil, err
@@ -193,6 +221,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		return nil, err
 	}
 	lexicalCandidates = append(lexicalCandidates, initialLexical...)
+	enableGraphEntityBridge := s.entityRepo != nil && s.multiHop.EntityFactBridgeEnabled && (profile.MultiHop || retrievalKind == SearchRetrievalKindEntity)
 	if profile.MultiHop {
 		decomposedQueries, err := s.buildLLMMultiHopQueries(ctx, query)
 		if err != nil {
@@ -214,22 +243,6 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			}
 			lexicalCandidates = append(lexicalCandidates, decomposedLexical...)
 		}
-		if s.entityRepo != nil && s.multiHop.EntityFactBridgeEnabled {
-			bridgeCandidates, err := s.collectGraphEntityBridgeCandidates(
-				ctx,
-				tenantID,
-				query,
-				plan,
-				lexicalCandidates,
-				candidateTopK,
-				tierFilter,
-				kindFilter,
-			)
-			if err != nil {
-				return nil, err
-			}
-			lexicalCandidates = append(lexicalCandidates, bridgeCandidates...)
-		}
 		if s.multiHop.TokenExpansionFallback {
 			iterativeQueries := buildIterativeMultiHopQueries(query, lexicalCandidates, 2)
 			if len(iterativeQueries) > 0 {
@@ -250,10 +263,27 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			}
 		}
 	}
+	if enableGraphEntityBridge {
+		bridgeCandidates, err := s.collectGraphEntityBridgeCandidates(
+			ctx,
+			tenantID,
+			query,
+			plan,
+			lexicalCandidates,
+			candidateTopK,
+			tierFilter,
+			kindFilter,
+			retrievalKind == SearchRetrievalKindEntity,
+		)
+		if err != nil {
+			return nil, err
+		}
+		lexicalCandidates = append(lexicalCandidates, bridgeCandidates...)
+	}
 	bm25Dur = time.Since(bm25Start)
 
 	var denseCandidates []domain.VectorstoreCandidate
-	if s.vector != nil && s.embedder != nil {
+	if retrievalKind != SearchRetrievalKindEntity && s.vector != nil && s.embedder != nil {
 		embedStart := time.Now()
 		embeddings, err := s.embedSearchQueries(ctx, plannedQueries)
 		if err != nil {
@@ -324,7 +354,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	}
 
 	rankingProfile := profile
-	scored := rankMemories(memories, signalByID, candidateTopK, query, rankingProfile, plan, s.ranking)
+	scored := rankMemories(memories, signalByID, candidateTopK, query, rankingProfile, plan, s.ranking, s.retrieval)
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -337,6 +367,9 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	})
 	if shouldApplyPairwiseRerank(profile, s.multiHop) {
 		scored = s.rerankScoredCandidates(scored, query, topK)
+	}
+	if s.retrieval.EarlyRankRerankEnabled && !profile.MultiHop {
+		scored = s.applyEarlyRankRerank(scored, query, plan)
 	}
 
 	filtered := make([]scoredMemory, 0, len(scored))
@@ -381,8 +414,9 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		_ = s.repo.Touch(ctx, tenantID, orderedIDs)
 	}
 	s.logInfof(
-		"[pali-search] tenant=%s embed_ms=%d bm25_ms=%d vector_ms=%d fuse_ms=%d queried_k=%d returned=%d",
+		"[pali-search] tenant=%s retrieval_kind=%s embed_ms=%d bm25_ms=%d vector_ms=%d fuse_ms=%d queried_k=%d returned=%d",
 		tenantID,
+		retrievalKind,
 		embedDur.Milliseconds(),
 		bm25Dur.Milliseconds(),
 		vectorDur.Milliseconds(),
@@ -454,14 +488,25 @@ func (s *Service) searchByEntityFacts(
 		return nil, false, nil
 	}
 	s.logDebugf("[pali-search] aggregation_detected=true entity=%q relation=%q", entity, relation)
+	relations := expandEntityFactRelations([]string{relation})
+	if len(relations) == 0 {
+		relations = []string{relation}
+	}
 
 	lookupLimit := topK * 6
 	if lookupLimit < 20 {
 		lookupLimit = 20
 	}
-	facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
-	if err != nil {
-		return nil, false, err
+	facts := make([]domain.EntityFact, 0, lookupLimit*len(relations))
+	for _, relation := range relations {
+		relationFacts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
+		if err != nil {
+			return nil, false, err
+		}
+		if s.multiHop.GraphSingletonInvalidation {
+			relationFacts = filterActiveEntityFacts(relationFacts)
+		}
+		facts = append(facts, relationFacts...)
 	}
 	if len(facts) == 0 {
 		return nil, false, nil
@@ -518,7 +563,7 @@ func (s *Service) searchByEntityFacts(
 		}
 	}
 	profile := classifyQuery(query)
-	scored := rankMemories(filtered, signalByID, maxInt(topK, len(filtered)), query, profile, plan, s.ranking)
+	scored := rankMemories(filtered, signalByID, maxInt(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval)
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -745,7 +790,7 @@ func (s *Service) collectEntityHintCandidates(
 	if entity == "" || s.entityRepo == nil {
 		return []lexicalCandidate{}, nil
 	}
-	relations := []string{"activity", "event", "plan", "identity", "role", "place", "book"}
+	relations := []string{"activity", "preference", "event", "plan", "goal", "identity", "role", "relationship", "relationship status", "belief", "value", "trait", "place", "book"}
 	lookupLimit := topK / 10
 	if lookupLimit < 8 {
 		lookupLimit = 8
@@ -759,6 +804,9 @@ func (s *Service) collectEntityHintCandidates(
 		facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
 		if err != nil {
 			return nil, err
+		}
+		if s.multiHop.GraphSingletonInvalidation {
+			facts = filterActiveEntityFacts(facts)
 		}
 		for _, fact := range facts {
 			memoryID := strings.TrimSpace(fact.MemoryID)
@@ -855,15 +903,16 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 	topK int,
 	tierFilter map[domain.MemoryTier]struct{},
 	kindFilter map[domain.MemoryKind]struct{},
+	force bool,
 ) ([]lexicalCandidate, error) {
-	if s.entityRepo == nil || plan.Intent != "graph_entity_expansion" {
+	if s.entityRepo == nil || (!force && plan.Intent != "graph_entity_expansion") {
 		return []lexicalCandidate{}, nil
 	}
-	entities := graphEntityBridgeSeeds(query, plan, lexical)
+	entities := graphEntityBridgeSeeds(query, plan, lexical, s.multiHop.GraphSeedLimit)
 	if len(entities) == 0 {
 		return []lexicalCandidate{}, nil
 	}
-	relations := []string{"activity", "event", "plan", "identity", "role", "place", "book"}
+	relations := expandEntityFactRelations(graphRelationHints(query, plan))
 	lookupLimit := topK / 10
 	if lookupLimit < 8 {
 		lookupLimit = 8
@@ -873,11 +922,51 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 	}
 	ids := make([]string, 0, len(entities)*len(relations)*lookupLimit)
 	seen := make(map[string]struct{}, len(entities)*len(relations)*lookupLimit)
+	pathScoreByID := make(map[string]float64, lookupLimit)
+	if s.multiHop.GraphPathEnabled {
+		if pathRepo, ok := s.entityRepo.(domain.EntityFactPathRepository); ok && pathRepo != nil {
+			pathLimit := s.multiHop.GraphPathLimit
+			if pathLimit <= 0 {
+				pathLimit = defaultMultiHopOptions().GraphPathLimit
+			}
+			pathCandidates, err := pathRepo.ListByEntityPaths(ctx, tenantID, domain.EntityFactPathQuery{
+				SeedEntities:     entities,
+				RelationHints:    relations,
+				MaxHops:          s.multiHop.GraphMaxHops,
+				Limit:            pathLimit,
+				TemporalValidity: s.multiHop.GraphTemporalValidity,
+			})
+			if err != nil {
+				return nil, err
+			}
+			for _, candidate := range pathCandidates {
+				memoryID := strings.TrimSpace(candidate.MemoryID)
+				if memoryID == "" {
+					continue
+				}
+				score := clamp01(candidate.TraversalScore)
+				if score < s.multiHop.GraphMinScore {
+					continue
+				}
+				if existing, ok := pathScoreByID[memoryID]; !ok || score > existing {
+					pathScoreByID[memoryID] = score
+				}
+				if _, ok := seen[memoryID]; ok {
+					continue
+				}
+				seen[memoryID] = struct{}{}
+				ids = append(ids, memoryID)
+			}
+		}
+	}
 	for _, entity := range entities {
 		for _, relation := range relations {
 			facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
 			if err != nil {
 				return nil, err
+			}
+			if s.multiHop.GraphSingletonInvalidation {
+				facts = filterActiveEntityFacts(facts)
 			}
 			for _, fact := range facts {
 				memoryID := strings.TrimSpace(fact.MemoryID)
@@ -890,6 +979,30 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 				seen[memoryID] = struct{}{}
 				ids = append(ids, memoryID)
 			}
+		}
+	}
+	if graphRepo, ok := s.entityRepo.(domain.EntityFactGraphRepository); ok && graphRepo != nil {
+		neighborLimit := lookupLimit * len(relations) * 2
+		if neighborLimit < 32 {
+			neighborLimit = 32
+		}
+		if neighborLimit > 256 {
+			neighborLimit = 256
+		}
+		neighborFacts, err := graphRepo.ListByEntityNeighborhood(ctx, tenantID, entities, neighborLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, fact := range neighborFacts {
+			memoryID := strings.TrimSpace(fact.MemoryID)
+			if memoryID == "" {
+				continue
+			}
+			if _, ok := seen[memoryID]; ok {
+				continue
+			}
+			seen[memoryID] = struct{}{}
+			ids = append(ids, memoryID)
 		}
 	}
 	if len(ids) == 0 {
@@ -911,17 +1024,12 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 				continue
 			}
 		}
-		lexicalScore := lexicalContentScore(query, memory.Content)
-		entityHit := 0.0
-		lowered := strings.ToLower(memory.Content)
-		for _, entity := range entities {
-			if strings.Contains(lowered, entity) {
-				entityHit = 1
-				break
-			}
+		score := graphBridgeCandidateScore(query, memory.Content, entities, pathScoreByID[memory.ID], s.multiHop.GraphWeight)
+		threshold := 0.16
+		if pathScoreByID[memory.ID] > 0 {
+			threshold = s.multiHop.GraphMinScore
 		}
-		score := clamp01((0.72 * lexicalScore) + (0.28 * entityHit))
-		if score < 0.16 {
+		if score < threshold {
 			continue
 		}
 		candidates = append(candidates, lexicalCandidate{
@@ -949,7 +1057,7 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 	return candidates, nil
 }
 
-func graphEntityBridgeSeeds(query string, plan queryPlan, lexical []lexicalCandidate) []string {
+func graphEntityBridgeSeeds(query string, plan queryPlan, lexical []lexicalCandidate, seedLimit int) []string {
 	seeds := make([]string, 0, 6)
 	seen := make(map[string]struct{}, 6)
 	add := func(entity string) {
@@ -989,10 +1097,84 @@ func graphEntityBridgeSeeds(query string, plan queryPlan, lexical []lexicalCandi
 	for i := 0; i < maxSeedScan; i++ {
 		add(inferEntityFromFact(ordered[i].Memory.Content))
 	}
-	if len(seeds) > 4 {
-		return seeds[:4]
+	if seedLimit <= 0 {
+		seedLimit = 4
+	}
+	if len(seeds) > seedLimit {
+		return seeds[:seedLimit]
 	}
 	return seeds
+}
+
+func graphRelationHints(query string, plan queryPlan) []string {
+	hints := make([]string, 0, 8)
+	seen := make(map[string]struct{}, 8)
+	add := func(value string) {
+		value = normalizeEntityFactRelation(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		hints = append(hints, value)
+	}
+
+	for _, relation := range plan.Relations {
+		add(relation)
+	}
+	lowered := strings.ToLower(strings.TrimSpace(query))
+	relationHints := []struct {
+		relation string
+		terms    []string
+	}{
+		{relation: "activity", terms: []string{"activity", "activities", "hobby", "hobbies", "interest", "interests", "participat", "partake"}},
+		{relation: "preference", terms: []string{"favorite", "favorites", "prefer", "prefers", "likes", "enjoy", "love", "loves"}},
+		{relation: "event", terms: []string{"event", "events", "attend", "attended", "join", "joined", "meet", "met", "happen", "happened"}},
+		{relation: "plan", terms: []string{"plan", "planned", "planning", "goal", "goals"}},
+		{relation: "goal", terms: []string{"dream", "dreams", "aspire", "aspiring", "aim", "aims"}},
+		{relation: "identity", terms: []string{"name", "identity", "called"}},
+		{relation: "role", terms: []string{"role", "job", "work", "works", "position"}},
+		{relation: "relationship", terms: []string{"relationship", "friend", "friends", "family", "parent", "child", "children", "kids", "mentor", "partner"}},
+		{relation: "relationship status", terms: []string{"status", "single", "married", "divorced", "engaged", "dating"}},
+		{relation: "belief", terms: []string{"believe", "belief", "beliefs", "think", "thinks", "opinion", "stance"}},
+		{relation: "value", terms: []string{"value", "values", "principle", "principles", "care about"}},
+		{relation: "trait", terms: []string{"trait", "traits", "personality", "character", "tendency", "tendencies"}},
+		{relation: "place", terms: []string{"place", "places", "live", "lives", "move", "moved", "travel", "trip", "location", "where"}},
+		{relation: "book", terms: []string{"book", "books", "read", "reading", "novel"}},
+	}
+	for _, candidate := range relationHints {
+		for _, term := range candidate.terms {
+			if strings.Contains(lowered, term) {
+				add(candidate.relation)
+				break
+			}
+		}
+	}
+	if len(hints) == 0 {
+		return []string{"activity", "preference", "event", "plan", "goal", "identity", "role", "relationship", "relationship status", "place", "book"}
+	}
+	return hints
+}
+
+func graphBridgeCandidateScore(query, content string, entities []string, pathScore, graphWeight float64) float64 {
+	lexicalScore := lexicalContentScore(query, content)
+	entityHit := 0.0
+	lowered := strings.ToLower(content)
+	for _, entity := range entities {
+		if strings.Contains(lowered, entity) {
+			entityHit = 1
+			break
+		}
+	}
+	baseScore := clamp01((0.72 * lexicalScore) + (0.28 * entityHit))
+	pathScore = clamp01(pathScore)
+	graphWeight = clamp01(graphWeight)
+	if pathScore == 0 || graphWeight == 0 {
+		return baseScore
+	}
+	return clamp01(((1 - graphWeight) * baseScore) + (graphWeight * pathScore))
 }
 
 func lexicalContentScore(query, content string) float64 {
@@ -1241,6 +1423,7 @@ func rankMemories(
 	profile queryProfile,
 	plan queryPlan,
 	ranking RankingOptions,
+	behavior RetrievalBehaviorOptions,
 ) []scoredMemory {
 	now := time.Now().UTC()
 	hasNonRawKinds := false
@@ -1276,7 +1459,7 @@ func rankMemories(
 		signal := signalByID[m.ID]
 		denseRankNorm := rankToNormalized(signal.DenseRank, candidateLimit)
 		lexicalRankNorm := rankToNormalized(signal.LexicalRank, candidateLimit)
-		routeFit := normalizedRouteBoost(routeBoost(m, profile))
+		routeFit := normalizedRouteBoost(routeBoost(m, profile, plan, behavior))
 		entitySlotHit := entityRelationSignal(plan, m.Content)
 		denseScoreW, denseRankW := 0.34, 0.08
 		if signal.DenseScore == 0 && signal.DenseRank == 0 {
@@ -1342,7 +1525,7 @@ func rankMemories(
 		total := 0.0
 		switch ranking.Algorithm {
 		case "match":
-			route := normalizedRouteBoost(routeBoost(m, profile))
+			route := normalizedRouteBoost(routeBoost(m, profile, plan, behavior))
 			if dependency > 0 {
 				overlap = clamp01((0.8 * overlap) + (0.2 * dependency))
 			}
@@ -1376,7 +1559,7 @@ func rankMemories(
 				},
 			)
 			if !profile.Temporal && !profile.MultiHop {
-				total = applySingleHopPrecisionBoost(total, overlap, dependency, m, hasNonRawKinds)
+				total = applySingleHopPrecisionBoost(total, overlap, dependency, m, hasNonRawKinds, plan, behavior)
 			}
 			if !profile.Temporal && !profile.MultiHop {
 				total = applyLowEvidencePenalty(total, rawRelevance[i], overlap, signalByID[m.ID].RRFScore)
@@ -1385,7 +1568,7 @@ func rankMemories(
 				if total == 0 {
 					total = 1
 				}
-				total = clamp01(total * routeBoost(m, profile))
+				total = clamp01(total * routeBoost(m, profile, plan, behavior))
 			}
 		}
 		scored = append(scored, scoredMemory{Memory: m, Score: total})
@@ -1457,7 +1640,7 @@ func relationHintTokens(relation string) []string {
 	}
 }
 
-func applySingleHopPrecisionBoost(total, overlap, dependency float64, memory domain.Memory, hasNonRawKinds bool) float64 {
+func applySingleHopPrecisionBoost(total, overlap, dependency float64, memory domain.Memory, hasNonRawKinds bool, plan queryPlan, behavior RetrievalBehaviorOptions) float64 {
 	adjusted := clamp01((0.76 * clamp01(total)) + (0.14 * clamp01(overlap)) + (0.10 * clamp01(dependency)))
 	kindMultiplier := 1.0
 	if isCanonicalFactMemory(memory) {
@@ -1473,11 +1656,37 @@ func applySingleHopPrecisionBoost(total, overlap, dependency float64, memory dom
 		kindMultiplier *= 1.06
 	case domain.MemoryKindSummary:
 		kindMultiplier *= 0.96
+		if strings.HasPrefix(plan.AnswerType, "open_domain_") {
+			kindMultiplier *= 1.10
+		}
 	case domain.MemoryKindRawTurn:
 		if hasNonRawKinds {
 			kindMultiplier *= 0.86
+			if plan.AnswerType == "single_fact_boolean" || plan.AnswerType == "single_fact_quote" {
+				kindMultiplier *= 1.18
+			}
 			if conversationalNoisePattern.MatchString(strings.ToLower(memory.Content)) {
 				kindMultiplier *= 0.80
+			}
+		}
+	}
+	if behavior.AnswerTypeRoutingEnabled {
+		switch plan.AnswerType {
+		case "single_fact_quote":
+			if memory.AnswerMetadata.AnswerKind == "quote" || quoteQueryPattern.MatchString(strings.ToLower(memory.Content)) {
+				kindMultiplier *= 1.14
+			}
+		case "single_fact_boolean":
+			if memory.AnswerMetadata.AnswerKind == "boolean" {
+				kindMultiplier *= 1.12
+			}
+		case "single_fact_location_or_person":
+			if memory.AnswerMetadata.AnswerKind == "entity" {
+				kindMultiplier *= 1.10
+			}
+		case "open_domain_binary", "open_domain_choice", "open_domain_label":
+			if behavior.ProfileSupportLinksEnabled && len(memory.AnswerMetadata.SupportLines) > 0 {
+				kindMultiplier *= 1.08
 			}
 		}
 	}
@@ -1507,6 +1716,99 @@ func shouldApplyPairwiseRerank(profile queryProfile, multiHop MultiHopOptions) b
 		return multiHop.EnablePairwiseRerank
 	}
 	return true
+}
+
+func (s *Service) applyEarlyRankRerank(scored []scoredMemory, query string, plan queryPlan) []scoredMemory {
+	if len(scored) <= 1 {
+		return scored
+	}
+	window := 25
+	if len(scored) < window {
+		window = len(scored)
+	}
+	queryTokens := normalizedRankingTokens(query)
+	head := append([]scoredMemory{}, scored[:window]...)
+	for i := range head {
+		head[i].Score = clamp01((0.72 * head[i].Score) + (0.28 * earlyRankSignal(query, queryTokens, plan, head[i].Memory, s.retrieval)))
+	}
+	slices.SortFunc(head, func(a, b scoredMemory) int {
+		switch {
+		case a.Score > b.Score:
+			return -1
+		case a.Score < b.Score:
+			return 1
+		default:
+			return strings.Compare(a.Memory.ID, b.Memory.ID)
+		}
+	})
+	return append(head, scored[window:]...)
+}
+
+func earlyRankSignal(query string, queryTokens map[string]struct{}, plan queryPlan, memory domain.Memory, behavior RetrievalBehaviorOptions) float64 {
+	docTokens := normalizedRankingTokens(memory.Content)
+	score := queryOverlapScore(queryTokens, docTokens)
+	lowered := strings.ToLower(memory.Content)
+	if plan.primaryEntity() != "" && strings.Contains(lowered, strings.ToLower(plan.primaryEntity())) {
+		score += 0.10
+	}
+	if len(plan.TimeConstraints) > 0 {
+		for _, hint := range plan.TimeConstraints {
+			if hint != "" && strings.Contains(lowered, strings.ToLower(hint)) {
+				score += 0.10
+				break
+			}
+		}
+	}
+	switch plan.AnswerType {
+	case "single_fact_boolean":
+		if memory.AnswerMetadata.AnswerKind == "boolean" {
+			score += 0.18
+		}
+		if memory.Kind == domain.MemoryKindRawTurn || memory.Kind == domain.MemoryKindEvent {
+			score += 0.10
+		}
+	case "single_fact_quote":
+		if memory.AnswerMetadata.AnswerKind == "quote" || quoteQueryPattern.MatchString(lowered) {
+			score += 0.22
+		}
+		if memory.Kind == domain.MemoryKindSummary {
+			score -= 0.08
+		}
+	case "single_fact_list":
+		if memory.Kind == domain.MemoryKindSummary || memory.Kind == domain.MemoryKindObservation || memory.Kind == domain.MemoryKindEvent {
+			score += 0.12
+		}
+	case "single_fact_location_or_person":
+		if memory.AnswerMetadata.AnswerKind == "entity" {
+			score += 0.15
+		}
+		if memory.Kind == domain.MemoryKindSummary {
+			score -= 0.06
+		}
+	case "temporal_absolute", "temporal_relative", "temporal_duration":
+		if memory.Kind == domain.MemoryKindEvent || memory.Kind == domain.MemoryKindRawTurn {
+			score += 0.12
+		}
+		if strings.TrimSpace(memory.AnswerMetadata.TemporalAnchor) != "" ||
+			strings.TrimSpace(memory.AnswerMetadata.RelativeTimePhrase) != "" ||
+			strings.TrimSpace(memory.AnswerMetadata.ResolvedTimeStart) != "" {
+			score += 0.18
+		}
+		if timeTagPattern.MatchString(lowered) {
+			score += 0.08
+		}
+	case "open_domain_binary", "open_domain_choice", "open_domain_label":
+		if memory.Kind == domain.MemoryKindSummary {
+			score += 0.18
+		}
+		if behavior.ProfileSupportLinksEnabled && (len(memory.AnswerMetadata.SupportLines) > 0 || len(memory.AnswerMetadata.SupportMemoryIDs) > 0) {
+			score += 0.15
+		}
+	}
+	if behavior.ProfileSupportLinksEnabled && len(memory.AnswerMetadata.SupportLines) > 0 {
+		score += 0.03
+	}
+	return clamp01(score)
 }
 
 func weightedAverage(values []float64, weights []float64) float64 {

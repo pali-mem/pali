@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,7 +197,13 @@ func (d *retrievalDecomposerStub) Decompose(ctx context.Context, query string, m
 }
 
 type retrievalEntityFactRepoStub struct {
-	facts []domain.EntityFact
+	facts             []domain.EntityFact
+	pathFacts         []domain.EntityFactPathCandidate
+	listCalls         int
+	pathCalls         int
+	invalidationCalls int
+	lastInvalidation  domain.EntityFact
+	lastInvalidatedBy string
 }
 
 func (r *retrievalEntityFactRepoStub) Store(ctx context.Context, fact domain.EntityFact) (domain.EntityFact, error) {
@@ -209,6 +216,7 @@ func (r *retrievalEntityFactRepoStub) ListByEntityRelation(
 	tenantID, entity, relation string,
 	limit int,
 ) ([]domain.EntityFact, error) {
+	r.listCalls++
 	out := make([]domain.EntityFact, 0, len(r.facts))
 	for _, fact := range r.facts {
 		if fact.TenantID != tenantID || fact.Entity != entity || fact.Relation != relation {
@@ -220,6 +228,186 @@ func (r *retrievalEntityFactRepoStub) ListByEntityRelation(
 		}
 	}
 	return out, nil
+}
+
+func (r *retrievalEntityFactRepoStub) ListByEntityPaths(
+	ctx context.Context,
+	tenantID string,
+	query domain.EntityFactPathQuery,
+) ([]domain.EntityFactPathCandidate, error) {
+	r.pathCalls++
+	if len(r.pathFacts) == 0 {
+		return []domain.EntityFactPathCandidate{}, nil
+	}
+	out := make([]domain.EntityFactPathCandidate, 0, len(r.pathFacts))
+	for _, candidate := range r.pathFacts {
+		if strings.TrimSpace(candidate.MemoryID) == "" {
+			continue
+		}
+		out = append(out, candidate)
+		if query.Limit > 0 && len(out) >= query.Limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *retrievalEntityFactRepoStub) InvalidateEntityRelation(
+	ctx context.Context,
+	tenantID, entity, relation, activeValue, invalidatedByFactID string,
+	validTo time.Time,
+) error {
+	r.invalidationCalls++
+	r.lastInvalidation = domain.EntityFact{
+		TenantID: tenantID,
+		Entity:   entity,
+		Relation: relation,
+		Value:    activeValue,
+		ValidTo:  &validTo,
+	}
+	r.lastInvalidatedBy = invalidatedByFactID
+	return nil
+}
+
+func TestSearchVectorRetrievalKindSkipsEntityFactLookup(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"vector_hit": {
+				ID:             "vector_hit",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Melanie likes hiking.",
+				Importance:     0.6,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+			"entity_only": {
+				ID:             "entity_only",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindEvent,
+				Content:        "Melanie attended a support group.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-2 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{
+			{ID: "vector_hit", TenantID: "tenant_1", Kind: domain.MemoryKindObservation, Content: "Melanie likes hiking."},
+		},
+	}
+	entityFacts := &retrievalEntityFactRepoStub{
+		facts: []domain.EntityFact{
+			{
+				TenantID: "tenant_1",
+				Entity:   "melanie",
+				Relation: "event",
+				Value:    "support group",
+				MemoryID: "entity_only",
+			},
+		},
+	}
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		WithEntityFactRepository(entityFacts),
+	)
+
+	results, err := svc.SearchWithFilters(
+		context.Background(),
+		"tenant_1",
+		"What all events did Melanie attend?",
+		5,
+		SearchOptions{RetrievalKind: SearchRetrievalKindVector},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, "vector_hit", results[0].ID)
+	require.Zero(t, entityFacts.listCalls)
+}
+
+func TestApplyEarlyRankRerankBoostsSupportedProfileSummary(t *testing.T) {
+	svc := &Service{
+		retrieval: RetrievalBehaviorOptions{
+			EarlyRankRerankEnabled:     true,
+			ProfileSupportLinksEnabled: true,
+		},
+	}
+	scored := []scoredMemory{
+		{
+			Memory: domain.Memory{
+				ID:      "raw",
+				Kind:    domain.MemoryKindRawTurn,
+				Content: "Caroline: It was nice catching up today.",
+			},
+			Score: 0.64,
+		},
+		{
+			Memory: domain.Memory{
+				ID:      "profile",
+				Kind:    domain.MemoryKindSummary,
+				Content: "Profile for Caroline. She values equality, justice, and community support.",
+				AnswerMetadata: domain.MemoryAnswerMetadata{
+					SupportLines: []string{"Caroline said equality and justice are important to her."},
+				},
+			},
+			Score: 0.58,
+		},
+	}
+	plan := queryPlan{AnswerType: "open_domain_label"}
+
+	reranked := svc.applyEarlyRankRerank(scored, "What is Caroline's political leaning?", plan)
+	require.Len(t, reranked, 2)
+	require.Equal(t, "profile", reranked[0].Memory.ID)
+}
+
+func TestSearchEntityRetrievalKindForcesGraphBridge(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"bridge": {
+				ID:             "bridge",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindEvent,
+				Content:        "Melanie attended a support group in June.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{},
+	}
+	entityFacts := &retrievalEntityFactRepoStub{
+		facts: []domain.EntityFact{
+			{
+				TenantID: "tenant_1",
+				Entity:   "melanie",
+				Relation: "event",
+				Value:    "support group",
+				MemoryID: "bridge",
+			},
+		},
+	}
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		WithEntityFactRepository(entityFacts),
+	)
+
+	results, err := svc.SearchWithFilters(
+		context.Background(),
+		"tenant_1",
+		"When did Melanie go to support group?",
+		5,
+		SearchOptions{RetrievalKind: SearchRetrievalKindEntity},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, "bridge", results[0].ID)
+	require.Greater(t, entityFacts.listCalls, 0)
 }
 
 func TestSearchUsesBatchEmbeddingForExpandedQueries(t *testing.T) {
@@ -1155,6 +1343,66 @@ func TestSearchGraphEntityBridgeFallsBackToFirstHopEntityWhenQueryEntityMissing(
 	require.Equal(t, "bridge", results[0].ID)
 }
 
+func TestSearchGraphEntityBridgeUsesPathCandidatesWhenEnabled(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"seed": {
+				ID:             "seed",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Melanie planned a trip to Denver.",
+				Importance:     0.6,
+				LastAccessedAt: now.Add(-3 * time.Hour),
+			},
+			"bridge": {
+				ID:             "bridge",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindEvent,
+				Content:        "After the Denver trip, Melanie joined a support group with Jordan.",
+				Importance:     0.8,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+		searchResults: []domain.Memory{
+			{ID: "seed", TenantID: "tenant_1", Kind: domain.MemoryKindObservation, Content: "Melanie planned a trip to Denver."},
+		},
+	}
+	entityFacts := &retrievalEntityFactRepoStub{
+		pathFacts: []domain.EntityFactPathCandidate{
+			{
+				MemoryID:       "bridge",
+				Entities:       []string{"melanie", "jordan"},
+				Relations:      []string{"plan", "event"},
+				PathLength:     3,
+				SupportCount:   2,
+				TemporalValid:  true,
+				TraversalScore: 0.94,
+			},
+		},
+	}
+
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		MultiHopOptions{
+			EntityFactBridgeEnabled: true,
+			GraphPathEnabled:        true,
+			GraphWeight:             0.7,
+			GraphMinScore:           0.12,
+		},
+		WithEntityFactRepository(entityFacts),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "who planned the trip and joined the support group?", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, "bridge", results[0].ID)
+	require.Equal(t, 1, entityFacts.pathCalls)
+}
+
 func TestSearchUsesEntityHintCandidatesForSingleHopQuestion(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &retrievalRepoStub{
@@ -1203,6 +1451,75 @@ func TestSearchUsesEntityHintCandidatesForSingleHopQuestion(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 	require.Equal(t, "reason_fact", results[0].ID)
+}
+
+func TestSearchAggregationLookupExpandsRelationFamily(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &retrievalRepoStub{
+		memoriesByID: map[string]domain.Memory{
+			"pref_fact": {
+				ID:             "pref_fact",
+				TenantID:       "tenant_1",
+				Kind:           domain.MemoryKindObservation,
+				Content:        "Melanie prefers trail running and swimming.",
+				Importance:     0.7,
+				LastAccessedAt: now.Add(-1 * time.Hour),
+			},
+		},
+	}
+	entityFacts := &retrievalEntityFactRepoStub{
+		facts: []domain.EntityFact{
+			{
+				TenantID: "tenant_1",
+				Entity:   "melanie",
+				Relation: "preference",
+				Value:    "trail running",
+				MemoryID: "pref_fact",
+			},
+		},
+	}
+	svc := NewService(
+		repo,
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		WithEntityFactRepository(entityFacts),
+	)
+	results, err := svc.Search(context.Background(), "tenant_1", "What activities does Melanie do?", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	require.Equal(t, "pref_fact", results[0].ID)
+	require.GreaterOrEqual(t, entityFacts.listCalls, 2)
+}
+
+func TestStoreEntityFactsInvalidatesOlderSingletonFacts(t *testing.T) {
+	entityFacts := &retrievalEntityFactRepoStub{}
+	svc := NewService(
+		&retrievalRepoStub{},
+		retrievalTenantRepoStub{},
+		nil,
+		nil,
+		retrievalScorerStub{},
+		MultiHopOptions{GraphSingletonInvalidation: true},
+		WithEntityFactRepository(entityFacts),
+	)
+	err := svc.storeEntityFacts(context.Background(), []domain.EntityFact{
+		{
+			ID:        "ef_new",
+			TenantID:  "tenant_1",
+			Entity:    "melanie",
+			Relation:  "relationship status",
+			Value:     "single",
+			CreatedAt: time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC),
+			ValidFrom: time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC),
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, entityFacts.invalidationCalls)
+	require.Equal(t, "relationship status", entityFacts.lastInvalidation.Relation)
+	require.Equal(t, "single", entityFacts.lastInvalidation.Value)
+	require.Equal(t, "ef_new", entityFacts.lastInvalidatedBy)
 }
 
 func TestFuseCandidatesByRRFDedupesRepeatedVariantMatches(t *testing.T) {
