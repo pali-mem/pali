@@ -28,6 +28,7 @@ const (
 )
 
 type options struct {
+	configPath        string
 	skipModelDownload bool
 	downloadModel     bool
 	skipRuntimeCheck  bool
@@ -38,7 +39,7 @@ type options struct {
 }
 
 func main() {
-	opts := parseFlags()
+	opts := parseFlags(os.Args[1:])
 
 	paths := []string{
 		modelDir,
@@ -53,14 +54,19 @@ func main() {
 		}
 	}
 
-	if err := ensureConfig(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed preparing pali.yaml: %v\n", err)
+	configPath := strings.TrimSpace(opts.configPath)
+	if configPath == "" {
+		configPath = "pali.yaml"
+	}
+
+	if err := ensureConfig(configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "failed preparing %s: %v\n", configPath, err)
 		os.Exit(1)
 	}
 
-	cfg, cfgErr := config.Load("pali.yaml")
+	cfg, cfgErr := config.Load(configPath)
 	if cfgErr != nil {
-		fmt.Fprintf(os.Stderr, "failed reading pali.yaml for setup context: %v\n", cfgErr)
+		fmt.Fprintf(os.Stderr, "failed reading %s for setup context: %v\n", configPath, cfgErr)
 		os.Exit(1)
 	}
 
@@ -125,7 +131,7 @@ func main() {
 
 	fmt.Println("Pali setup completed.")
 	fmt.Println("- ensured directories under models/ and web/static/")
-	fmt.Println("- ensured local config file pali.yaml (copied from pali.yaml.example when missing)")
+	fmt.Printf("- ensured config file %s (copied from pali.yaml.example when missing)\n", configPath)
 	fmt.Printf("- %s\n", dlMessage)
 	fmt.Printf("- %s\n", runtimeMessage)
 	fmt.Printf("- %s\n", ollamaMessage)
@@ -135,20 +141,22 @@ func main() {
 		fmt.Println("  go run ./cmd/setup -download-model")
 	}
 	fmt.Println("Next:")
-	fmt.Println("1) run: go run ./cmd/pali -config pali.yaml")
+	fmt.Printf("1) run: go run ./cmd/pali -config %s\n", configPath)
 	fmt.Println("2) open: http://127.0.0.1:8080/dashboard")
 }
 
-func parseFlags() options {
+func parseFlags(args []string) options {
 	var opts options
-	flag.BoolVar(&opts.skipModelDownload, "skip-model-download", false, "Skip downloading ONNX model/tokenizer from Hugging Face")
-	flag.BoolVar(&opts.downloadModel, "download-model", false, "Force ONNX model/tokenizer download even when provider is not onnx")
-	flag.BoolVar(&opts.skipRuntimeCheck, "skip-runtime-check", false, "Skip checking ONNX Runtime shared library presence")
-	flag.BoolVar(&opts.skipOllamaCheck, "skip-ollama-check", false, "Skip checking Ollama server/model readiness")
-	flag.StringVar(&opts.modelID, "model-id", defaultModelID, "Hugging Face model id used for setup download")
-	flag.StringVar(&opts.ollamaBaseURL, "ollama-base-url", "", "Ollama base URL for readiness checks (default from pali.yaml embedding.ollama_base_url)")
-	flag.StringVar(&opts.ollamaModel, "ollama-model", "", "Ollama model name for readiness checks (default from pali.yaml embedding.ollama_model)")
-	flag.Parse()
+	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	fs.StringVar(&opts.configPath, "config", "pali.yaml", "Config file path to create/read during setup")
+	fs.BoolVar(&opts.skipModelDownload, "skip-model-download", false, "Skip downloading ONNX model/tokenizer from Hugging Face")
+	fs.BoolVar(&opts.downloadModel, "download-model", false, "Force ONNX model/tokenizer download even when provider is not onnx")
+	fs.BoolVar(&opts.skipRuntimeCheck, "skip-runtime-check", false, "Skip checking ONNX Runtime shared library presence")
+	fs.BoolVar(&opts.skipOllamaCheck, "skip-ollama-check", false, "Skip checking Ollama server/model readiness")
+	fs.StringVar(&opts.modelID, "model-id", defaultModelID, "Hugging Face model id used for setup download")
+	fs.StringVar(&opts.ollamaBaseURL, "ollama-base-url", "", "Ollama base URL for readiness checks (default from config embedding.ollama_base_url)")
+	fs.StringVar(&opts.ollamaModel, "ollama-model", "", "Ollama model name for readiness checks (default from config embedding.ollama_model)")
+	_ = fs.Parse(args)
 	return opts
 }
 
@@ -156,8 +164,11 @@ func ensureDir(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
 
-func ensureConfig() error {
-	cfg := "pali.yaml"
+func ensureConfig(cfg string) error {
+	cfg = strings.TrimSpace(cfg)
+	if cfg == "" {
+		cfg = "pali.yaml"
+	}
 	if _, err := os.Stat(cfg); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
