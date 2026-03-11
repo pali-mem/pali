@@ -30,13 +30,14 @@ var dualWriteNegationTokens = map[string]struct{}{
 var factCompoundSplitPattern = regexp.MustCompile(`(?i)\s+and\s+`)
 
 type StoreInput struct {
-	TenantID  string
-	Content   string
-	Tier      domain.MemoryTier
-	Kind      domain.MemoryKind
-	Tags      []string
-	Source    string
-	CreatedBy domain.MemoryCreatedBy
+	TenantID       string
+	Content        string
+	Tier           domain.MemoryTier
+	Kind           domain.MemoryKind
+	Tags           []string
+	Source         string
+	CreatedBy      domain.MemoryCreatedBy
+	AnswerMetadata domain.MemoryAnswerMetadata
 }
 
 func (s *Service) Store(ctx context.Context, in StoreInput) (domain.Memory, error) {
@@ -195,24 +196,26 @@ func (s *Service) storeWithParser(
 	if err != nil {
 		if s.parser.StoreRawTurn {
 			return s.storeOne(ctx, domain.Memory{
-				TenantID:  in.TenantID,
-				Content:   in.Content,
-				Tier:      resolvedTier,
-				Kind:      resolvedKind,
-				Tags:      in.Tags,
-				Source:    in.Source,
-				CreatedBy: in.CreatedBy,
+				TenantID:       in.TenantID,
+				Content:        in.Content,
+				Tier:           resolvedTier,
+				Kind:           resolvedKind,
+				Tags:           in.Tags,
+				Source:         in.Source,
+				CreatedBy:      in.CreatedBy,
+				AnswerMetadata: in.AnswerMetadata,
 			})
 		}
 		// Parser errors should not drop writes; fallback to raw turn store.
 		return s.storeOne(ctx, domain.Memory{
-			TenantID:  in.TenantID,
-			Content:   in.Content,
-			Tier:      resolvedTier,
-			Kind:      resolvedKind,
-			Tags:      in.Tags,
-			Source:    in.Source,
-			CreatedBy: in.CreatedBy,
+			TenantID:       in.TenantID,
+			Content:        in.Content,
+			Tier:           resolvedTier,
+			Kind:           resolvedKind,
+			Tags:           in.Tags,
+			Source:         in.Source,
+			CreatedBy:      in.CreatedBy,
+			AnswerMetadata: in.AnswerMetadata,
 		})
 	}
 	entityTriples := 0
@@ -235,13 +238,14 @@ func (s *Service) storeWithParser(
 	var storedRaw domain.Memory
 	if s.parser.StoreRawTurn {
 		storedRaw, err = s.storeOneWithOptionalEmbedding(ctx, applyIdentityToMemory(domain.Memory{
-			TenantID:  in.TenantID,
-			Content:   in.Content,
-			Tier:      resolvedTier,
-			Kind:      resolvedKind,
-			Tags:      in.Tags,
-			Source:    in.Source,
-			CreatedBy: in.CreatedBy,
+			TenantID:       in.TenantID,
+			Content:        in.Content,
+			Tier:           resolvedTier,
+			Kind:           resolvedKind,
+			Tags:           in.Tags,
+			Source:         in.Source,
+			CreatedBy:      in.CreatedBy,
+			AnswerMetadata: in.AnswerMetadata,
 		}, buildRawTurnIdentity(in.Content)), embeddingByContent)
 		if err != nil {
 			return domain.Memory{}, err
@@ -285,13 +289,14 @@ func (s *Service) storeWithParser(
 	}
 	// Parser yielded no storable facts; preserve reliability by storing raw input.
 	return s.storeOneWithOptionalEmbedding(ctx, domain.Memory{
-		TenantID:  in.TenantID,
-		Content:   in.Content,
-		Tier:      resolvedTier,
-		Kind:      resolvedKind,
-		Tags:      in.Tags,
-		Source:    in.Source,
-		CreatedBy: in.CreatedBy,
+		TenantID:       in.TenantID,
+		Content:        in.Content,
+		Tier:           resolvedTier,
+		Kind:           resolvedKind,
+		Tags:           in.Tags,
+		Source:         in.Source,
+		CreatedBy:      in.CreatedBy,
+		AnswerMetadata: in.AnswerMetadata,
 	}, embeddingByContent)
 }
 
@@ -299,7 +304,7 @@ func (s *Service) parseFactsWithFallback(ctx context.Context, content string, tu
 	parserStart := time.Now()
 	primaryFacts, primaryErr := s.infoParser.Parse(ctx, content, s.parser.MaxFacts)
 	if primaryErr == nil && len(primaryFacts) > 0 {
-		prepared := prepareParsedFactsForStore(content, primaryFacts)
+		prepared := prepareParsedFactsForStore(content, primaryFacts, s.parser.AnswerSpanRetentionEnabled)
 		if len(prepared) > 0 {
 			s.logDebugf(
 				"[pali-parser] turn=%d provider=%s model=%s status=ok ms=%d facts=%d",
@@ -320,7 +325,7 @@ func (s *Service) parseFactsWithFallback(ctx context.Context, content string, tu
 	fallback := NewHeuristicInfoParser()
 	fallbackFacts, fallbackErr := fallback.Parse(ctx, content, s.parser.MaxFacts)
 	if fallbackErr == nil && len(fallbackFacts) > 0 {
-		prepared := prepareParsedFactsForStore(content, fallbackFacts)
+		prepared := prepareParsedFactsForStore(content, fallbackFacts, s.parser.AnswerSpanRetentionEnabled)
 		if len(prepared) > 0 {
 			s.logDebugf(
 				"[pali-parser] turn=%d provider=%s model=%s status=fallback_heuristic ms=%d facts=%d",
@@ -425,7 +430,7 @@ func (s *Service) precomputeParserEmbeddings(
 
 func embeddingTextForParsedFact(fact ParsedFact) string {
 	content := normalizeFactContent(fact.Content)
-	queryView := normalizeFactContent(fact.QueryViewText)
+	queryView := filterSpecificQueryViewText(normalizeFactContent(fact.QueryViewText))
 	if queryView == "" {
 		return content
 	}
@@ -483,14 +488,15 @@ func (s *Service) applyParsedFact(
 	}
 
 	stored, err := s.storeOneWithOptionalEmbedding(ctx, applyIdentityToMemory(domain.Memory{
-		TenantID:      tenantID,
-		Content:       content,
-		QueryViewText: fact.QueryViewText,
-		Tier:          domain.MemoryTierSemantic,
-		Kind:          kind,
-		Tags:          mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
-		Source:        appendDerivedSource(baseSource, "parser"),
-		CreatedBy:     domain.MemoryCreatedBySystem,
+		TenantID:       tenantID,
+		Content:        content,
+		QueryViewText:  fact.QueryViewText,
+		Tier:           domain.MemoryTierSemantic,
+		Kind:           kind,
+		Tags:           mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
+		Source:         appendDerivedSource(baseSource, "parser"),
+		CreatedBy:      domain.MemoryCreatedBySystem,
+		AnswerMetadata: fact.AnswerMetadata,
 	}, identity), embeddingByContent)
 	if err != nil {
 		return nil, err
@@ -519,7 +525,7 @@ func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored do
 	if err != nil {
 		return err
 	}
-	facts = filterCanonicalStructuredFacts(prepareParsedFactsForStore(stored.Content, facts), s.structured)
+	facts = filterCanonicalStructuredFacts(prepareParsedFactsForStore(stored.Content, facts, s.parser.AnswerSpanRetentionEnabled), s.structured)
 	if len(facts) == 0 {
 		return nil
 	}
@@ -644,7 +650,7 @@ func (s *Service) storeOnePrecomputed(ctx context.Context, m domain.Memory, embe
 	return stored, nil
 }
 
-func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact) []ParsedFact {
+func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact, retainAnswerSpans bool) []ParsedFact {
 	if len(facts) == 0 {
 		return []ParsedFact{}
 	}
@@ -684,13 +690,16 @@ func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact) []Pars
 		if !passesCanonicalFactAdmission(sourceContent, fact) {
 			continue
 		}
-		fact.QueryViewText = buildFactQuestionView(fact)
-		prepared = append(prepared, expandCompoundPreparedFacts(sourceContent, fact)...)
+		fact.QueryViewText = filterSpecificQueryViewText(buildFactQuestionView(fact))
+		if retainAnswerSpans {
+			fact.AnswerMetadata = inferAnswerMetadata(sourceContent, fact)
+		}
+		prepared = append(prepared, expandCompoundPreparedFacts(sourceContent, fact, retainAnswerSpans)...)
 	}
 	return dedupePreparedFacts(prepared)
 }
 
-func expandCompoundPreparedFacts(sourceContent string, fact ParsedFact) []ParsedFact {
+func expandCompoundPreparedFacts(sourceContent string, fact ParsedFact, retainAnswerSpans bool) []ParsedFact {
 	entity := strings.TrimSpace(fact.Entity)
 	if entity == "" {
 		entity = inferEntityFromFact(fact.Content)
@@ -727,7 +736,10 @@ func expandCompoundPreparedFacts(sourceContent string, fact ParsedFact) []Parsed
 			// If one clause is noisy or malformed, keep the original fact to avoid data loss.
 			return []ParsedFact{fact}
 		}
-		candidate.QueryViewText = buildFactQuestionView(candidate)
+		candidate.QueryViewText = filterSpecificQueryViewText(buildFactQuestionView(candidate))
+		if retainAnswerSpans {
+			candidate.AnswerMetadata = inferAnswerMetadata(sourceContent, candidate)
+		}
 		out = append(out, candidate)
 	}
 	if len(out) == 0 {
