@@ -23,8 +23,8 @@ Any unknown flags are forwarded to scripts/retrieval_quality.sh.
 Example:
   scripts/retrieval_trend.sh \
     --label "curated-eval-baseline" \
-    --fixture test/fixtures/memories.json \
-    --eval-set test/fixtures/retrieval_eval.curated.json \
+    --fixture testdata/benchmarks/fixtures/release_memories.json \
+    --eval-set testdata/benchmarks/evals/release_curated.json \
     --top-k 5 --max-queries 0 \
     --embedding-provider ollama --embedding-model all-minilm
 EOF
@@ -104,10 +104,16 @@ record="$(
       result_json: $result_path,
       backend: $result[0].backend,
       fixture: $result[0].fixture,
+      fixture_sha256: ($result[0].fixture_sha256 // ""),
       embedding_provider: $result[0].embedding_provider,
       embedding_model: $result[0].embedding_model,
       top_k: $result[0].top_k,
       eval_set: ($result[0].eval_set // ""),
+      eval_set_sha256: ($result[0].eval_set_sha256 // ""),
+      config_profile: ($result[0].config_profile // ""),
+      config_profile_sha256: ($result[0].config_profile_sha256 // ""),
+      rendered_config: ($result[0].rendered_config // ""),
+      rendered_config_sha256: ($result[0].rendered_config_sha256 // ""),
       eval_cases: ($result[0].eval_success // 0),
       metrics: ($result[0].metrics // {})
     }'

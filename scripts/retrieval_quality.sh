@@ -4,8 +4,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-FIXTURE="test/fixtures/memories.json"
-EVAL_SET=""
+FIXTURE="testdata/benchmarks/fixtures/release_memories.json"
+EVAL_SET="testdata/benchmarks/evals/release_curated.json"
 BACKEND="sqlite"
 OUT_DIR="test/benchmarks/results"
 TOP_K=5
@@ -41,8 +41,8 @@ Usage:
   scripts/retrieval_quality.sh [flags]
 
 Flags:
-  --fixture <path>         Fixture JSON file used to store memories first (default: test/fixtures/memories.json)
-  --eval-set <path>        Optional labeled eval set JSON (query + expected ids/indexes)
+  --fixture <path>         Fixture JSON file used to store memories first (default: testdata/benchmarks/fixtures/release_memories.json)
+  --eval-set <path>        Optional labeled eval set JSON (query + expected ids/indexes, default: testdata/benchmarks/evals/release_curated.json)
   --backend <name>         sqlite | qdrant (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
   --top-k <n>              top_k used in search requests (default: 5)
@@ -400,6 +400,7 @@ tmp_chunk_payload_json="$tmp_dir/chunk_payload.json"
 tmp_search_payload_json="$tmp_dir/search_payload.json"
 sqlite_db_file=""
 rendered_cfg_path=""
+config_profile_path=""
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then
@@ -607,6 +608,13 @@ else
   fi
 fi
 
+if [[ -n "$config_profile_path" && -f "$config_profile_path" ]]; then
+  cp "$config_profile_path" "$run_dir/config.profile.yaml"
+fi
+if [[ -n "$rendered_cfg_path" && -f "$rendered_cfg_path" ]]; then
+  cp "$rendered_cfg_path" "$run_dir/config.rendered.yaml"
+fi
+
 fixture_count="$(jq 'length' "$FIXTURE")"
 if [[ "$fixture_count" -le 0 ]]; then
   echo "ERROR: fixture is empty: $FIXTURE"
@@ -616,6 +624,14 @@ fixture_sha256="$(file_sha256 "$FIXTURE")"
 eval_set_sha256=""
 if [[ -n "$EVAL_SET" ]]; then
   eval_set_sha256="$(file_sha256 "$EVAL_SET")"
+fi
+config_profile_sha256=""
+if [[ -f "$run_dir/config.profile.yaml" ]]; then
+  config_profile_sha256="$(file_sha256 "$run_dir/config.profile.yaml")"
+fi
+rendered_config_sha256=""
+if [[ -f "$run_dir/config.rendered.yaml" ]]; then
+  rendered_config_sha256="$(file_sha256 "$run_dir/config.rendered.yaml")"
 fi
 
 jq -c 'to_entries[] | {idx:(.key|tonumber), tenant_id:.value.tenant_id, content:(.value.content | gsub("\\s+";" ")), payload:.value}' "$FIXTURE" > "$tmp_fixture_entries"
@@ -652,7 +668,7 @@ echo "    label strat  : $eval_label_strategy"
 if [[ "$eval_search_kinds_json" != "[]" ]]; then
   echo "    search kinds : $(jq -r 'join(",")' <<<"$eval_search_kinds_json")"
 fi
-echo "    config prof  : $(resolve_profile_path)"
+echo "    config prof  : ${config_profile_path:-"(external server)"}"
 echo "    run profile  : $run_profile"
 echo "    run dir      : $run_dir"
 if [[ -n "$EVAL_SET" ]]; then
@@ -1052,6 +1068,10 @@ cat > "$result_json" <<EOF
   "eval_mode": "$eval_mode",
   "auto_ambiguous_cases": $auto_ambiguous_cases,
   "eval_cases_dropped_no_target": $eval_cases_dropped_no_target,
+  "config_profile": "${config_profile_path}",
+  "config_profile_sha256": "${config_profile_sha256}",
+  "rendered_config": "${rendered_cfg_path}",
+  "rendered_config_sha256": "${rendered_config_sha256}",
   "eval_set": "${EVAL_SET}",
   "eval_set_sha256": "${eval_set_sha256}",
   "eval_cases_total": $eval_case_count,
@@ -1106,6 +1126,10 @@ label_strategy : $eval_label_strategy
 eval_mode      : $eval_mode
 eval_set       : ${EVAL_SET:-"(auto-generated from fixture)"}
 eval_set_sha256: ${eval_set_sha256:-"(n/a)"}
+Config profile : ${config_profile_path:-"(external server)"}
+Config SHA256  : ${config_profile_sha256:-"(n/a)"}
+Rendered config: ${rendered_cfg_path:-"(external server)"}
+Rendered SHA256: ${rendered_config_sha256:-"(n/a)"}
 Cases (total)  : $eval_case_count
 Cases (run)    : $selected_queries
 Success/Fail   : $eval_ok / $eval_fail
