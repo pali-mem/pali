@@ -18,14 +18,15 @@ go build -o bin/pali ./cmd/pali
 
 ## Configure
 
-1. Copy the canonical template:
+1. Bootstrap the config file you want to run:
 
 ```bash
-cp pali.yaml.example pali.yaml
+go run ./cmd/setup -config /etc/pali/pali.yaml -skip-model-download
 ```
 
-2. Edit `pali.yaml` for your environment.
+2. Edit `/etc/pali/pali.yaml` for your environment.
    - Full reference: `docs/configuration.md`
+   - Multi-tenant/auth model: `docs/multitenancy.md`
    - Required secrets can come from env fallbacks:
      - `OPENROUTER_API_KEY`
      - `NEO4J_PASSWORD`
@@ -85,12 +86,16 @@ For local/dev:
 - Restrict file permissions on config and DB.
 - Keep logs on the host journal or stdout capture.
 
-When deploying, run:
+Before starting the service, run:
 
 ```bash
 go run ./cmd/setup -config /etc/pali/pali.yaml
 ```
 
-before starting service to validate prerequisites and provider readiness.
+to validate provider prerequisites and ensure the target config file exists.
 
 For a full production runbook (health checks, rollback, backup/recovery, incident checklist), use [`operations.md`](operations.md) and treat it as the post-deploy/on-call reference.
+
+Operator note:
+- the dashboard is useful for inspecting tenants and memories, but it is not currently protected by the `/v1` JWT middleware
+- if you expose Pali outside a trusted network, put dashboard access behind your reverse proxy or another auth layer

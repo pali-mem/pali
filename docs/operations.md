@@ -8,6 +8,7 @@ This document captures the minimum runbook for running Pali in production-like e
 - Keep `jwt_secret`, provider API keys, and database credentials outside source control.
 - Validate startup before rollout:
   - `go run ./cmd/setup -config /etc/pali/pali.yaml`
+  - `scripts/verify_docs_examples.sh` for repo-level command drift
 - For non-dev environments:
   - `auth.enabled: true`
   - long random `auth.jwt_secret` value

@@ -60,6 +60,8 @@ Tenant-aware tools (`memory_*`, `tenant_stats`, `tenant_exists`) resolve tenant 
 4. `default_tenant_id` from config
 5. else tool returns clear `isError=true`
 
+This is a resolution contract, not a guarantee that every MCP host is forwarding auth metadata the same way. If your deployment requires strict tenant-bound bearer auth, validate the REST API path separately and treat MCP host integration as an additional trust boundary.
+
 ## Protocol Layout Used
 
 Pali follows the standard MCP flow:
