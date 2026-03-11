@@ -1,0 +1,123 @@
+server:
+  host: 127.0.0.1
+  port: 8080
+
+vector_backend: sqlite
+entity_fact_backend: sqlite # sqlite | neo4j
+default_tenant_id: ""
+importance_scorer: heuristic # heuristic | ollama | openrouter
+
+postprocess:
+  enabled: true
+  poll_interval_ms: 250
+  batch_size: 32
+  worker_count: 2
+  lease_ms: 30000
+  max_attempts: 5
+  retry_base_ms: 500
+  retry_max_ms: 60000
+structured_memory:
+  enabled: false
+  dual_write_observations: false
+  dual_write_events: false
+  max_observations: 3
+
+retrieval:
+  answer_type_routing_enabled: false
+  early_rank_rerank_enabled: false
+  temporal_resolver_enabled: false
+  open_domain_alternative_resolver_enabled: false
+  scoring:
+    algorithm: wal # wal | match
+    wal:
+      recency: 0.1
+      relevance: 0.8
+      importance: 0.1
+    match:
+      recency: 0.05
+      relevance: 0.70
+      importance: 0.10
+      query_overlap: 0.10
+      routing: 0.05
+  multi_hop:
+    entity_fact_bridge_enabled: true
+    llm_decomposition_enabled: false
+    decomposition_provider: openrouter # openrouter | ollama | none
+    openrouter_model: openai/gpt-oss-120b:nitro
+    ollama_base_url: http://127.0.0.1:11434
+    ollama_model: deepseek-r1:7b
+    ollama_timeout_ms: 2000
+    max_decomposition_queries: 3
+    enable_pairwise_rerank: true
+    token_expansion_fallback: true
+    graph_path_enabled: false
+    graph_max_hops: 2
+    graph_seed_limit: 12
+    graph_path_limit: 128
+    graph_min_score: 0.12
+    graph_weight: 0.25
+    graph_temporal_validity: false
+    graph_singleton_invalidation: false
+
+parser:
+  enabled: false
+  provider: heuristic # heuristic | ollama | openrouter
+  ollama_base_url: http://127.0.0.1:11434
+  ollama_model: deepseek-r1:7b
+  openrouter_model: openai/gpt-oss-120b:nitro
+  ollama_timeout_ms: 20000
+  store_raw_turn: true
+  max_facts: 4
+  dedupe_threshold: 0.88
+  update_threshold: 0.94
+  answer_span_retention_enabled: false
+
+profile_layer:
+  support_links_enabled: false
+
+database:
+  sqlite_dsn: file:pali.db?cache=shared
+
+qdrant:
+  base_url: http://127.0.0.1:6333
+  api_key: ""
+  collection: pali_memories
+  timeout_ms: 2000
+
+neo4j:
+  uri: bolt://127.0.0.1:7687
+  username: neo4j
+  password: "" # or set env NEO4J_PASSWORD
+  database: neo4j
+  timeout_ms: 2000
+  batch_size: 256
+
+embedding:
+  provider: lexical # lexical is the zero-dependency default; use ollama/onnx/openrouter for better semantic retrieval
+  fallback_provider: lexical # optional explicit fallback provider
+  ollama_base_url: http://127.0.0.1:11434
+  ollama_model: mxbai-embed-large
+  ollama_timeout_seconds: 10
+  model_path: ./models/all-MiniLM-L6-v2/model.onnx
+  tokenizer_path: ./models/all-MiniLM-L6-v2/tokenizer.json
+
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  api_key: "" # or set env OPENROUTER_API_KEY
+  embedding_model: openai/text-embedding-3-small:nitro
+  scoring_model: openai/gpt-oss-120b:nitro
+  timeout_ms: 10000
+
+ollama:
+  base_url: http://127.0.0.1:11434
+  model: deepseek-r1:7b
+  timeout_ms: 2000
+
+auth:
+  enabled: false
+  jwt_secret: ""
+  issuer: pali
+
+logging:
+  dev_verbose: false # true => detailed parser/store/search internals
+  progress: true     # true => show live parser batch progress in verbose mode

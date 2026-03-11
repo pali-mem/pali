@@ -1,650 +1,426 @@
+<div align="center">
+
 # Pali
 
-**Persistent Memory Layer for LLM Applications**
+[![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-v0.1-blue)](README.md)
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://go.dev/)
-[![Status](https://img.shields.io/badge/status-beta-yellow.svg)]()
+<a href="https://github.com/user-attachments/assets/704a5235-4782-4d50-bdc0-8e929ba1c8c3">
+  <img src="pali_banner.png" alt="Pali" width="830" />
+</a>
 
-Self-hosted memory system that enables LLMs to persistently remember facts, preferences, and context across conversations. Designed for production deployments with offline-first architecture and zero external dependencies.
+*Open memory for your LLM.*
 
-**Key Characteristics:**
-- Single binary deployment
-- Embedded vector search (sqlite-vec default, Qdrant/pgvector optional)
-- Multi-tenant
-- Native MCP server for tool integration
-- Fully local operation — no cloud dependencies
+</div>
 
----
+> **Pre-release, close to usable** — Pali is functional and the v0.1 release work is now mostly docs, benchmarks, and repo hygiene. APIs and config may still tighten before tagging.
 
-## Overview
+## Read First
 
-Pali provides memory layer for AI applications. Any LLM client (Claude Desktop, GPT, DeepSeek, Ollama, Open WebUI) can use Pali to maintain stateful context across sessions through a REST API or MCP protocol.
+Read these before you deploy Pali:
 
-**Architecture:**
-- Written in Go for performance and single-binary distribution
-- SQLite for metadata and default vector storage
-- Optional backends (Qdrant, pgvector) for scale
-- ONNX Runtime for local embeddings (all-MiniLM-L6-v2)
-- Built-in HTMX dashboard for memory management
+1. [Why Pali](#why-pali)
+2. [Current Core Capabilities (v0.1)](#current-core-capabilities-v01)
+3. [Infrastructure-First Features](#infrastructure-first-features)
+4. [Quickstart](#quickstart)
+5. [Config](#config)
+6. [Auth (Optional JWT)](#auth-optional-jwt)
+7. [`docs/multitenancy.md`](docs/multitenancy.md)
+8. [`docs/configuration.md`](docs/configuration.md)
+9. [`docs/deployment.md`](docs/deployment.md)
+10. [`docs/operations.md`](docs/operations.md)
+11. [`docs/mcp.md`](docs/mcp.md)
+12. [`BENCHMARKS.MD`](BENCHMARKS.MD)
 
-**Runtime Dependency:** The default offline configuration requires ONNX Runtime shared library for embedding generation. See [Installation](#installation) for setup instructions.
+## Infrastructure-First Features
 
----
+Pali is infrastructure-first:
+- Multi-tenant memory APIs with tenant-scoped isolation
+- Hybrid retrieval across lexical, dense, fusion, reranking, and optional multi-hop expansion
+- MCP server with memory-first tools and tenant-aware resolution
+- Dashboard for operators inspecting tenants, memories, and system state
+- Plug-and-play extension points for vector stores, embedders, entity-fact backends, and scoring/routing
 
-## Quick Start
+### What That Means In Practice
 
-```bash
-# Download and run setup (installs ONNX Runtime, downloads model)
-pali setup
+- Multi-tenant memory APIs let one deployment serve many tenants while keeping request handling tenant-scoped.
+- Hybrid retrieval lets you combine SQLite lexical recall, vector search, rank fusion, reranking, and optional graph/decomposition-assisted expansion behind one search API.
+- MCP exposes the same memory core to agent hosts over stdio without inventing a separate memory stack.
+- The dashboard gives operators a direct view of tenant and memory state from the running service.
+- Extension points keep the app contract stable while letting you switch retrieval infrastructure through config.
 
-# Start server with default configuration
-pali serve --config pali.yaml
+The core is fully open source — built to be embedded, self-hosted, and extended.
 
-# Server runs at http://localhost:8080
-# Dashboard available at http://localhost:8080/dashboard
-```
+## Why Pali
 
-See [full installation guide](#installation) below.
+Most projects treat memory as an app feature. Pali treats it as foundational infrastructure:
+- You can run it as a local service, in a container, or behind your own gateway.
+- You can swap retrieval components without changing your app contract.
+- You can use REST, MCP, or the Go client against the same memory core.
+- You keep control of storage, tenancy boundaries, and model/provider decisions.
 
----
+## Current Core Capabilities (v0.1)
 
-## Use Cases
+- Memory CRUD and batch ingest APIs
+- Async post-processing pipeline with job tracking
+- Two-phase retrieval:
+  - Lexical + dense candidate fusion via RRF
+  - WMR reranking
+- Tenant statistics and routing support
+- Tier auto-resolution (`episodic` vs `semantic`) from deterministic signals
+- Optional JWT tenant-scoped auth
+- Operator dashboard with full visibility into tenant and memory flows
 
-| Problem | Current Reality | Pali |
+Operational notes:
+- the dashboard lists persisted memories from the repository-backed memory store
+- retrieval behavior shown through search can still use configured backends like Qdrant and Neo4j
+- the dashboard is an operator surface and is not protected by the `/v1` JWT middleware today
+
+## Plug-and-Play Extensions
+
+| Layer | Options | Notes |
 |---|---|---|
-| LLMs forget everything between sessions | You repeat yourself every conversation | Persistent memory across sessions |
-| "Self-hosted" often means multi-service stacks | You end up managing Docker + databases | Single binary, no external services by default |
-| Most tools assume one user per instance | Multi-user apps become awkward fast | Multi-tenant by design |
-| Memory tools are black boxes | Hard to inspect or edit what the AI remembers | Built-in dashboard to browse and manage |
-| No MCP support | Can't integrate with Claude Code, Cursor, etc. | Native MCP server included |
-| Scaling forces a full rewrite | You're locked into one vector backend | Pluggable backend — swap without touching app code |
-
----
-
-## Core Features
-
-### Memory Architecture
-
-Pali implements a three-tier memory hierarchy:
-
-1. **Working Memory** — Recent conversation exchanges injected verbatim (last N turns)
-2. **Episodic Memory** — Time-bounded events and transient context with automatic decay
-3. **Semantic Memory** — Long-term facts and preferences with no time-based decay
-
-### Retrieval Engine
-
-Memory retrieval uses **Weighted Memory Retrieval (WMR)** scoring, combining research from Park et al. (2023) *Generative Agents* and Zhong et al. (2024) *MemoryBank*:
-
-**Scoring formula:**
-
-```
-score = w_recency × recency(t) + w_relevance × similarity(q,m) + w_importance × importance(m)
-
-where:
-  recency(t)   = decay_factor ^ hours_since_access  (Ebbinghaus curve)
-  similarity   = cosine_similarity(embed(q), embed(m))
-  importance   = TF-IDF + heuristics (or Ollama LLM scoring)
-  
-All factors normalized to [0,1] via min-max scaling
-Default weights: 1.0 each (tunable per-tenant)
-```
-
-**Two-phase retrieval:**
-1. Vector search narrows to top K candidates (50-200)
-2. Full WMR scoring ranks final results
-
-This architecture maintains consistent latency while leveraging vector backend performance..
-
-### Multi-Backend Support
-
-| Backend | Embedded | ANN Index | Multi-Tenant | Best For |
-|---|:---:|:---:|:---:|---|
-| **sqlite-vec** | ✅ | KNN only | Partition-based | Personal use, small teams, zero setup |
-| **Qdrant** | ❌ | HNSW | Collection-based | 100k+ memories, production scale |
-| **pgvector** | ❌ | HNSW | Schema-based | Existing PostgreSQL infrastructure |
-
-Backend selection is configuration-only — no code changes required.
-
----
-
-## Memory Policies
-
-### Automatic Tier Assignment
-
-When storing memories with `tier: "auto"`, Pali classifies content based on stability indicators:
-
-**Semantic tier** (no decay):
-- Explicit preferences and durable facts
-- User or system-marked importance
-- Tagged with `preferences`, `profile`, or `always`
-
-**Episodic tier** (time-bounded):
-- Event-based context
-- Session-specific information
-- Transient plans or constraints
-
-**Working memory** operates independently — last N exchanges injected verbatim without retrieval scoring.
-
-Manual tier assignment via API or dashboard always takes precedence.
-
-### Deduplication
-
-Pali implements per-tenant deduplication:
-- Content hash matching for exact duplicates
-- Optional key-based replacement for preference-type memories (e.g., `pref.language`)
-
-### Conflict Handling
-
-Conflicting memories are preserved, not silently deleted. When semantic facts disagree:
-- Both memories remain accessible
-- WMR scoring determines retrieval priority
-- Dashboard highlights potential conflicts for manual review
-
-This approach maintains audit trail and allows inspection of memory evolution.
-
----
-
-## Installation
-
-### Prerequisites
-
-- Go 1.21+ (for building from source)
-- ONNX Runtime 1.14+ (for embeddings)
-
-### Binary Installation
-
-Download the latest release for your platform:
-
-```bash
-# Linux/macOS
-curl -L https://github.com/yourusername/pali/releases/latest/download/pali-$(uname -s)-$(uname -m) -o pali
-chmod +x pali
-sudo mv pali /usr/local/bin/
-
-# Windows (PowerShell)
-Invoke-WebRequest -Uri "https://github.com/yourusername/pali/releases/latest/download/pali-windows-amd64.exe" -OutFile "pali.exe"
-```
-
-### Setup
-
-Run the setup wizard to install ONNX Runtime and download model files:
-
-```bash
-pali setup
-```
-
-This will:
-- Detect your operating system
-- Install or verify ONNX Runtime
-- Download all-MiniLM-L6-v2 model and tokenizer
-- Verify checksums
-- Test embedding generation
-
-### Configuration
-
-Create `pali.yaml` (or copy from `pali.yaml.example`):
-
-```yaml
-server:
-  host: localhost
-  port: 8080
-
-vector_backend: sqlite  # sqlite | qdrant | pgvector
-
-embedding:
-  model_path: ./models/all-MiniLM-L6-v2/model.onnx
-  tokenizer_path: ./models/all-MiniLM-L6-v2/tokenizer.json
-
-auth:
-  enabled: false  # Enable for multi-tenant production
-
-# Optional: Qdrant backend
-# qdrant:
-#   host: localhost
-#   port: 6334
-
-# Optional: pgvector backend
-# pgvector:
-#   dsn: postgres://user:pass@localhost:5432/pali
-```
-
-### Running
-
-```bash
-# Start server
-pali serve --config pali.yaml
-
-# Run in background
-pali serve --config pali.yaml --daemon
-
-# Check status
-curl http://localhost:8080/health
-```
-
----
-
-## API Reference
-
-### Store Memory
-
-```http
-POST /v1/memory
-Content-Type: application/json
-Authorization: Bearer <token>  # if auth enabled
-
-{
-  "tenant_id": "user_123",
-  "content": "User prefers Go over Python for systems programming",
-  "tags": ["preferences", "languages"],
-  "tier": "auto"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "mem_abc123",
-  "created_at": "2026-03-03T10:00:00Z"
-}
-```
-
-### Search Memories
-
-```http
-POST /v1/memory/search
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "tenant_id": "user_123",
-  "query": "What programming languages does the user prefer?",
-  "top_k": 5,
-  "min_score": 0.3,
-  "tiers": ["episodic", "semantic"]
-}
-```
-
-**Response:**
-```json
-{
-  "results": [
-    {
-      "id": "mem_abc123",
-      "content": "User prefers Go over Python for systems programming",
-      "score": 0.87,
-      "tier": "semantic",
-      "tags": ["preferences", "languages"],
-      "created_at": "2026-03-03T10:00:00Z",
-      "last_recalled_at": "2026-03-03T12:30:00Z",
-      "recall_count": 5
-    }
-  ]
-}
-```
-
-### Delete Memory
-
-```http
-DELETE /v1/memory/:id?tenant_id=user_123
-Authorization: Bearer <token>
-```
-
-### Tenant Statistics
-
-```http
-GET /v1/tenants/:id/stats
-Authorization: Bearer <token>
-```
-
-**Response:**
-```json
-{
-  "counts": {
-    "working": 10,
-    "episodic": 143,
-    "semantic": 57
-  },
-  "top_tags": [
-    {"tag": "preferences", "count": 23},
-    {"tag": "work", "count": 18}
-  ],
-  "recall": {
-    "total_recalls": 1247,
-    "last_recalled_at": "2026-03-03T12:30:00Z"
-  }
-}
-```
-
-See full [API documentation](docs/api.md) for additional endpoints and parameters.
-
----
-
-## MCP Integration
-
-Pali provides native MCP (Model Context Protocol) server for integration with AI tools.
-
-### Available Tools
-
-| Tool | Description |
-|---|---|
-| `memory.store` | Store a new memory with automatic or explicit tier assignment |
-| `memory.search` | Retrieve relevant memories for a query |
-| `memory.delete` | Remove a specific memory |
-| `tenant.stats` | Get memory statistics for a tenant |
-
-### Configuration
-
-Add to your MCP client configuration (e.g., Claude Desktop):
-
-```json
-{
-  "mcpServers": {
-    "pali": {
-      "command": "pali",
-      "args": ["mcp", "--config", "/path/to/pali.yaml"],
-      "env": {
-        "PALI_TOKEN": "your-bearer-token"
-      }
-    }
-  }
-}
-```
-
-See [MCP integration guide](docs/mcp.md) for detailed setup instructions.
-
----
+| Vector backend | `sqlite`, `qdrant` | `pgvector` is under work for next version |
+| Graph backend (entity facts) | `sqlite`, `neo4j` | Batch-first entity fact writes; `sqlite` remains default |
+| Embeddings | `ollama`, `onnx`, `lexical`, `openrouter` | `mock` alias is supported for legacy config |
+| Importance scorer | `heuristic`, `ollama`, `openrouter` | Config-driven swap |
+| Retrieval scoring | `wal`, `match` | Runtime algorithm switch |
+| Parsing | `heuristic`, `ollama` | Optional extraction before persistence |
+| Structured memory | observation/event dual-write | Optional query routing boosts |
 
 ## Architecture
 
-### System Design
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│                    LLM Client / App / Agent                   │
-│          Claude / GPT / DeepSeek / Ollama / Open WebUI        │
-│         calls Pali before each prompt (retrieve + store)      │
-└──────────────├────────────────────────────├───────────────────
-               │  HTTP REST (localhost:8080)│  MCP (stdio)
-               ▼                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                   Pali — Single Go Binary                     │
-│                                                              │
-│  ┌─────────────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │ REST API             │  │ MCP Server   │  │ Dashboard  │  │
-│  │ /v1/memory           │  │ (stdio)      │  │ (HTMX)     │  │
-│  │ /v1/memory/search    │  └──────┬───────┘  └─────┬──────┘  │
-│  │ /v1/tenants          │         └────────┬────────┘         │
-│  └──────────┬───────────┘                  │                  │
-│             └──────────────────────────────┘                 │
-│                            │                                 │
-│                            ▼                                 │
-│         ┌────────────────────────────────────────┐           │
-│         │   Retrieval + Scoring Engine (WMR)      │           │
-│         │   score = recency + relevance + importance│         │
-│         └──────────────┬─────────────────────────┘          │
-│                            │                                  │
-│               ┌────────────▼─────────────┐                     │
-│               │   VectorStore interface  │                     │
-│               └──┬──────────┬───────────┘                     │
-│                  │          │           │                     │
-│          ┌───────▼──┐ ┌─────▼────┐ ┌───▼──────┐              │
-│          │sqlite-vec│ │  Qdrant  │ │ pgvector │              │
-│          │(default) │ │(opt-in)  │ │(opt-in)  │              │
-│          └───────┬──┘ └──────────┘ └──────────┘              │
-│                  │                                            │
-│    ┌─────────────▼───────────────────────────┐                 │
-│    │         SQLite — Single File            │                 │
-│    │  memories, tenants, tags (metadata)     │                 │
-│    │  vec_* tables (sqlite-vec, default)     │                 │
-│    └─────────────────────────────────────────┘                 │
-│                                                              │
-│                   ┌──────────────────────┐                   │
-│                   │ Embedding Engine      │                   │
-│                   │ MiniLM-L6-v2 (ONNX)  │                   │
-│                   └──────────────────────┘                   │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    C["Clients"]
+    subgraph Ingress["Ingress"]
+        direction LR
+        REST["REST API"] & MCP["MCP Server"] & DASH["Dashboard"]
+    end
+    subgraph Auth["Auth"]
+        direction LR
+        A["Tenant Resolution"] & T["Tenant Service"]
+    end
+    subgraph Core["Core Services"]
+        direction LR
+        MS["Memory Service"] & PP["Postprocess Workers"]
+    end
+    subgraph Retrieval["Retrieval"]
+        direction LR
+        RET["Fusion RRF"] --> RERANK["WMR Reranker"]
+    end
+    subgraph Providers["Providers"]
+        direction LR
+        EMB["Embeddings"] & SCORE["Scorer"] & PARSER["Parser"]
+    end
+    subgraph Storage["Storage"]
+        direction LR
+        SQLITE["SQLite"] & QDRANT["Qdrant"] & NEO4J["Neo4j"]
+    end
+    C --> Ingress
+    Ingress --> Auth
+    Auth --> Core
+    Core --> Retrieval
+    Core --> Providers
+    Retrieval --> EMB
+    PP --> PARSER & EMB
+    Core --> Storage
+    Retrieval --> QDRANT
 ```
 
-| Component | Technology | Purpose |
-|---|---|---|
-| **Language** | Go 1.21+ | Single binary, performance, concurrency |
-| **HTTP Framework** | gin-gonic/gin | REST API routing and middleware |
-| **Database** | SQLite (ncruces/go-sqlite3) | Metadata storage, default vector store |
-| **Vector Search** | sqlite-vec / Qdrant / pgvector | Pluggable embedding storage and retrieval |
-| **Embeddings** | ONNX Runtime + MiniLM-L6-v2 | Local semantic encoding (384-dim) |
-| **Dashboard** | Go templates + HTMX | Zero-dependency web UI |
-| **MCP Protocol** | MCP Go SDK | Tool integration for AI clients |
-| **Importance Scoring** | TF-IDF (default) / Ollama (opt-in) | Memory ranking component |
+## Quickstart
 
-### Design Principles
+### 1) Prerequisites
 
-- **Dependency Inversion**: All infrastructure components implement domain interfaces
-- **Repository Pattern**: Abstract data access behind interfaces for backend flexibility
-- **Hexagonal Architecture**: Core business logic isolated from delivery mechanisms (HTTP/MCP)
-- **Zero External Dependencies**: Default configuration runs without external services
+- Go `1.24+`
 
----
+### 2) Bootstrap local config and checks
 
-## Advanced Configuration
-
-### LLM-Based Importance Scoring
-
-For improved memory importance ranking, enable Ollama-based scoring:
-
-```yaml
-importance_scorer: ollama  # default: heuristic
-
-ollama:
-  base_url: http://localhost:11434
-  model: deepseek-r1:7b
-  timeout_ms: 2000
+```bash
+make setup
 ```
 
-**Performance impact:** Adds 100-500ms per store operation. Default TF-IDF scorer has zero overhead.
+### 3) Run the API server
 
-**When to use:** Complex memory content requiring nuanced importance evaluation.
+```bash
+make run
+```
 
-### Authentication
+Default address: `http://127.0.0.1:8080`
 
-Production deployments should enable authentication:
+Health:
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+Dashboard:
+```bash
+open http://127.0.0.1:8080/dashboard
+```
+
+## Single-Binary Runtime (Optional)
+
+Pali can also be run as a single compiled binary (helpful for ops and local packaging):
+
+```bash
+make build
+./bin/pali -config pali.yaml
+```
+
+MCP server mode:
+
+```bash
+./bin/pali mcp run -config pali.yaml
+```
+
+Install into your PATH:
+
+```bash
+make install
+pali -config /etc/pali/pali.yaml
+```
+
+User-local install (no sudo):
+
+```bash
+make install PREFIX="$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+pali -config pali.yaml
+```
+
+This is an installation/runtime convenience, not the project identity. The project is open memory infrastructure with fully extensible components.
+
+## MCP Tooling
+
+Current MCP toolset:
+- `memory_store`
+- `memory_store_preference`
+- `memory_search`
+- `memory_list`
+- `memory_delete`
+- `tenant_create`
+- `tenant_list`
+- `tenant_stats`
+- `tenant_exists`
+- `health_check`
+- `pali_capabilities`
+
+Built-in MCP guidance:
+- `initialize.instructions` includes memory-first policy hints
+- `prompts/get` exposes `pali_memory_autopilot`
+
+Tenant-aware MCP tool resolution order:
+1. `tenant_id` in tool input
+2. JWT tenant claim (when auth is enabled)
+3. MCP session default tenant
+4. `default_tenant_id` in config
+5. otherwise, tool returns an error
+
+This is tenant resolution, not full operator auth delegation. REST auth is stricter; MCP behavior also depends on what the host forwards into session or tool metadata.
+
+## Config
+
+- Canonical guide: [`docs/configuration.md`](docs/configuration.md)
+- Canonical template: [`pali.yaml.example`](pali.yaml.example)
+- Local runtime file: `pali.yaml` (created by `make setup` if missing)
+- Custom runtime file: `go run ./cmd/setup -config /path/to/pali.yaml`
+
+## Embedding Setup Notes
+
+- `make setup` checks configured embedder readiness
+- `make setup` supports `-config` when you want to validate a non-default config path
+- the committed default config uses `embedding.provider: lexical`, so first boot does not require Ollama, ONNX, or OpenRouter
+- lexical is the easiest way to start, not the highest-quality retrieval setup
+- ONNX model files are downloaded only when `embedding.provider=onnx` (unless forced)
+- Ollama readiness checks run only when the current config enables an Ollama-backed component
+
+Useful setup flags:
+
+```bash
+go run ./cmd/setup -download-model
+go run ./cmd/setup -config /etc/pali/pali.yaml
+go run ./cmd/setup -skip-model-download
+go run ./cmd/setup -skip-runtime-check
+go run ./cmd/setup -skip-ollama-check
+```
+
+If you use ONNX, required files are:
+- `models/all-MiniLM-L6-v2/model.onnx`
+- `models/all-MiniLM-L6-v2/tokenizer.json`
+
+Ollama quick start:
+
+```bash
+ollama serve
+ollama pull mxbai-embed-large
+```
+
+## Auth (Optional JWT)
 
 ```yaml
 auth:
   enabled: true
-  mode: bearer
-  tokens:
-    - token: "sk-prod-abc123"
-      tenant_ids: ["tenant_1", "tenant_2"]
-    - token: "sk-prod-xyz789"
-      tenant_ids: ["tenant_3"]
+  jwt_secret: "change-me"
+  issuer: "pali"
 ```
 
-**Authentication modes:**
-- **Bearer token**: HTTP header `Authorization: Bearer <token>`
-- **MCP authentication**: Via environment variable `PALI_TOKEN`
+JWT must include `tenant_id`, and request tenant must match token tenant.
 
-### Tenant Isolation
+Important behavior:
+- one JWT maps to one tenant
+- `/v1` routes return `403` on tenant mismatch
+- MCP can also resolve tenant from session/default config when the host does not forward JWT metadata
+- the dashboard is not currently fronted by the same JWT middleware
 
-All operations are scoped to a single tenant:
-- API requests include `tenant_id` parameter
-- Auth middleware validates token access before query execution
-- Vector backends enforce isolation (collections/tables/partitions)
-- Dashboard provides per-tenant view filtering
+Full guide: [`docs/multitenancy.md`](docs/multitenancy.md)
 
-### Backend Switching
-
-TODO: HOW TO HANDLE SETUP FOR PGVECTOR POOR QDRANT
-
-Change vector backend without code changes:
-
-```yaml
-# SQLite (embedded, default)
-vector_backend: sqlite
-
-# Qdrant (scale to millions)
-vector_backend: qdrant
-qdrant:
-  host: localhost
-  port: 6334
-  collection_prefix: pali_
-
-# pgvector (PostgreSQL)
-vector_backend: pgvector
-pgvector:
-  dsn: postgres://user:pass@localhost:5432/pali
-  pool_size: 10
-```
-
-See [deployment guide](docs/deployment.md) for production architecture recommendations.
-
----
-
-## Performance
-
-Preliminary benchmarks (single-node, sqlite-vec backend):
-
-TODO: RUN THE ACTUAL BENCHMARKS 
-
-**Test environment:** M1 MacBook Pro, 16GB RAM, local ONNX Runtime
-
-**Note:** Qdrant/pgvector backends show improved performance at scale (>100k memories). See [benchmarks](docs/benchmarks.md) for detailed results.
-
----
-
-## Production Considerations
-
-### Limitations
-
-| Constraint | Impact | Mitigation |
-|---|---|---|
-| sqlite-vec uses KNN (no ANN) | Linear scan for vector search | Switch to Qdrant/pgvector for >100k memories |
-| SQLite write concurrency | Serialized writes under load | Use Qdrant/pgvector for high-concurrency deployments |
-| Static WMR weights | One weight set per instance | Per-tenant tuning roadmapped for v0.6 |
-| ONNX Runtime dependency | Requires system library | Setup script automates installation |
-
-### Scaling Guidelines
-
-- **0-50k memories**: sqlite-vec sufficient for most workloads
-- **50k-500k memories**: Consider Qdrant for better indexing
-- **500k+ memories**: Qdrant or pgvector recommended
-- **High concurrency**: Qdrant or pgvector with connection pooling
-
----
-
-## Development
-
-### Building from Source
+Mint dev JWT:
 
 ```bash
-git clone https://github.com/yourusername/pali.git
-cd pali
-go mod download
-go build -o pali ./cmd/pali
+go run ./cmd/jwt -tenant tenant_1
+go run ./cmd/jwt -tenant tenant_1 -secret "change-me" -ttl 2h
+TENANT=tenant_1 JWT_SECRET=change-me make jwt
 ```
 
-### Running Tests
+## Go Client
+
+```go
+import (
+  "context"
+  "log"
+
+  "github.com/pali-mem/pali/pkg/client"
+)
+
+func main() {
+  c, err := client.NewClient("http://127.0.0.1:8080")
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  ctx := context.Background()
+  if _, err := c.CreateTenant(ctx, client.CreateTenantRequest{
+    ID:   "tenant_1",
+    Name: "Tenant One",
+  }); err != nil {
+    log.Fatal(err)
+  }
+}
+```
+
+When auth is enabled:
+
+```go
+c.SetBearerToken("<jwt>")
+```
+
+Client docs: [`docs/client/README.md`](docs/client/README.md)
+
+## Repository Layout
+
+- `cmd/pali`: main API server binary entrypoint
+- `cmd/setup`: setup/bootstrap checks
+- `internal/domain`: entities and interfaces
+- `internal/core`: service and use-case layer
+- `internal/repository/sqlite`: SQLite repository implementation
+- `internal/vectorstore`: sqlite-vec and qdrant implementations
+- `internal/embeddings`: embedding providers
+- `internal/scorer`: importance scoring providers
+- `internal/api`: Gin router, middleware, handlers, DTOs
+- `internal/mcp`: MCP server and tool handlers
+- `internal/dashboard`: dashboard handlers and templates
+- `pkg/client`: Go API client SDK
+- `test`: integration and e2e suites
+- `docs`: architecture, API, MCP, deployment docs
+
+## Build, Test, and Benchmark
+
+Build:
 
 ```bash
-# Unit tests
-go test ./...
-
-# Integration tests
-go test -tags=integration ./test/integration/...
-
-# E2E tests
-go test -tags=e2e ./test/e2e/...
-
-# Benchmarks
-go test -bench=. -benchmem ./...
+make build
 ```
 
-### Contributing
+Tests:
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+| Command | Scope |
+|---|---|
+| `make test` | Unit tests (`internal/` and `pkg/`) |
+| `make test-integration` | Integration tests (`-tags integration`) |
+| `make test-e2e` | End-to-end tests (`-tags e2e`) |
+| `make test-all` | Everything |
 
-**Areas of focus:**
-- Additional vector backend implementations
-- WMR scoring algorithm improvements
-- Dashboard features (memory editing, conflict resolution UI)
-- Performance optimizations
-- Documentation and examples
+Release gate:
 
----
+```bash
+scripts/release_gate.sh
+```
 
-## Roadmap
+Release assets (downloadable executables + checksums):
 
-### Current Status: Beta (v0.1)
+```bash
+VERSION=v0.1.0 make release-assets
+```
 
-✅ **Completed**
-- REST API with memory CRUD operations
-- SQLite metadata storage + sqlite-vec default backend
-- ONNX Runtime embeddings (MiniLM-L6-v2)
-- WMR scoring with three-factor ranking
-- MCP server with core tools
-- Basic dashboard for memory inspection
-- Bearer token authentication
-- Multi-tenant isolation
+Outputs:
+- `dist/releases/<version>/artifacts/` (`.tar.gz` for Linux/macOS, `.zip` for Windows `.exe`)
+- `dist/releases/<version>/SHA256SUMS`
+- `dist/releases/<version>/manifest.json`
+- `dist/releases/LATEST`
 
-🚧 **In Progress**
-- Production deployment documentation
-- Comprehensive benchmark suite
-- Docker distribution
+GitHub release automation:
+- pushing a tag like `v0.1.0` triggers `.github/workflows/release.yml`
+- the workflow builds Linux/macOS/Windows artifacts and attaches them to the GitHub Release automatically
+- manual run is also supported via Actions `workflow_dispatch` (provide an existing tag)
 
-📋 **Planned**
+## Production Readiness Checklist
 
-**v0.2** — Enhanced tenant management
-- Extended tenant statistics API
-- Usage analytics and reporting
-- Tenant quota enforcement
+- Keep `pali.yaml` outside the repo and inject sensitive values through your deployment platform.
+- Set `auth.enabled: true` and a long, random `jwt_secret` in non-dev environments.
+- Run with a process supervisor (systemd, Docker restart policy, Kubernetes) and explicit liveness/readiness checks.
+- Put TLS termination at a reverse proxy (for example Nginx/Caddy) and keep Pali on an internal network.
+- Use dedicated persistent storage for `database.sqlite_dsn`; `pali.db` must persist across restarts.
+- Schedule DB backups and restore drills from file snapshots.
+- Enable monitoring on `/health` and track startup logs for counts and migration status.
+- Gate promotion with config validation (`go run ./cmd/setup -config pali.yaml`) before rollout.
+- Pin runtime dependencies and avoid running unverified `model.onnx`/`tokenizer.json` artifacts from untrusted sources.
+- Run integration smoke checks against `/health`, `POST /v1/tenants`, and `POST /v1/memory/search` after deploy.
 
-**v0.3** — Scale-out backends
-- Qdrant integration
-- pgvector integration
-- Backend migration tooling
+Benchmarks:
 
-**v0.4** — Advanced scoring
-- Ollama-based importance scoring
-- Pluggable scoring pipeline
-- Custom scoring functions
+```bash
+make bench-setup
+make benchmark
+make retrieval-quality
+```
 
-**v0.5** — Dashboard improvements
-- In-place memory editing
-- Conflict resolution UI
-- Recall history visualization
+Canonical release assets:
 
-**v0.6** — Memory lifecycle automation
-- Per-tenant WMR weight tuning
-- Auto-promotion episodic → semantic
-- Scheduled consolidation jobs
+- `testdata/benchmarks/fixtures/release_memories.json`
+- `testdata/benchmarks/evals/release_curated.json`
+- `test/benchmarks/profiles/`
 
-**v1.0** — Production hardening
-- Stable API guarantee
-- Full platform support (Linux/macOS/Windows)
-- Production deployment templates
-- Comprehensive observability
+Result output: `test/benchmarks/results/<timestamp>/`
+Each run now includes `config.profile.yaml` and `config.rendered.yaml`.
 
----
+## Docs
 
-## Support
+- Read-first docs index: [`docs/README.md`](docs/README.md)
+- Multi-tenant auth and isolation: [`docs/multitenancy.md`](docs/multitenancy.md)
+- SQLite notes: [`docs/internal/sqlite.md`](docs/internal/sqlite.md)
+- Operations/runbook: [`docs/operations.md`](docs/operations.md)
+- Configuration guide: [`docs/configuration.md`](docs/configuration.md)
+- MCP notes: [`docs/mcp.md`](docs/mcp.md)
+- Deployment guide: [`docs/deployment.md`](docs/deployment.md)
+- API reference: [`docs/api.md`](docs/api.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- ONNX setup: [`docs/onnx.md`](docs/onnx.md)
+- Go client docs: [`docs/client/README.md`](docs/client/README.md)
+- Benchmark policy: [`BENCHMARKS.MD`](BENCHMARKS.MD)
+- Change/perf records: [`docs/changes/`](docs/changes/)
+- Research/dependencies: [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md)
 
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/pali/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/pali/discussions)
-- **Security**: See [SECURITY.md](SECURITY.md) for reporting vulnerabilities
+## Module Path
 
----
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-## Acknowledgments
-
-Pali's memory architecture is informed by research from:
-- Park et al. (2023) - *Generative Agents: Interactive Simulacra of Human Behavior*
-- Zhong et al. (2024) - *MemoryBank: Enhancing Large Language Models with Long-Term Memory* (AAAI 2024)
-
-Built with Go, SQLite, ONNX Runtime, and [these open source projects](docs/acknowledgments.md).
+`github.com/pali-mem/pali`

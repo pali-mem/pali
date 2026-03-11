@@ -1,0 +1,50 @@
+[
+  {
+    "tenant_id": "bench_alpha",
+    "content": "User prefers dark mode in code editors and terminal themes.",
+    "tags": ["preferences", "ui"],
+    "tier": "semantic"
+  },
+  {
+    "tenant_id": "bench_alpha",
+    "content": "User's cat Nori needs medication every Sunday evening.",
+    "tags": ["pet", "schedule"],
+    "tier": "semantic"
+  },
+  {
+    "tenant_id": "bench_alpha",
+    "content": "Project Apollo release is scheduled for April 18 and requires a rollback checklist.",
+    "tags": ["release", "project"],
+    "tier": "episodic"
+  },
+  {
+    "tenant_id": "bench_alpha",
+    "content": "Travel planning notes say the user wants sushi recommendations near Shibuya in Tokyo.",
+    "tags": ["travel", "food"],
+    "tier": "episodic"
+  },
+  {
+    "tenant_id": "bench_beta",
+    "content": "ACME uses SAML single sign-on with Okta for employee access.",
+    "tags": ["sso", "customer"],
+    "tier": "semantic"
+  },
+  {
+    "tenant_id": "bench_beta",
+    "content": "Tenant B prefers weekly summaries every Monday morning.",
+    "tags": ["preferences", "reporting"],
+    "tier": "semantic"
+  },
+  {
+    "tenant_id": "bench_beta",
+    "content": "Incident 442 was caused by an expired Redis password in staging.",
+    "tags": ["incident", "redis"],
+    "tier": "episodic"
+  },
+  {
+    "tenant_id": "bench_beta",
+    "content": "The user brews coffee with a Hario V60 every morning.",
+    "tags": ["coffee", "profile"],
+    "tier": "semantic"
+  }
+]

@@ -1,0 +1,27 @@
+- name: bug
+  color: "d73a4a"
+  description: Something is broken or behaving unexpectedly
+
+- name: config
+  color: "e4a23b"
+  description: Problem with a specific provider or configuration combination
+
+- name: enhancement
+  color: "0075ca"
+  description: New feature or improvement request
+
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+
+- name: documentation
+  color: "0052cc"
+  description: Improvements or additions to documentation
+
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on

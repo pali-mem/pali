@@ -1,0 +1,128 @@
+package dto
+
+import "time"
+
+type StoreMemoryRequest struct {
+	TenantID       string             `json:"tenant_id"`
+	Content        string             `json:"content"`
+	Tags           []string           `json:"tags"`
+	Tier           string             `json:"tier"`
+	Kind           string             `json:"kind,omitempty"`
+	Source         string             `json:"source"`
+	CreatedBy      string             `json:"created_by"`
+	AnswerMetadata *AnswerMetadataDTO `json:"answer_metadata,omitempty"`
+}
+
+type StoreMemoryBatchRequest struct {
+	Items []StoreMemoryRequest `json:"items"`
+}
+
+type IngestMemoryResponse struct {
+	IngestID   string    `json:"ingest_id"`
+	MemoryIDs  []string  `json:"memory_ids"`
+	JobIDs     []string  `json:"job_ids"`
+	AcceptedAt time.Time `json:"accepted_at"`
+}
+
+type SearchMemoryRequest struct {
+	TenantID      string   `json:"tenant_id"`
+	Query         string   `json:"query"`
+	TopK          int      `json:"top_k"`
+	MinScore      float64  `json:"min_score"`
+	Tiers         []string `json:"tiers"`
+	Kinds         []string `json:"kinds,omitempty"`
+	RetrievalKind string   `json:"retrieval_kind,omitempty"`
+	DisableTouch  bool     `json:"disable_touch,omitempty"`
+	Debug         bool     `json:"debug,omitempty"`
+}
+
+type StoreMemoryResponse struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type StoreMemoryBatchResponse struct {
+	Items []StoreMemoryResponse `json:"items"`
+}
+
+type MemoryResponse struct {
+	ID             string             `json:"id"`
+	TenantID       string             `json:"tenant_id"`
+	Content        string             `json:"content"`
+	Tier           string             `json:"tier"`
+	Tags           []string           `json:"tags"`
+	Source         string             `json:"source"`
+	CreatedBy      string             `json:"created_by"`
+	Kind           string             `json:"kind"`
+	RecallCount    int                `json:"recall_count"`
+	AnswerMetadata *AnswerMetadataDTO `json:"answer_metadata,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	LastAccessedAt time.Time          `json:"last_accessed_at"`
+	LastRecalledAt time.Time          `json:"last_recalled_at"`
+}
+
+type SearchMemoryResponse struct {
+	Items []MemoryResponse      `json:"items"`
+	Debug *SearchMemoryDebugDTO `json:"debug,omitempty"`
+}
+
+type PostprocessJobResponse struct {
+	ID          string    `json:"id"`
+	IngestID    string    `json:"ingest_id"`
+	TenantID    string    `json:"tenant_id"`
+	MemoryID    string    `json:"memory_id"`
+	Type        string    `json:"type"`
+	Status      string    `json:"status"`
+	Attempts    int       `json:"attempts"`
+	MaxAttempts int       `json:"max_attempts"`
+	AvailableAt time.Time `json:"available_at"`
+	LeaseOwner  string    `json:"lease_owner,omitempty"`
+	LeasedUntil time.Time `json:"leased_until,omitempty"`
+	LastError   string    `json:"last_error,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type ListPostprocessJobsResponse struct {
+	Items []PostprocessJobResponse `json:"items"`
+}
+
+type SearchMemoryDebugDTO struct {
+	Plan    SearchPlanDebugDTO      `json:"plan"`
+	Ranking []SearchRankingDebugDTO `json:"ranking,omitempty"`
+}
+
+type SearchPlanDebugDTO struct {
+	Intent           string   `json:"intent"`
+	Confidence       float64  `json:"confidence"`
+	AnswerType       string   `json:"answer_type,omitempty"`
+	Entities         []string `json:"entities,omitempty"`
+	Relations        []string `json:"relations,omitempty"`
+	TimeConstraints  []string `json:"time_constraints,omitempty"`
+	RequiredEvidence string   `json:"required_evidence,omitempty"`
+	FallbackPath     []string `json:"fallback_path,omitempty"`
+}
+
+type AnswerMetadataDTO struct {
+	AnswerKind         string   `json:"answer_kind,omitempty"`
+	SourceSentence     string   `json:"source_sentence,omitempty"`
+	SurfaceSpan        string   `json:"surface_span,omitempty"`
+	TemporalAnchor     string   `json:"temporal_anchor,omitempty"`
+	RelativeTimePhrase string   `json:"relative_time_phrase,omitempty"`
+	ResolvedTimeStart  string   `json:"resolved_time_start,omitempty"`
+	ResolvedTimeEnd    string   `json:"resolved_time_end,omitempty"`
+	TimeGranularity    string   `json:"time_granularity,omitempty"`
+	SupportMemoryIDs   []string `json:"support_memory_ids,omitempty"`
+	SupportLines       []string `json:"support_lines,omitempty"`
+}
+
+type SearchRankingDebugDTO struct {
+	Rank         int     `json:"rank"`
+	MemoryID     string  `json:"memory_id"`
+	Kind         string  `json:"kind"`
+	Tier         string  `json:"tier"`
+	LexicalScore float64 `json:"lexical_score"`
+	QueryOverlap float64 `json:"query_overlap"`
+	RouteFit     float64 `json:"route_fit"`
+}

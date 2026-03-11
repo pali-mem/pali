@@ -1,0 +1,42 @@
+[
+  {
+    "tenant_id": "bench_alpha",
+    "query": "dark mode terminal theme",
+    "expected_fixture_indexes": [0]
+  },
+  {
+    "tenant_id": "bench_alpha",
+    "query": "cat Nori medication",
+    "expected_fixture_indexes": [1]
+  },
+  {
+    "tenant_id": "bench_alpha",
+    "query": "Apollo rollback checklist",
+    "expected_fixture_indexes": [2]
+  },
+  {
+    "tenant_id": "bench_alpha",
+    "query": "Tokyo sushi near Shibuya",
+    "expected_fixture_indexes": [3]
+  },
+  {
+    "tenant_id": "bench_beta",
+    "query": "Okta SAML access",
+    "expected_fixture_indexes": [4]
+  },
+  {
+    "tenant_id": "bench_beta",
+    "query": "weekly summaries Monday",
+    "expected_fixture_indexes": [5]
+  },
+  {
+    "tenant_id": "bench_beta",
+    "query": "expired Redis password staging",
+    "expected_fixture_indexes": [6]
+  },
+  {
+    "tenant_id": "bench_beta",
+    "query": "Hario V60 coffee",
+    "expected_fixture_indexes": [7]
+  }
+]

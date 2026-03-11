@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Macos files
+.DS_Store
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -24,9 +27,44 @@ profile.cov
 go.work
 go.work.sum
 
+# Build and local runtime artifacts
+bin/
+.cache/
+
+# Local config
+pali.yaml
+
+# Downloaded ONNX model artifacts
+models/all-MiniLM-L6-v2/model.onnx
+models/all-MiniLM-L6-v2/tokenizer.json
+
 # env file
 .env
 
 # Editor/IDE
 # .idea/
 # .vscode/
+
+
+#database
+*.db
+*.db-shm
+*.db-wal
+
+# Benchmark results and generated fixture outputs
+test/benchmarks/results/
+test/benchmarks/generated/
+
+# Research
+/research/*
+
+# Built binaries (root-level)
+genfix
+/pali
+
+.vscode/
+
+
+# Test files
+
+test/fixtures/

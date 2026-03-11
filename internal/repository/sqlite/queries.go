@@ -1,0 +1,261 @@
+package sqlite
+
+const (
+	InsertTenantSQL = `
+INSERT INTO tenants(id, name, created_at)
+VALUES (?, ?, ?)
+`
+
+	TenantExistsSQL = `
+SELECT EXISTS(SELECT 1 FROM tenants WHERE id = ?)
+`
+
+	CountTenantsSQL = `
+SELECT COUNT(1) FROM tenants
+`
+
+	CountTenantMemoriesSQL = `
+SELECT COUNT(1) FROM memories WHERE tenant_id = ?
+`
+
+	ListTenantMemoryCountsSQL = `
+SELECT tenant_id, COUNT(1) AS memory_count
+FROM memories
+WHERE tenant_id IN (%s)
+GROUP BY tenant_id
+`
+
+	ListTenantsSQL = `
+SELECT id, name, created_at
+FROM tenants
+ORDER BY created_at DESC
+LIMIT ?
+`
+
+	CountMemoriesSQL = `
+SELECT COUNT(1) FROM memories
+`
+
+	InsertMemorySQL = `
+INSERT INTO memories(id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+	DeleteMemorySQL = `
+DELETE FROM memories
+WHERE tenant_id = ? AND id = ?
+`
+
+	SearchMemoriesSQL = `
+SELECT m.id, m.tenant_id, m.content, m.query_view_text, m.tier, m.tags_json, m.source, m.created_by, m.kind, m.canonical_key, m.source_turn_hash, m.source_fact_index, m.extractor, m.extractor_version, m.importance_score, m.recall_count, m.metadata_json, m.created_at, m.updated_at, m.last_accessed_at, m.last_recalled_at
+FROM memory_fts f
+JOIN memories m
+  ON m.id = f.memory_id
+ AND m.tenant_id = f.tenant_id
+WHERE f.tenant_id = ?
+  AND f.content MATCH ?
+ORDER BY bm25(memory_fts), m.updated_at DESC
+LIMIT ?
+`
+
+	ListMemoriesRecentSQL = `
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
+FROM memories
+WHERE tenant_id = ?
+ORDER BY updated_at DESC
+LIMIT ?
+`
+
+	InsertMemoryFTSSQL = `
+INSERT INTO memory_fts(content, tenant_id, memory_id)
+VALUES (?, ?, ?)
+`
+
+	DeleteMemoryFTSSQL = `
+DELETE FROM memory_fts
+WHERE tenant_id = ? AND memory_id = ?
+`
+
+	GetMemoriesByIDsBaseSQL = `
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
+FROM memories
+WHERE tenant_id = ?
+`
+
+	FindMemoryByCanonicalKeySQL = `
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
+FROM memories
+WHERE tenant_id = ?
+  AND canonical_key = ?
+LIMIT 1
+`
+
+	ListMemoriesBySourceTurnHashSQL = `
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
+FROM memories
+WHERE tenant_id = ?
+  AND source_turn_hash = ?
+ORDER BY
+  CASE kind
+    WHEN 'raw_turn' THEN 0
+    WHEN 'event' THEN 1
+    WHEN 'observation' THEN 2
+    ELSE 3
+  END,
+  updated_at DESC
+LIMIT ?
+`
+
+	InsertEntityFactSQL = `
+INSERT INTO entity_facts(id, tenant_id, entity, relation, relation_raw, value, memory_id, observed_at, valid_from, valid_to, invalidated_by_fact_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(tenant_id, entity, relation, value, memory_id) DO UPDATE SET
+	relation_raw = CASE
+		WHEN excluded.relation_raw <> '' THEN excluded.relation_raw
+		ELSE entity_facts.relation_raw
+	END,
+	observed_at = CASE
+		WHEN excluded.observed_at <> '' THEN excluded.observed_at
+		ELSE entity_facts.observed_at
+	END,
+	valid_from = CASE
+		WHEN excluded.valid_from <> '' THEN excluded.valid_from
+		ELSE entity_facts.valid_from
+	END,
+	valid_to = CASE
+		WHEN excluded.valid_to <> '' THEN excluded.valid_to
+		ELSE entity_facts.valid_to
+	END,
+	invalidated_by_fact_id = CASE
+		WHEN excluded.invalidated_by_fact_id <> '' THEN excluded.invalidated_by_fact_id
+		ELSE entity_facts.invalidated_by_fact_id
+	END
+`
+
+	ListEntityFactsByEntityRelationSQL = `
+SELECT id, tenant_id, entity, relation, relation_raw, value, memory_id, observed_at, valid_from, valid_to, invalidated_by_fact_id, created_at
+FROM entity_facts
+WHERE tenant_id = ?
+  AND entity = ?
+  AND relation = ?
+ORDER BY created_at DESC
+LIMIT ?
+`
+
+	InvalidateEntityFactsByRelationSQL = `
+UPDATE entity_facts
+SET valid_to = ?,
+	invalidated_by_fact_id = ?
+WHERE tenant_id = ?
+  AND entity = ?
+  AND relation = ?
+  AND coalesce(invalidated_by_fact_id, '') = ''
+  AND coalesce(valid_to, '') = ''
+  AND value <> ?
+`
+
+	UpsertMemoryIndexJobSQL = `
+INSERT INTO memory_index_jobs(id, tenant_id, memory_id, op, state, last_error, attempts, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(tenant_id, memory_id, op) DO UPDATE SET
+	state = excluded.state,
+	last_error = excluded.last_error,
+	attempts = CASE
+		WHEN excluded.state = 'failed' THEN memory_index_jobs.attempts + 1
+		WHEN excluded.state = 'pending' THEN memory_index_jobs.attempts
+		ELSE memory_index_jobs.attempts
+	END,
+	updated_at = excluded.updated_at
+`
+
+	UpdateMemoryIndexJobStateSQL = `
+UPDATE memory_index_jobs
+SET state = ?,
+	last_error = ?,
+	attempts = CASE
+		WHEN ? = 'failed' THEN attempts + 1
+		ELSE attempts
+	END,
+	updated_at = ?
+WHERE tenant_id = ?
+  AND memory_id = ?
+  AND op = ?
+`
+
+	UpsertMemoryPostprocessJobSQL = `
+INSERT INTO memory_postprocess_jobs(id, ingest_id, tenant_id, memory_id, job_type, status, attempts, max_attempts, available_at, lease_owner, leased_until, last_error, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(tenant_id, memory_id, job_type) DO UPDATE SET
+	ingest_id = excluded.ingest_id,
+	status = 'queued',
+	attempts = 0,
+	max_attempts = excluded.max_attempts,
+	available_at = excluded.available_at,
+	lease_owner = '',
+	leased_until = '',
+	last_error = '',
+	updated_at = excluded.updated_at
+`
+
+	GetMemoryPostprocessJobIDSQL = `
+SELECT id
+FROM memory_postprocess_jobs
+WHERE tenant_id = ?
+  AND memory_id = ?
+  AND job_type = ?
+LIMIT 1
+`
+
+	GetMemoryPostprocessJobByIDSQL = `
+SELECT id, ingest_id, tenant_id, memory_id, job_type, status, attempts, max_attempts, available_at, lease_owner, leased_until, last_error, created_at, updated_at
+FROM memory_postprocess_jobs
+WHERE id = ?
+LIMIT 1
+`
+
+	ListMemoryPostprocessJobsBaseSQL = `
+SELECT id, ingest_id, tenant_id, memory_id, job_type, status, attempts, max_attempts, available_at, lease_owner, leased_until, last_error, created_at, updated_at
+FROM memory_postprocess_jobs
+`
+
+	ListMemoryPostprocessJobIDsForClaimSQL = `
+SELECT id
+FROM memory_postprocess_jobs
+WHERE available_at <= ?
+  AND status IN ('queued', 'failed')
+  AND (leased_until = '' OR leased_until <= ?)
+ORDER BY available_at ASC, created_at ASC
+LIMIT ?
+`
+
+	MarkMemoryPostprocessJobClaimedSQL = `
+UPDATE memory_postprocess_jobs
+SET status = 'running',
+	lease_owner = ?,
+	leased_until = ?,
+	updated_at = ?
+WHERE id = ?
+`
+
+	MarkMemoryPostprocessJobSucceededSQL = `
+UPDATE memory_postprocess_jobs
+SET status = 'succeeded',
+	last_error = '',
+	lease_owner = '',
+	leased_until = '',
+	updated_at = ?
+WHERE id = ?
+`
+
+	MarkMemoryPostprocessJobFailedSQL = `
+UPDATE memory_postprocess_jobs
+SET status = ?,
+	attempts = ?,
+	available_at = ?,
+	last_error = ?,
+	lease_owner = '',
+	leased_until = '',
+	updated_at = ?
+WHERE id = ?
+`
+)

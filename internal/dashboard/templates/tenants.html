@@ -1,0 +1,39 @@
+{{ define "content" }}
+<section>
+  <h2>Tenants</h2>
+  <form method="post" action="/dashboard/tenants" class="form-grid">
+    <label>
+      Tenant ID
+      <input type="text" name="id" placeholder="tenant_1" required />
+    </label>
+    <label>
+      Name
+      <input type="text" name="name" placeholder="Tenant One" required />
+    </label>
+    <button type="submit">Create Tenant</button>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Memories</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Tenants }}
+      <tr>
+        <td><code>{{ .ID }}</code></td>
+        <td>{{ .Name }}</td>
+        <td>{{ .MemoryCount }}</td>
+        <td>{{ .CreatedAt }}</td>
+      </tr>
+      {{ else }}
+      <tr><td colspan="4">No tenants yet.</td></tr>
+      {{ end }}
+    </tbody>
+  </table>
+</section>
+{{ end }}
