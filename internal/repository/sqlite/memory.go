@@ -415,6 +415,10 @@ func prepareMemoryForStore(m *domain.Memory, now time.Time) error {
 }
 
 func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON string) error {
+	metadataJSON, err := marshalAnswerMetadata(m.AnswerMetadata)
+	if err != nil {
+		return fmt.Errorf("marshal memory metadata: %w", err)
+	}
 	if _, err := tx.ExecContext(
 		ctx,
 		InsertMemorySQL,
@@ -434,6 +438,7 @@ func insertMemoryTx(ctx context.Context, tx *sql.Tx, m domain.Memory, tagsJSON s
 		m.ExtractorVersion,
 		m.Importance,
 		m.RecallCount,
+		metadataJSON,
 		m.CreatedAt.Format(time.RFC3339Nano),
 		m.UpdatedAt.Format(time.RFC3339Nano),
 		m.LastAccessedAt.Format(time.RFC3339Nano),
@@ -475,8 +480,22 @@ func buildIndexedMemoryText(m domain.Memory) string {
 		parts = append(parts, speakers)
 	}
 	if queryView != "" {
-		// Repeat query-view text once to approximate field weighting in a single FTS column.
-		parts = append(parts, queryView, queryView)
+		parts = append(parts, queryView)
+	}
+	if surfaceSpan := strings.Join(strings.Fields(strings.TrimSpace(m.AnswerMetadata.SurfaceSpan)), " "); surfaceSpan != "" {
+		parts = append(parts, surfaceSpan)
+	}
+	if sourceSentence := strings.Join(strings.Fields(strings.TrimSpace(m.AnswerMetadata.SourceSentence)), " "); sourceSentence != "" && !strings.EqualFold(sourceSentence, contentClean) {
+		parts = append(parts, sourceSentence)
+	}
+	if len(m.AnswerMetadata.SupportLines) > 0 {
+		for _, line := range m.AnswerMetadata.SupportLines {
+			line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+			if line == "" {
+				continue
+			}
+			parts = append(parts, line)
+		}
 	}
 	if len(parts) == 0 {
 		return ""
@@ -546,6 +565,7 @@ func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
 		m               domain.Memory
 		tier            string
 		tagsJSON        string
+		metadataJSON    string
 		createdBy       string
 		kind            string
 		sourceFactIndex int
@@ -573,6 +593,7 @@ func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
 		&m.ExtractorVersion,
 		&importance,
 		&recallCount,
+		&metadataJSON,
 		&createdAtRaw,
 		&updatedAtRaw,
 		&accessedAtRaw,
@@ -591,6 +612,11 @@ func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
 		m.Tags = []string{}
 	} else if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil {
 		return domain.Memory{}, fmt.Errorf("unmarshal memory tags: %w", err)
+	}
+	if metadataJSON == "" {
+		m.AnswerMetadata = domain.MemoryAnswerMetadata{}
+	} else if err := json.Unmarshal([]byte(metadataJSON), &m.AnswerMetadata); err != nil {
+		return domain.Memory{}, fmt.Errorf("unmarshal memory metadata: %w", err)
 	}
 
 	var err error
@@ -611,6 +637,21 @@ func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
 		return domain.Memory{}, fmt.Errorf("parse last_recalled_at: %w", err)
 	}
 	return m, nil
+}
+
+func marshalAnswerMetadata(metadata domain.MemoryAnswerMetadata) (string, error) {
+	normalized := metadata
+	if len(normalized.SupportMemoryIDs) == 0 {
+		normalized.SupportMemoryIDs = []string{}
+	}
+	if len(normalized.SupportLines) == 0 {
+		normalized.SupportLines = []string{}
+	}
+	b, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func newID(prefix string) string {
@@ -1480,4 +1521,3 @@ func normalizeTiersForFilter(tiers []domain.MemoryTier) []domain.MemoryTier {
 	}
 	return out
 }
-

@@ -37,6 +37,13 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 		Extractor:        "ollama",
 		ExtractorVersion: "qwen3:4b",
 		Importance:       0.77,
+		AnswerMetadata: domain.MemoryAnswerMetadata{
+			AnswerKind:       "entity",
+			SurfaceSpan:      "Go",
+			SourceSentence:   "User prefers Go for backend systems",
+			SupportLines:     []string{"User prefers Go for backend systems"},
+			SupportMemoryIDs: []string{"mem_seed_1"},
+		},
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, stored.ID)
@@ -56,6 +63,9 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Equal(t, "qwen3:4b", results[0].ExtractorVersion)
 	require.Equal(t, "what stack does the user like for backend work", results[0].QueryViewText)
 	require.Equal(t, 0, results[0].RecallCount)
+	require.Equal(t, "entity", results[0].AnswerMetadata.AnswerKind)
+	require.Equal(t, "Go", results[0].AnswerMetadata.SurfaceSpan)
+	require.Equal(t, []string{"mem_seed_1"}, results[0].AnswerMetadata.SupportMemoryIDs)
 
 	byID, err := memRepo.GetByIDs(ctx, "tenant_1", []string{stored.ID})
 	require.NoError(t, err)
@@ -71,6 +81,7 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Equal(t, "qwen3:4b", byID[0].ExtractorVersion)
 	require.Equal(t, "what stack does the user like for backend work", byID[0].QueryViewText)
 	require.Equal(t, 0, byID[0].RecallCount)
+	require.Equal(t, "entity", byID[0].AnswerMetadata.AnswerKind)
 
 	byCanonicalKey, err := memRepo.FindByCanonicalKey(ctx, "tenant_1", "canon_1")
 	require.NoError(t, err)
@@ -209,7 +220,7 @@ func TestBuildIndexedMemoryTextUsesCleanContentAndBoostsQueryView(t *testing.T) 
 	})
 	require.Equal(
 		t,
-		"I went to a LGBTQ support group yesterday.\ncaroline melanie\ncaroline support group\ncaroline support group",
+		"I went to a LGBTQ support group yesterday.\ncaroline melanie\ncaroline support group",
 		indexed,
 	)
 }
