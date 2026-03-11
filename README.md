@@ -357,6 +357,23 @@ Release gate:
 scripts/release_gate.sh
 ```
 
+Release assets (downloadable executables + checksums):
+
+```bash
+VERSION=v0.1.0 make release-assets
+```
+
+Outputs:
+- `dist/releases/<version>/artifacts/` (`.tar.gz` for Linux/macOS, `.zip` for Windows `.exe`)
+- `dist/releases/<version>/SHA256SUMS`
+- `dist/releases/<version>/manifest.json`
+- `dist/releases/LATEST`
+
+GitHub release automation:
+- pushing a tag like `v0.1.0` triggers `.github/workflows/release.yml`
+- the workflow builds Linux/macOS/Windows artifacts and attaches them to the GitHub Release automatically
+- manual run is also supported via Actions `workflow_dispatch` (provide an existing tag)
+
 ## Production Readiness Checklist
 
 - Keep `pali.yaml` outside the repo and inject sensitive values through your deployment platform.
