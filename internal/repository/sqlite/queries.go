@@ -18,6 +18,13 @@ SELECT COUNT(1) FROM tenants
 SELECT COUNT(1) FROM memories WHERE tenant_id = ?
 `
 
+	ListTenantMemoryCountsSQL = `
+SELECT tenant_id, COUNT(1) AS memory_count
+FROM memories
+WHERE tenant_id IN (%s)
+GROUP BY tenant_id
+`
+
 	ListTenantsSQL = `
 SELECT id, name, created_at
 FROM tenants
@@ -30,8 +37,8 @@ SELECT COUNT(1) FROM memories
 `
 
 	InsertMemorySQL = `
-INSERT INTO memories(id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO memories(id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 	DeleteMemorySQL = `
@@ -40,7 +47,7 @@ WHERE tenant_id = ? AND id = ?
 `
 
 	SearchMemoriesSQL = `
-SELECT m.id, m.tenant_id, m.content, m.query_view_text, m.tier, m.tags_json, m.source, m.created_by, m.kind, m.canonical_key, m.source_turn_hash, m.source_fact_index, m.extractor, m.extractor_version, m.importance_score, m.recall_count, m.created_at, m.updated_at, m.last_accessed_at, m.last_recalled_at
+SELECT m.id, m.tenant_id, m.content, m.query_view_text, m.tier, m.tags_json, m.source, m.created_by, m.kind, m.canonical_key, m.source_turn_hash, m.source_fact_index, m.extractor, m.extractor_version, m.importance_score, m.recall_count, m.metadata_json, m.created_at, m.updated_at, m.last_accessed_at, m.last_recalled_at
 FROM memory_fts f
 JOIN memories m
   ON m.id = f.memory_id
@@ -52,7 +59,7 @@ LIMIT ?
 `
 
 	ListMemoriesRecentSQL = `
-SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories
 WHERE tenant_id = ?
 ORDER BY updated_at DESC
@@ -70,13 +77,13 @@ WHERE tenant_id = ? AND memory_id = ?
 `
 
 	GetMemoriesByIDsBaseSQL = `
-SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories
 WHERE tenant_id = ?
 `
 
 	FindMemoryByCanonicalKeySQL = `
-SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories
 WHERE tenant_id = ?
   AND canonical_key = ?
@@ -84,7 +91,7 @@ LIMIT 1
 `
 
 	ListMemoriesBySourceTurnHashSQL = `
-SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, created_at, updated_at, last_accessed_at, last_recalled_at
+SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories
 WHERE tenant_id = ?
   AND source_turn_hash = ?
@@ -100,23 +107,51 @@ LIMIT ?
 `
 
 	InsertEntityFactSQL = `
-INSERT INTO entity_facts(id, tenant_id, entity, relation, relation_raw, value, memory_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO entity_facts(id, tenant_id, entity, relation, relation_raw, value, memory_id, observed_at, valid_from, valid_to, invalidated_by_fact_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(tenant_id, entity, relation, value, memory_id) DO UPDATE SET
 	relation_raw = CASE
 		WHEN excluded.relation_raw <> '' THEN excluded.relation_raw
 		ELSE entity_facts.relation_raw
+	END,
+	observed_at = CASE
+		WHEN excluded.observed_at <> '' THEN excluded.observed_at
+		ELSE entity_facts.observed_at
+	END,
+	valid_from = CASE
+		WHEN excluded.valid_from <> '' THEN excluded.valid_from
+		ELSE entity_facts.valid_from
+	END,
+	valid_to = CASE
+		WHEN excluded.valid_to <> '' THEN excluded.valid_to
+		ELSE entity_facts.valid_to
+	END,
+	invalidated_by_fact_id = CASE
+		WHEN excluded.invalidated_by_fact_id <> '' THEN excluded.invalidated_by_fact_id
+		ELSE entity_facts.invalidated_by_fact_id
 	END
 `
 
 	ListEntityFactsByEntityRelationSQL = `
-SELECT id, tenant_id, entity, relation, relation_raw, value, memory_id, created_at
+SELECT id, tenant_id, entity, relation, relation_raw, value, memory_id, observed_at, valid_from, valid_to, invalidated_by_fact_id, created_at
 FROM entity_facts
 WHERE tenant_id = ?
   AND entity = ?
   AND relation = ?
 ORDER BY created_at DESC
 LIMIT ?
+`
+
+	InvalidateEntityFactsByRelationSQL = `
+UPDATE entity_facts
+SET valid_to = ?,
+	invalidated_by_fact_id = ?
+WHERE tenant_id = ?
+  AND entity = ?
+  AND relation = ?
+  AND coalesce(invalidated_by_fact_id, '') = ''
+  AND coalesce(valid_to, '') = ''
+  AND value <> ?
 `
 
 	UpsertMemoryIndexJobSQL = `

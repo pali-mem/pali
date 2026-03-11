@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	// Register the modernc SQLite driver used by sql.Open("sqlite", ...).
 	_ "modernc.org/sqlite"
 )
 
