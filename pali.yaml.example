@@ -23,6 +23,10 @@ structured_memory:
   max_observations: 3
 
 retrieval:
+  answer_type_routing_enabled: false
+  early_rank_rerank_enabled: false
+  temporal_resolver_enabled: false
+  open_domain_alternative_resolver_enabled: false
   scoring:
     algorithm: wal # wal | match
     wal:
@@ -46,6 +50,14 @@ retrieval:
     max_decomposition_queries: 3
     enable_pairwise_rerank: true
     token_expansion_fallback: true
+    graph_path_enabled: false
+    graph_max_hops: 2
+    graph_seed_limit: 12
+    graph_path_limit: 128
+    graph_min_score: 0.12
+    graph_weight: 0.25
+    graph_temporal_validity: false
+    graph_singleton_invalidation: false
 
 parser:
   enabled: false
@@ -58,6 +70,10 @@ parser:
   max_facts: 4
   dedupe_threshold: 0.88
   update_threshold: 0.94
+  answer_span_retention_enabled: false
+
+profile_layer:
+  support_links_enabled: false
 
 database:
   sqlite_dsn: file:pali.db?cache=shared
@@ -77,7 +93,7 @@ neo4j:
   batch_size: 256
 
 embedding:
-  provider: ollama # ollama | onnx | lexical | openrouter (mock alias supported)
+  provider: lexical # lexical is the zero-dependency default; use ollama/onnx/openrouter for better semantic retrieval
   fallback_provider: lexical # optional explicit fallback provider
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: mxbai-embed-large

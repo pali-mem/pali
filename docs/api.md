@@ -25,6 +25,11 @@ Tenant isolation:
 - Memory operations require a valid tenant.
 - `POST /v1/memory`, `POST /v1/memory/batch`, and `POST /v1/memory/search` return `404` when tenant does not exist.
 - `DELETE /v1/memory/:id` is tenant-scoped.
+- When `auth.enabled=true`, JWT `tenant_id` must match the request tenant.
+- One JWT currently acts as one tenant; there is no multi-tenant admin token mode on these handlers.
+
+Related guide:
+- [`multitenancy.md`](multitenancy.md)
 
 ## Store memory
 
