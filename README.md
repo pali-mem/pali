@@ -6,7 +6,9 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-v0.1-blue)](README.md)
 
-<img src="pali_banner.png" alt="Pali" width="830" />
+<a href="https://github.com/user-attachments/assets/704a5235-4782-4d50-bdc0-8e929ba1c8c3">
+  <img src="pali_banner.png" alt="Pali" width="830" />
+</a>
 
 *Open memory for your LLM.*
 
@@ -90,18 +92,48 @@ Operational notes:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A["LLM App / Agent"] --> B["Pali API (REST)"]
-    A --> C["Pali MCP Server"]
-    C --> D["Core Memory Services"]
-    B --> D
-    D --> E["Retrieval Pipeline<br/>Lexical + Dense + RRF + WMR"]
-    D --> F["Postprocess Workers"]
-    D --> G["Storage Layer"]
-    G --> H["SQLite"]
-    G --> I["Qdrant"]
-    G --> J["Neo4j (Entity Graph)"]
-    G --> K["(Future) PGVector"]
+flowchart TB
+    C["Clients"]
+
+    subgraph Ingress["Ingress"]
+        direction LR
+        REST["REST API"] & MCP["MCP Server"] & DASH["Dashboard"]
+    end
+
+    subgraph Auth["Auth"]
+        direction LR
+        A["Tenant Resolution"] & T["Tenant Service"]
+    end
+
+    subgraph Core["Core Services"]
+        direction LR
+        MS["Memory Service"] & PP["Postprocess Workers"]
+    end
+
+    subgraph Retrieval["Retrieval"]
+        direction LR
+        RET["Fusion RRF"] --> RERANK["WMR Reranker"]
+    end
+
+    subgraph Providers["Providers"]
+        direction LR
+        EMB["Embeddings\nlexical · ollama · onnx"] & SCORE["Scorer\nheuristic · ollama"] & PARSER["Parser\nheuristic · ollama"]
+    end
+
+    subgraph Storage["Storage"]
+        direction LR
+        SQLITE["SQLite"] & QDRANT["Qdrant"] & NEO4J["Neo4j"]
+    end
+
+    C --> Ingress
+    Ingress --> Auth
+    Auth --> Core
+    Core --> Retrieval
+    Core --> Providers
+    Retrieval --> EMB
+    PP --> PARSER & EMB
+    Core --> Storage
+    Retrieval --> QDRANT
 ```
 
 ## Quickstart
@@ -147,6 +179,21 @@ MCP server mode:
 
 ```bash
 ./bin/pali mcp run -config pali.yaml
+```
+
+Install into your PATH:
+
+```bash
+make install
+pali -config /etc/pali/pali.yaml
+```
+
+User-local install (no sudo):
+
+```bash
+make install PREFIX="$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+pali -config pali.yaml
 ```
 
 This is an installation/runtime convenience, not the project identity. The project is open memory infrastructure with fully extensible components.
