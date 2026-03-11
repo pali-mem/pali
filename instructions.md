@@ -97,7 +97,7 @@ Runtime notes:
 - default embedding provider is `ollama` with `lexical` fallback.
 - `embedding.provider=openrouter` calls OpenRouter embeddings API.
 - ONNX embedding path is implemented and requires ONNX Runtime shared library.
-- benchmark/eval scripts render runtime config from `test/config/providers/*.yaml` via `cmd/configrender`.
+- benchmark/eval scripts render runtime config from `test/config/providers/*.yaml` via `cmd/configrender` and copy the rendered config into each result directory.
 
 ## Setup + Run + Validation
 
@@ -121,9 +121,9 @@ make mcp
 go run ./cmd/pali mcp run -config pali.yaml
 ```
 
-Release smoke gate:
+Release gate:
 ```bash
-make test && make test-integration && make test-e2e && make build
+scripts/release_gate.sh
 ```
 
 ## Known Gaps (Not Yet Implemented)
