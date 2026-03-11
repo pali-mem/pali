@@ -28,12 +28,16 @@ func TestProviderProfilesAreValid(t *testing.T) {
 		"ollama.yaml",
 		"qdrant-ollama.yaml",
 		"qdrant-neo4j-lexical.yaml",
+		"qdrant-neo4j-lexical-openrouter.yaml",
 	}
 	for _, profile := range profiles {
 		profile := profile
 		t.Run(profile, func(t *testing.T) {
 			if strings.Contains(profile, "neo4j") {
 				t.Setenv("NEO4J_PASSWORD", "test-password")
+			}
+			if strings.Contains(profile, "openrouter") {
+				t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 			}
 			path := filepath.Clean(filepath.Join("..", "..", "test", "config", "providers", profile))
 			_, err := Load(path)
