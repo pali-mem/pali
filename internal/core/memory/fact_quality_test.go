@@ -88,10 +88,11 @@ func TestBuildFactQuestionView_DeduplicatesAndBuildsEntityFromContent(t *testing
 
 	view := buildFactQuestionView(fact)
 
-	require.Contains(t, view, "what does Alice do")
-	require.Contains(t, view, "what activities does Alice do")
+	require.NotContains(t, view, "what does Alice do")
+	require.NotContains(t, view, "what activities does Alice do")
 	require.GreaterOrEqual(t, len(stringLines(view)), 2)
 	require.Greater(t, len(view), 0)
+	require.Contains(t, view, "what does Alice enjoy hiking")
 	require.Contains(t, view, "Alice hiking")
 }
 
@@ -104,8 +105,8 @@ func TestBuildFactQuestionView_UsesKnownRelationTemplates(t *testing.T) {
 	}
 
 	view := buildFactQuestionView(fact)
-	require.Contains(t, view, "what does Alice do")
-	require.Contains(t, view, "what activities does Alice do")
+	require.NotContains(t, view, "what does Alice do")
+	require.NotContains(t, view, "what activities does Alice do")
 	require.Contains(t, view, "what does Alice enjoy coffee")
 	require.Contains(t, view, "Alice coffee")
 }

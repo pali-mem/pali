@@ -8,21 +8,23 @@ import (
 )
 
 var (
-	vagueFactValuePattern  = regexp.MustCompile(`(?i)\b(?:it|this|that|these|those|something|anything|everything|nothing|stuff|things?|one|ones|there|here|them)\b`)
-	vagueFactTailPattern   = regexp.MustCompile(`(?i)\b(?:do|did|does|doing|done)\s+(?:it|that|this|something|anything)\b`)
-	offerFactPattern       = regexp.MustCompile(`(?i)\b(?:let me know|need any help|happy to help|hope that helps|glad you agree|sounds good)\b`)
-	genericSpeechPattern   = regexp.MustCompile(`(?i)\bsaid that\b`)
-	reactionFactPattern    = regexp.MustCompile(`(?i)\b(?:that sounds like fun|sounds great|looks great|looks amazing|looks awesome|take a look|look at this|look at that|check this out|you both look|you look|love the red and blue)\b`)
-	chatterLeadPattern     = regexp.MustCompile(`(?i)^(?:yeah|yep|yup|wow|oh|ah|hey|hi|hello|thanks|thank you|cool|nice|great|awesome|amazing|absolutely|definitely|totally)\b`)
-	bareEmotionFactPattern = regexp.MustCompile(`(?i)\b(?:is|was|feels?|felt|seems?|seemed|became)\b`)
-	relativeTimePattern    = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|tonight|last|next|earlier|later|before|after|soon|eventually|someday)\b`)
-	futurePlanPattern      = regexp.MustCompile(`(?i)\b(?:will|plan(?:s|ning)? to|going to)\b`)
-	subjectPronounPattern  = regexp.MustCompile(`(?i)^(?:i|you|we|they|he|she|it)\b`)
-	predicateSignalPattern = regexp.MustCompile(`(?i)\b(?:is|was|has|had|lives? in|moved to|relocat(?:ed|es)|works? as|stud(?:y|ies|ied)|read(?:s|ing)?|likes?|loves?|enjoys?|uses?|using|prefers?|avoid(?:s)?|plans? to|going to|will|attended|participated in|joined|went to|visited|met|married|dating|supports?)\b`)
-	identityValuePattern   = regexp.MustCompile(`(?i)\b(?:gay|lesbian|bisexual|queer|asexual|straight|heterosexual|non-binary|transgender(?:\s+(?:man|woman))?|genderqueer|genderfluid|agender|intersex)\b`)
-	roleValuePattern       = regexp.MustCompile(`(?i)\b(?:teacher|student|engineer|developer|designer|doctor|nurse|lawyer|manager|writer|artist|researcher|photographer|chef|therapist|architect|consultant|analyst|accountant|counselor)\b`)
-	emotionWordPattern     = regexp.MustCompile(`(?i)\b(?:happy|thankful|grateful|excited|proud|glad|thrilled|relieved|nervous|sad|upset|angry|emotional|empowered|liberated|accepted|inspired|motivated|fulfilled|comforted)\b`)
-	emotionAnchorPattern   = regexp.MustCompile(`(?i)\b(?:about|for|because|after|during|when|while|to)\b`)
+	vagueFactValuePattern   = regexp.MustCompile(`(?i)\b(?:it|this|that|these|those|something|anything|everything|nothing|stuff|things?|one|ones|there|here|them)\b`)
+	vagueFactTailPattern    = regexp.MustCompile(`(?i)\b(?:do|did|does|doing|done)\s+(?:it|that|this|something|anything)\b`)
+	offerFactPattern        = regexp.MustCompile(`(?i)\b(?:let me know|need any help|happy to help|hope that helps|glad you agree|sounds good)\b`)
+	genericSpeechPattern    = regexp.MustCompile(`(?i)\bsaid that\b`)
+	parserScaffoldPattern   = regexp.MustCompile(`(?i)\b(?:dialogue(?:\s+d\d+(?::\d+)?)?\s+occurred|dialogue\s+turn\s+occurred|conversation(?:\s+took\s+place|\s+occurred)|(?:made(?:\s+(?:this|a))?\s+statement|uttered\s+a\s+statement|spoke(?:\s+to\s+[A-Za-z][A-Za-z0-9 .'\-]{0,80})?)\s+said\s+that)\b`)
+	genericQueryViewPattern = regexp.MustCompile(`(?i)^(?:what about [^\n]+|what did [^\n]+ do|what does [^\n]+ do|what activities does [^\n]+ do)$`)
+	reactionFactPattern     = regexp.MustCompile(`(?i)\b(?:that sounds like fun|sounds great|looks great|looks amazing|looks awesome|take a look|look at this|look at that|check this out|you both look|you look|love the red and blue)\b`)
+	chatterLeadPattern      = regexp.MustCompile(`(?i)^(?:yeah|yep|yup|wow|oh|ah|hey|hi|hello|thanks|thank you|cool|nice|great|awesome|amazing|absolutely|definitely|totally)\b`)
+	bareEmotionFactPattern  = regexp.MustCompile(`(?i)\b(?:is|was|feels?|felt|seems?|seemed|became)\b`)
+	relativeTimePattern     = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|tonight|last|next|earlier|later|before|after|soon|eventually|someday)\b`)
+	futurePlanPattern       = regexp.MustCompile(`(?i)\b(?:will|plan(?:s|ning)? to|going to)\b`)
+	subjectPronounPattern   = regexp.MustCompile(`(?i)^(?:i|you|we|they|he|she|it)\b`)
+	predicateSignalPattern  = regexp.MustCompile(`(?i)\b(?:is|was|has|had|lives? in|moved to|relocat(?:ed|es)|works? as|stud(?:y|ies|ied)|read(?:s|ing)?|likes?|loves?|enjoys?|uses?|using|prefers?|avoid(?:s)?|plans? to|going to|will|attended|participated in|joined|went to|visited|met|married|dating|supports?)\b`)
+	identityValuePattern    = regexp.MustCompile(`(?i)\b(?:gay|lesbian|bisexual|queer|asexual|straight|heterosexual|non-binary|transgender(?:\s+(?:man|woman))?|genderqueer|genderfluid|agender|intersex)\b`)
+	roleValuePattern        = regexp.MustCompile(`(?i)\b(?:teacher|student|engineer|developer|designer|doctor|nurse|lawyer|manager|writer|artist|researcher|photographer|chef|therapist|architect|consultant|analyst|accountant|counselor)\b`)
+	emotionWordPattern      = regexp.MustCompile(`(?i)\b(?:happy|thankful|grateful|excited|proud|glad|thrilled|relieved|nervous|sad|upset|angry|emotional|empowered|liberated|accepted|inspired|motivated|fulfilled|comforted)\b`)
+	emotionAnchorPattern    = regexp.MustCompile(`(?i)\b(?:about|for|because|after|during|when|while|to)\b`)
 )
 
 var weakSingleTokenValues = map[string]struct{}{
@@ -36,6 +38,9 @@ func passesCanonicalFactAdmission(sourceContent string, fact ParsedFact) bool {
 		return false
 	}
 	if offerFactPattern.MatchString(content) {
+		return false
+	}
+	if isParserScaffoldFact(content, fact.Value) {
 		return false
 	}
 	if isSpeechOrReactionFact(content) {
@@ -151,6 +156,9 @@ func isSpeechOrReactionFact(content string) bool {
 		return false
 	}
 	lower := strings.ToLower(content)
+	if parserScaffoldPattern.MatchString(lower) {
+		return true
+	}
 	if reactionFactPattern.MatchString(lower) {
 		return true
 	}
@@ -160,6 +168,9 @@ func isSpeechOrReactionFact(content string) bool {
 			return true
 		}
 		if reactionFactPattern.MatchString(candidate) {
+			return true
+		}
+		if isTimeOnlyFactValue(candidate) {
 			return true
 		}
 		if chatterLeadPattern.MatchString(candidate) {
@@ -307,8 +318,10 @@ func buildFactQuestionView(fact ParsedFact) string {
 
 	switch relation {
 	case "activity", "preference":
-		add("what does " + entity + " do")
-		add("what activities does " + entity + " do")
+		if relation == "preference" {
+			add("what does " + entity + " like")
+			add("what does " + entity + " prefer")
+		}
 		if value != "" {
 			add("what does " + entity + " enjoy " + value)
 		}
@@ -317,7 +330,6 @@ func buildFactQuestionView(fact ParsedFact) string {
 			add("when did " + entity + " " + value)
 			add("what event did " + entity + " attend " + value)
 		}
-		add("what did " + entity + " do")
 	case "place":
 		add("where does " + entity + " live")
 		if value != "" {
@@ -331,17 +343,107 @@ func buildFactQuestionView(fact ParsedFact) string {
 	case "role":
 		add("what does " + entity + " do for work")
 		add("what is " + entity + " job")
+	case "relationship":
+		add("who is connected to " + entity)
+		add("what relationships does " + entity + " have")
+	case "relationship status":
+		add("what is " + entity + " relationship status")
+	case "belief":
+		add("what does " + entity + " believe")
+	case "value":
+		add("what does " + entity + " value")
+	case "trait":
+		add("what is " + entity + " like")
 	case "plan":
 		add("what is " + entity + " planning")
 		if value != "" {
 			add("when will " + entity + " " + value)
 		}
-	default:
-		add("what about " + entity)
+	case "goal":
+		add("what is " + entity + " goal")
+		add("what does " + entity + " want to do")
 	}
 
-	if value != "" {
+	if value != "" && !isTimeOnlyFactValue(value) {
 		add(entity + " " + value)
 	}
-	return strings.Join(parts, "\n")
+	return filterSpecificQueryViewText(strings.Join(parts, "\n"))
+}
+
+func isParserScaffoldFact(content, value string) bool {
+	content = normalizeFactContent(content)
+	if content == "" {
+		return false
+	}
+	lower := strings.ToLower(content)
+	if parserScaffoldPattern.MatchString(lower) {
+		return true
+	}
+	if !genericSpeechPattern.MatchString(lower) {
+		return false
+	}
+	candidate := normalizeEntityFactValue(value)
+	if candidate == "" {
+		candidate = inferSpecificValueCandidate(content)
+	}
+	return isTimeOnlyFactValue(candidate)
+}
+
+func isTimeOnlyFactValue(value string) bool {
+	value = normalizeFactContent(value)
+	if value == "" {
+		return false
+	}
+	if _, ok := normalizeTurnTimeAnchor(value); ok {
+		return true
+	}
+	tokens := strings.Fields(strings.ToLower(value))
+	if len(tokens) == 0 {
+		return false
+	}
+	nonTime := 0
+	for _, token := range tokens {
+		token = strings.Trim(token, " \t\r\n.,;:!?\"'()")
+		if token == "" {
+			continue
+		}
+		switch token {
+		case "am", "pm", "on", "at",
+			"jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
+			"jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september",
+			"oct", "october", "nov", "november", "dec", "december":
+			continue
+		}
+		allDigits := true
+		for _, r := range token {
+			if (r < '0' || r > '9') && r != ':' && r != '-' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			continue
+		}
+		nonTime++
+	}
+	return nonTime == 0
+}
+
+func filterSpecificQueryViewText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = normalizeFactContent(line)
+		if line == "" {
+			continue
+		}
+		if genericQueryViewPattern.MatchString(strings.ToLower(line)) {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\n")
 }
