@@ -12,16 +12,41 @@
 
 </div>
 
-> **Early Beta** — Pali is functional but under active development. APIs and configuration formats may change between releases. If you run into problems with your setup, config, or provider combination, please [open an issue](https://github.com/pali-mem/pali/issues) — it helps a lot.
+> **Pre-release, close to usable** — Pali is functional and the v0.1 release work is now mostly docs, benchmarks, and repo hygiene. APIs and config may still tighten before tagging.
 
-Pali is very early in development and not yet a complete memory solution. Current focus is getting the infrastructure right first.
+## Read First
+
+Read these before you deploy Pali:
+
+1. [Why Pali](#why-pali)
+2. [Current Core Capabilities (v0.1)](#current-core-capabilities-v01)
+3. [Infrastructure-First Features](#infrastructure-first-features)
+4. [Quickstart](#quickstart)
+5. [Config](#config)
+6. [Auth (Optional JWT)](#auth-optional-jwt)
+7. [`docs/multitenancy.md`](docs/multitenancy.md)
+8. [`docs/configuration.md`](docs/configuration.md)
+9. [`docs/deployment.md`](docs/deployment.md)
+10. [`docs/operations.md`](docs/operations.md)
+11. [`docs/mcp.md`](docs/mcp.md)
+12. [`BENCHMARKS.MD`](BENCHMARKS.MD)
+
+## Infrastructure-First Features
 
 Pali is infrastructure-first:
-- Multi-tenant memory APIs
-- Hybrid retrieval (lexical + dense + reranking)
-- MCP server with memory-first tools
-- Dashboard for operators
-- Plug-and-play extension points for vector stores, embedders, and scoring/routing
+- Multi-tenant memory APIs with tenant-scoped isolation
+- Hybrid retrieval across lexical, dense, fusion, reranking, and optional multi-hop expansion
+- MCP server with memory-first tools and tenant-aware resolution
+- Dashboard for operators inspecting tenants, memories, and system state
+- Plug-and-play extension points for vector stores, embedders, entity-fact backends, and scoring/routing
+
+### What That Means In Practice
+
+- Multi-tenant memory APIs let one deployment serve many tenants while keeping request handling tenant-scoped.
+- Hybrid retrieval lets you combine SQLite lexical recall, vector search, rank fusion, reranking, and optional graph/decomposition-assisted expansion behind one search API.
+- MCP exposes the same memory core to agent hosts over stdio without inventing a separate memory stack.
+- The dashboard gives operators a direct view of tenant and memory state from the running service.
+- Extension points keep the app contract stable while letting you switch retrieval infrastructure through config.
 
 The core is fully open source — built to be embedded, self-hosted, and extended.
 
@@ -45,11 +70,16 @@ Most projects treat memory as an app feature. Pali treats it as foundational inf
 - Optional JWT tenant-scoped auth
 - Operator dashboard with full visibility into tenant and memory flows
 
+Operational notes:
+- the dashboard lists persisted memories from the repository-backed memory store
+- retrieval behavior shown through search can still use configured backends like Qdrant and Neo4j
+- the dashboard is an operator surface and is not protected by the `/v1` JWT middleware today
+
 ## Plug-and-Play Extensions
 
 | Layer | Options | Notes |
 |---|---|---|
-| Vector backend | `sqlite`, `qdrant` | `pgvector` is scaffolded and fail-fast placeholder in v0.1 |
+| Vector backend | `sqlite`, `qdrant` | `pgvector` is under work for next version |
 | Graph backend (entity facts) | `sqlite`, `neo4j` | Batch-first entity fact writes; `sqlite` remains default |
 | Embeddings | `ollama`, `onnx`, `lexical`, `openrouter` | `mock` alias is supported for legacy config |
 | Importance scorer | `heuristic`, `ollama`, `openrouter` | Config-driven swap |
@@ -147,22 +177,29 @@ Tenant-aware MCP tool resolution order:
 4. `default_tenant_id` in config
 5. otherwise, tool returns an error
 
+This is tenant resolution, not full operator auth delegation. REST auth is stricter; MCP behavior also depends on what the host forwards into session or tool metadata.
+
 ## Config
 
 - Canonical guide: [`docs/configuration.md`](docs/configuration.md)
 - Canonical template: [`pali.yaml.example`](pali.yaml.example)
 - Local runtime file: `pali.yaml` (created by `make setup` if missing)
+- Custom runtime file: `go run ./cmd/setup -config /path/to/pali.yaml`
 
 ## Embedding Setup Notes
 
 - `make setup` checks configured embedder readiness
+- `make setup` supports `-config` when you want to validate a non-default config path
+- the committed default config uses `embedding.provider: lexical`, so first boot does not require Ollama, ONNX, or OpenRouter
+- lexical is the easiest way to start, not the highest-quality retrieval setup
 - ONNX model files are downloaded only when `embedding.provider=onnx` (unless forced)
-- Ollama server/model readiness checks run by default
+- Ollama readiness checks run only when the current config enables an Ollama-backed component
 
 Useful setup flags:
 
 ```bash
 go run ./cmd/setup -download-model
+go run ./cmd/setup -config /etc/pali/pali.yaml
 go run ./cmd/setup -skip-model-download
 go run ./cmd/setup -skip-runtime-check
 go run ./cmd/setup -skip-ollama-check
@@ -189,6 +226,14 @@ auth:
 ```
 
 JWT must include `tenant_id`, and request tenant must match token tenant.
+
+Important behavior:
+- one JWT maps to one tenant
+- `/v1` routes return `403` on tenant mismatch
+- MCP can also resolve tenant from session/default config when the host does not forward JWT metadata
+- the dashboard is not currently fronted by the same JWT middleware
+
+Full guide: [`docs/multitenancy.md`](docs/multitenancy.md)
 
 Mint dev JWT:
 
@@ -266,10 +311,10 @@ Tests:
 | `make test-e2e` | End-to-end tests (`-tags e2e`) |
 | `make test-all` | Everything |
 
-Release smoke gate:
+Release gate:
 
 ```bash
-make test && make test-integration && make test-e2e && make build
+scripts/release_gate.sh
 ```
 
 ## Production Readiness Checklist
@@ -293,16 +338,29 @@ make benchmark
 make retrieval-quality
 ```
 
+Canonical release assets:
+
+- `testdata/benchmarks/fixtures/release_memories.json`
+- `testdata/benchmarks/evals/release_curated.json`
+- `test/benchmarks/profiles/`
+
 Result output: `test/benchmarks/results/<timestamp>/`
+Each run now includes `config.profile.yaml` and `config.rendered.yaml`.
 
 ## Docs
 
+- Read-first docs index: [`docs/README.md`](docs/README.md)
+- Multi-tenant auth and isolation: [`docs/multitenancy.md`](docs/multitenancy.md)
 - SQLite notes: [`docs/internal/sqlite.md`](docs/internal/sqlite.md)
 - Operations/runbook: [`docs/operations.md`](docs/operations.md)
 - Configuration guide: [`docs/configuration.md`](docs/configuration.md)
 - MCP notes: [`docs/mcp.md`](docs/mcp.md)
+- Deployment guide: [`docs/deployment.md`](docs/deployment.md)
+- API reference: [`docs/api.md`](docs/api.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
 - ONNX setup: [`docs/onnx.md`](docs/onnx.md)
 - Go client docs: [`docs/client/README.md`](docs/client/README.md)
+- Benchmark policy: [`BENCHMARKS.MD`](BENCHMARKS.MD)
 - Change/perf records: [`docs/changes/`](docs/changes/)
 - Research/dependencies: [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md)
 

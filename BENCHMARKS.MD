@@ -1,153 +1,155 @@
 # Pali Benchmarks
 
-> Status: redesigned for production retrieval validation (Top-5 first) as of 2026-03-07.
+Pali has two benchmark lanes:
 
-## Benchmark Objective
+- release benchmarks on a checked-in canonical fixture and eval set
+- research benchmarks on larger external datasets such as LOCOMO
 
-Pali benchmarking now optimizes for production retrieval quality on our own data, not paper-style answer metrics.
+Only the release lane should drive v0.1 defaults and go or no-go decisions.
 
-Primary question:
-- When a user asks a real query, do we return the right memory in the top 5, and how many relevant memories do we actually return?
+## Canonical Release Assets
 
-## Official Scorecard (Top-5)
+Checked-in release data lives here:
 
-All official quality gates now use `top_k=5` and these metrics:
+- fixture: `testdata/benchmarks/fixtures/release_memories.json`
+- eval set: `testdata/benchmarks/evals/release_curated.json`
+- runnable profiles: `test/benchmarks/profiles/`
 
-- `Top1Accuracy`: relevant hit at rank 1 (`top1_hit_rate`)
-- `Top5Accuracy`: any relevant hit in top 5 (`hit_rate_at_k`)
-- `Recall@5`: per-query average recall (`recall_at_k`)
-- `MicroRecall@5`: corpus-level recall (`micro_recall_at_k`)
-- `Hits@5`: total returned relevant hits (`total_hits_at_k`)
-- `Hits/Relevant`: `total_hits_at_k / total_relevant`
+Use these wrappers instead of rebuilding commands by hand:
 
-Secondary diagnostics (not promotion gates):
-- `nDCG@5`
-- `MRR`
-- latency and throughput from `scripts/benchmark.sh`
+- `test/benchmarks/profiles/release-curated-ollama.sh`
+- `test/benchmarks/profiles/release-curated-lexical.sh`
+- `test/benchmarks/profiles/throughput-ollama.sh`
 
-## Data Policy
+Every benchmark run now copies both config inputs into the result directory:
 
-Production scorecards must run on internal/curated data, not synthetic-prefix-only queries.
+- `config.profile.yaml`
+- `config.rendered.yaml`
 
-Use this priority order:
+That means results are tied to the exact runtime configuration used, not just the fixture and eval hashes.
 
-1. `test/fixtures/retrieval_eval.curated.json` with `test/fixtures/memories.json`
-2. Larger curated internal eval sets (same format)
-3. Auto-generated prefix eval only for smoke checks
+## Official Scorecard
 
-Paperlite/LOCOMO-style evaluations are retained as research diagnostics, not release gates.
+Official retrieval gates use `top_k=5` and these metrics:
 
-## Reproducible Runs
+- `Top1HitRate`
+- `Top5Accuracy`
+- `Recall@5`
+- `MicroRecall@5`
+- `Hits/Relevant`
+- `nDCG@5` and `MRR` as diagnostics
 
-### Prerequisites
+Throughput runs track:
+
+- store throughput and latency
+- search throughput and latency
+- batch-store fallback behavior
+
+## Recommended Commands
+
+Primary release-quality run:
 
 ```bash
-go run ./cmd/setup
-scripts/bench_setup.sh
+bash test/benchmarks/profiles/release-curated-ollama.sh
 ```
 
-### Production Retrieval Gate Run (default)
+Local smoke or CI-friendly run:
+
+```bash
+bash test/benchmarks/profiles/release-curated-lexical.sh
+```
+
+Throughput run:
+
+```bash
+bash test/benchmarks/profiles/throughput-ollama.sh
+```
+
+Direct script form:
 
 ```bash
 scripts/retrieval_quality.sh \
-  --fixture test/fixtures/memories.json \
-  --eval-set test/fixtures/retrieval_eval.curated.json \
+  --fixture testdata/benchmarks/fixtures/release_memories.json \
+  --eval-set testdata/benchmarks/evals/release_curated.json \
   --top-k 5 \
   --max-queries 0 \
   --embedding-provider ollama \
   --embedding-model all-minilm
 ```
 
-Both `scripts/retrieval_quality.sh` and `scripts/benchmark.sh` now render runtime configs
-from provider profiles under `test/config/providers/` using `cmd/configrender`, then
-apply run-specific overrides (host/port/db/backend).
+## Result Layout
 
-### Throughput + Latency Run
+Outputs are written to `test/benchmarks/results/<timestamp>/`.
 
-```bash
-scripts/benchmark.sh \
-  --fixture test/fixtures/memories_real.json \
-  --backend sqlite \
-  --search-ops 500 \
-  --top-k 5 \
-  --embedding-provider ollama \
-  --embedding-model all-minilm
-```
+Important files per run:
 
-### Raw Mode Run (No Ollama Models)
+- `benchmark.json`
+- `benchmark.summary.txt`
+- `retrieval_quality.json`
+- `retrieval_quality.summary.txt`
+- `config.profile.yaml`
+- `config.rendered.yaml`
+- `trace.json` when retrieval tracing is available
 
-Use raw mode when you want baseline behavior without Ollama dependency.
-Set `--embedding-provider lexical` (or `mock` alias) to force local lexical embeddings only.
+Trend history is appended to:
 
-```bash
-scripts/benchmark.sh \
-  --fixture research/data/locomo10.paperlite.mini1.fixture.json \
-  --eval-set research/data/locomo10.paperlite.mini1.eval.json \
-  --backend sqlite \
-  --search-ops 100 \
-  --top-k 5 \
-  --embedding-provider lexical
-```
-
-Raw mode is diagnostic only and is not the default promotion gate.
-
-### Trend Tracking
-
-```bash
-scripts/retrieval_trend.sh \
-  --label "curated-top5" \
-  --fixture test/fixtures/memories.json \
-  --eval-set test/fixtures/retrieval_eval.curated.json \
-  --top-k 5 \
-  --max-queries 0 \
-  --embedding-provider ollama \
-  --embedding-model all-minilm
-```
-
-## Gate Definitions
-
-### Gate A: Smoke (PR checks)
-
-Pass rules:
-- tests/build pass
-- `Top5Accuracy` does not regress by more than `2%`
-- `Recall@5` does not regress by more than `2%`
-
-### Gate B: Curated Retrieval Quality (main product gate)
-
-Pass rules:
-- `Top1Accuracy >= 0.45`
-- `Top5Accuracy >= 0.80`
-- `Recall@5 >= 0.75`
-- `MicroRecall@5 >= 0.75`
-- `Hits/Relevant >= 0.75`
-
-### Gate C: Promotion Gate (backend/model changes)
-
-Promotion allowed only if Gate B passes and:
-- `Top5Accuracy` improves by at least `5%` relative or stays within `1%` with clear latency win
-- `Top1Accuracy` does not regress by more than `2%`
-- `Recall@5` does not regress
-
-## Result Files
-
-Outputs are written to:
-
-- `test/benchmarks/results/<timestamp>/benchmark.json`
-- `test/benchmarks/results/<timestamp>/benchmark.summary.txt`
-- `test/benchmarks/results/<timestamp>/retrieval_quality.json`
-- `test/benchmarks/results/<timestamp>/retrieval_quality.summary.txt`
 - `test/benchmarks/trends/retrieval_quality_history.jsonl`
 
-Required fields for reviews:
+Each trend row now records:
 
-- fixture path + hash
-- eval-set path + hash
-- `top_k` (must be `5` for official gates)
-- metric block including top1/top5/recall/hits
-- git commit hash (trend runs)
+- fixture path and hash
+- eval-set path and hash
+- config profile path and hash
+- rendered config path and hash
+- commit hash
 
-## Notes
+## Latest Retained Runs
 
-- Existing historical `Top-10` results remain valid as history, but are no longer the official gate target.
-- If a run uses `top_k != 5`, label it explicitly as exploratory.
+Latest canonical run in this workspace was on March 11, 2026 using the checked-in release fixture and eval set:
+
+- canonical retrieval run `20260311T012253Z`
+  - backend: `sqlite`
+  - embedding: `lexical`
+  - config profile: `test/config/providers/lexical.yaml`
+  - `Top1HitRate=1.000000`
+  - `Top5Accuracy=1.000000`
+  - `Recall@5=1.000000`
+- canonical throughput run `20260311T012253Z`
+  - backend: `sqlite`
+  - embedding: `lexical`
+  - store throughput: `22.735 ops/sec`
+  - search throughput: `7.539 ops/sec`
+
+This is a smoke-quality baseline, not the final product-quality baseline. It proves the checked-in fixture, eval set, profile wrappers, config capture, and result format are working end to end without external model dependencies.
+
+Historical research context retained from March 9, 2026:
+
+- LOCOMO raw retrieval run `20260309T050555Z`
+  - backend: `qdrant`
+  - embedding: `lexical`
+  - `Top1HitRate=0.275510`
+  - `Top5Accuracy=0.469388`
+  - `Recall@5=0.391156`
+
+## Gate Rules
+
+PR smoke expectations:
+
+- tests and build pass
+- docs freshness passes
+- release benchmark profile is reproducible
+
+Release expectations:
+
+- run `scripts/release_gate.sh`
+- run at least one curated retrieval benchmark profile
+- attach the result directory or metric summary to the release note or changelog entry
+
+## What Not To Treat As Canonical
+
+Do not use these as release truth:
+
+- ad hoc files under `test/benchmarks/results/`
+- temp SQLite files and logs
+- generated fixture dumps under ignored directories
+- research-only LOCOMO runs unless explicitly called out as research
