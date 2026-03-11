@@ -108,3 +108,61 @@ func TestEntityFactRepositoryStoreBatchDedupes(t *testing.T) {
 	require.Len(t, facts, 1)
 	require.Equal(t, "enjoys", facts[0].RelationRaw)
 }
+
+func TestEntityFactRepositoryInvalidateEntityRelation(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenantRepo := NewTenantRepository(db)
+	memoryRepo := NewMemoryRepository(db)
+	entityRepo := NewEntityFactRepository(db)
+
+	_, err = tenantRepo.Create(ctx, domain.Tenant{ID: "tenant_1", Name: "Tenant One"})
+	require.NoError(t, err)
+	m1, err := memoryRepo.Store(ctx, domain.Memory{TenantID: "tenant_1", Content: "Melanie is married."})
+	require.NoError(t, err)
+	m2, err := memoryRepo.Store(ctx, domain.Memory{TenantID: "tenant_1", Content: "Melanie is single."})
+	require.NoError(t, err)
+
+	oldFact, err := entityRepo.Store(ctx, domain.EntityFact{
+		ID:         "ef_old",
+		TenantID:   "tenant_1",
+		Entity:     "melanie",
+		Relation:   "relationship status",
+		Value:      "married",
+		MemoryID:   m1.ID,
+		CreatedAt:  time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		ObservedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		ValidFrom:  time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	_, err = entityRepo.Store(ctx, domain.EntityFact{
+		ID:         "ef_new",
+		TenantID:   "tenant_1",
+		Entity:     "melanie",
+		Relation:   "relationship status",
+		Value:      "single",
+		MemoryID:   m2.ID,
+		CreatedAt:  time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+		ObservedAt: time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+		ValidFrom:  time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	cutoff := time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC)
+	err = entityRepo.InvalidateEntityRelation(ctx, "tenant_1", "melanie", "relationship status", "single", "ef_new", cutoff)
+	require.NoError(t, err)
+
+	facts, err := entityRepo.ListByEntityRelation(ctx, "tenant_1", "melanie", "relationship status", 10)
+	require.NoError(t, err)
+	require.Len(t, facts, 2)
+	require.Equal(t, "single", facts[0].Value)
+	require.Empty(t, facts[0].InvalidatedByFactID)
+	require.Nil(t, facts[0].ValidTo)
+	require.Equal(t, oldFact.ID, facts[1].ID)
+	require.Equal(t, "ef_new", facts[1].InvalidatedByFactID)
+	require.NotNil(t, facts[1].ValidTo)
+	require.True(t, facts[1].ValidTo.Equal(cutoff))
+}
