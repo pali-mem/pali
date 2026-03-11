@@ -374,15 +374,16 @@ func (s *Service) applyParsedFactMetadataOnly(
 
 	stored, err := s.storeInRepo(ctx, []domain.Memory{
 		applyIdentityToMemory(domain.Memory{
-			TenantID:      tenantID,
-			Content:       content,
-			QueryViewText: fact.QueryViewText,
-			Tier:          domain.MemoryTierSemantic,
-			Kind:          kind,
-			Tags:          mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
-			Source:        appendDerivedSource(baseSource, "parser"),
-			CreatedBy:     domain.MemoryCreatedBySystem,
-			Importance:    importance,
+			TenantID:       tenantID,
+			Content:        content,
+			QueryViewText:  fact.QueryViewText,
+			Tier:           domain.MemoryTierSemantic,
+			Kind:           kind,
+			Tags:           mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
+			Source:         appendDerivedSource(baseSource, "parser"),
+			CreatedBy:      domain.MemoryCreatedBySystem,
+			AnswerMetadata: fact.AnswerMetadata,
+			Importance:     importance,
 		}, identity),
 	})
 	if err != nil {

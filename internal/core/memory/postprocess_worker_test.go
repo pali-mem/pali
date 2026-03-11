@@ -155,6 +155,111 @@ func TestPostprocessWorkerParserJobCreatesDerivedMemories(t *testing.T) {
 	require.NotEmpty(t, postJobs)
 }
 
+func TestPostprocessWorkerParserJobRetainsAnswerMetadataAndDropsScaffolds(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqliterepo.Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenantRepo := sqliterepo.NewTenantRepository(db)
+	memoryRepo := sqliterepo.NewMemoryRepository(db)
+	_, err = tenantRepo.Create(ctx, domain.Tenant{ID: "tenant_worker_metadata", Name: "Tenant Worker Metadata"})
+	require.NoError(t, err)
+
+	raw, err := memoryRepo.Store(ctx, domain.Memory{
+		TenantID: "tenant_worker_metadata",
+		Content:  "On 8 May 2023, Melanie said she likes jazz.",
+		Kind:     domain.MemoryKindRawTurn,
+	})
+	require.NoError(t, err)
+
+	jobs, err := memoryRepo.EnqueuePostprocessJobs(ctx, []domain.MemoryPostprocessJobEnqueue{
+		{
+			IngestID:    "ing_parser_metadata",
+			TenantID:    raw.TenantID,
+			MemoryID:    raw.ID,
+			JobType:     domain.PostprocessJobTypeParserExtract,
+			MaxAttempts: 3,
+		},
+	}, 3)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+
+	svc := NewService(
+		memoryRepo,
+		tenantRepo,
+		sqlitevec.NewStore(db),
+		embedderStub{},
+		scorerStub{},
+		ParserOptions{
+			Enabled:                    true,
+			Provider:                   "stub",
+			Model:                      "test",
+			StoreRawTurn:               true,
+			MaxFacts:                   4,
+			DedupeThreshold:            0.88,
+			UpdateThreshold:            0.94,
+			AnswerSpanRetentionEnabled: true,
+		},
+		WithInfoParser(parserFuncStub(func(_ context.Context, _ string, _ int) ([]ParsedFact, error) {
+			return []ParsedFact{
+				{
+					Content:  "dialogue D91 occurred on 8 May 2023 at 10:30 AM.",
+					Kind:     domain.MemoryKindObservation,
+					Entity:   "dialogue D91",
+					Relation: "event",
+					Value:    "10:30 AM",
+				},
+				{
+					Content:  "Melanie likes jazz.",
+					Kind:     domain.MemoryKindObservation,
+					Entity:   "Melanie",
+					Relation: "preference",
+					Value:    "jazz",
+				},
+			}, nil
+		})),
+	)
+	stop, err := svc.StartPostprocessWorkers(ctx, PostprocessWorkerOptions{
+		Enabled:      true,
+		PollInterval: 10 * time.Millisecond,
+		BatchSize:    4,
+		WorkerCount:  1,
+		Lease:        100 * time.Millisecond,
+		MaxAttempts:  3,
+		RetryBase:    10 * time.Millisecond,
+		RetryMax:     100 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	defer stop()
+
+	waitForJobStatus(t, memoryRepo, jobs[0].ID, domain.PostprocessJobStatusSucceeded, 2*time.Second)
+
+	var derived []domain.Memory
+	require.Eventually(t, func() bool {
+		memories, searchErr := memoryRepo.Search(ctx, "tenant_worker_metadata", "", 20)
+		if searchErr != nil {
+			return false
+		}
+		derived = derived[:0]
+		for _, memory := range memories {
+			if memory.Kind == domain.MemoryKindRawTurn {
+				continue
+			}
+			derived = append(derived, memory)
+		}
+		return len(derived) == 1
+	}, 2*time.Second, 20*time.Millisecond)
+
+	require.Len(t, derived, 1)
+	require.Equal(t, "Melanie likes jazz.", derived[0].Content)
+	require.NotEmpty(t, derived[0].AnswerMetadata.AnswerKind)
+	require.Equal(t, "On 8 May 2023, Melanie said she likes jazz", derived[0].AnswerMetadata.SourceSentence)
+	require.NotEmpty(t, derived[0].AnswerMetadata.SurfaceSpan)
+	require.NotEmpty(t, derived[0].AnswerMetadata.TemporalAnchor)
+	require.NotContains(t, derived[0].QueryViewText, "what about")
+}
+
 func waitForJobStatus(
 	t *testing.T,
 	repo *sqliterepo.MemoryRepository,
