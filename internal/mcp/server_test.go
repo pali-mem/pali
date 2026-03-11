@@ -8,7 +8,6 @@ import (
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 	corememory "github.com/pali-mem/pali/internal/core/memory"
 	coretenant "github.com/pali-mem/pali/internal/core/tenant"
 	embedmock "github.com/pali-mem/pali/internal/embeddings/mock"
@@ -16,6 +15,7 @@ import (
 	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
 	heuristicscorer "github.com/pali-mem/pali/internal/scorer/heuristic"
 	"github.com/pali-mem/pali/internal/vectorstore/sqlitevec"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServerRegistersExpectedTools(t *testing.T) {
@@ -25,7 +25,7 @@ func TestServerRegistersExpectedTools(t *testing.T) {
 	server, cleanup := newTestMCPServer(t)
 	defer cleanup()
 
-	session, stop := connectInMemorySession(t, ctx, server)
+	session, stop := connectInMemorySession(ctx, t, server)
 	defer stop()
 
 	tools, err := session.ListTools(ctx, &sdkmcp.ListToolsParams{})
@@ -62,7 +62,7 @@ func TestServerExposesMemoryAutopilotGuidance(t *testing.T) {
 	server, cleanup := newTestMCPServer(t)
 	defer cleanup()
 
-	session, stop := connectInMemorySession(t, ctx, server)
+	session, stop := connectInMemorySession(ctx, t, server)
 	defer stop()
 
 	initResult := session.InitializeResult()
@@ -100,7 +100,7 @@ func TestServerToolFlow(t *testing.T) {
 	server, cleanup := newTestMCPServer(t)
 	defer cleanup()
 
-	session, stop := connectInMemorySession(t, ctx, server)
+	session, stop := connectInMemorySession(ctx, t, server)
 	defer stop()
 
 	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
@@ -163,7 +163,7 @@ func TestServerUsesConfigDefaultTenantWhenInputMissing(t *testing.T) {
 	server, cleanup := newTestMCPServerWithOptions(t, Options{DefaultTenantID: "tenant_default"})
 	defer cleanup()
 
-	session, stop := connectInMemorySession(t, ctx, server)
+	session, stop := connectInMemorySession(ctx, t, server)
 	defer stop()
 
 	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
@@ -194,7 +194,7 @@ func TestServerUsesSessionTenantAfterExplicitTenant(t *testing.T) {
 	server, cleanup := newTestMCPServerWithOptions(t, Options{DefaultTenantID: "tenant_default"})
 	defer cleanup()
 
-	session, stop := connectInMemorySession(t, ctx, server)
+	session, stop := connectInMemorySession(ctx, t, server)
 	defer stop()
 
 	for _, tenantID := range []string{"tenant_default", "tenant_override"} {
@@ -238,7 +238,7 @@ func TestServerErrorsWhenTenantCannotBeResolved(t *testing.T) {
 	server, cleanup := newTestMCPServerWithOptions(t, Options{})
 	defer cleanup()
 
-	session, stop := connectInMemorySession(t, ctx, server)
+	session, stop := connectInMemorySession(ctx, t, server)
 	defer stop()
 
 	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
@@ -304,7 +304,7 @@ func decodeStructured[T any](t *testing.T, res *sdkmcp.CallToolResult) T {
 	return out
 }
 
-func connectInMemorySession(t *testing.T, ctx context.Context, server *Server) (*sdkmcp.ClientSession, func()) {
+func connectInMemorySession(ctx context.Context, t *testing.T, server *Server) (*sdkmcp.ClientSession, func()) {
 	t.Helper()
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
 
