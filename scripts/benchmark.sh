@@ -4,8 +4,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-FIXTURE="test/fixtures/memories.json"
-EVAL_SET=""
+FIXTURE="testdata/benchmarks/fixtures/release_memories.json"
+EVAL_SET="testdata/benchmarks/evals/release_curated.json"
 BACKEND="sqlite"
 OUT_DIR="test/benchmarks/results"
 SEARCH_OPS=200
@@ -37,8 +37,8 @@ Usage:
   scripts/benchmark.sh [flags]
 
 Flags:
-  --fixture <path>         Fixture JSON file (default: test/fixtures/memories.json)
-  --eval-set <path>        Optional labeled eval set used for realistic search queries
+  --fixture <path>         Fixture JSON file (default: testdata/benchmarks/fixtures/release_memories.json)
+  --eval-set <path>        Optional labeled eval set used for realistic search queries (default: testdata/benchmarks/evals/release_curated.json)
   --backend <name>         sqlite | qdrant (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
   --search-ops <n>         Number of search operations (default: 200)
@@ -64,10 +64,10 @@ Flags:
   --help                   Show this help
 
 Examples:
-  scripts/benchmark.sh --fixture test/fixtures/memories.json --backend sqlite
-  scripts/benchmark.sh --fixture test/fixtures/memories.json --search-ops 500
-  scripts/benchmark.sh --base-url http://127.0.0.1:8080 --fixture test/fixtures/memories.json
-  scripts/benchmark.sh --fixture test/fixtures/memories.json --embedding-provider lexical  # raw mode (no Ollama)
+  scripts/benchmark.sh --fixture testdata/benchmarks/fixtures/release_memories.json --backend sqlite
+  scripts/benchmark.sh --fixture testdata/benchmarks/fixtures/release_memories.json --search-ops 500
+  scripts/benchmark.sh --base-url http://127.0.0.1:8080 --fixture testdata/benchmarks/fixtures/release_memories.json
+  scripts/benchmark.sh --fixture testdata/benchmarks/fixtures/release_memories.json --embedding-provider lexical  # raw mode (no Ollama)
 EOF
 }
 
@@ -331,6 +331,8 @@ mkdir -p "$OUT_DIR"
 tmp_dir="$(mktemp -d)"
 server_pid=""
 server_log="$tmp_dir/server.log"
+config_profile_path=""
+rendered_cfg_path=""
 tmp_store_lat="$tmp_dir/store_lat_ms.txt"
 tmp_search_lat="$tmp_dir/search_lat_ms.txt"
 tmp_tenants="$tmp_dir/tenants.txt"
@@ -510,6 +512,7 @@ if [[ "$START_SERVER" -eq 1 ]]; then
     echo "ERROR: config profile file not found: $config_profile_path"
     exit 1
   fi
+  rendered_cfg_path="$cfg_path"
   go run ./cmd/configrender \
     -profile "$config_profile_path" \
     -out "$cfg_path" \
@@ -555,12 +558,31 @@ else
   fi
 fi
 
+if [[ -n "$config_profile_path" && -f "$config_profile_path" ]]; then
+  cp "$config_profile_path" "$run_dir/config.profile.yaml"
+fi
+if [[ -n "$rendered_cfg_path" && -f "$rendered_cfg_path" ]]; then
+  cp "$rendered_cfg_path" "$run_dir/config.rendered.yaml"
+fi
+
 fixture_count="$(jq 'length' "$FIXTURE")"
 if [[ "$fixture_count" -le 0 ]]; then
   echo "ERROR: fixture is empty: $FIXTURE"
   exit 1
 fi
 fixture_sha256="$(file_sha256 "$FIXTURE")"
+eval_set_sha256=""
+if [[ -n "$EVAL_SET" && -f "$EVAL_SET" ]]; then
+  eval_set_sha256="$(file_sha256 "$EVAL_SET")"
+fi
+config_profile_sha256=""
+if [[ -f "$run_dir/config.profile.yaml" ]]; then
+  config_profile_sha256="$(file_sha256 "$run_dir/config.profile.yaml")"
+fi
+rendered_config_sha256=""
+if [[ -f "$run_dir/config.rendered.yaml" ]]; then
+  rendered_config_sha256="$(file_sha256 "$run_dir/config.rendered.yaml")"
+fi
 
 jq -r '.[].tenant_id' "$FIXTURE" | tr -d '\r' | sort -u > "$tmp_tenants"
 jq -c '.[]' "$FIXTURE" > "$tmp_fixture_lines"
@@ -609,11 +631,12 @@ fi
 echo "    search ops   : $SEARCH_OPS"
 echo "    top_k        : $TOP_K"
 echo "    query source : $query_source"
-echo "    config prof  : $(resolve_profile_path)"
+echo "    config prof  : ${config_profile_path:-"(external server)"}"
 echo "    run profile  : $run_profile"
 echo "    run dir      : $run_dir"
 if [[ -n "$EVAL_SET" ]]; then
   echo "    eval set     : $EVAL_SET"
+  echo "    eval set sha : $eval_set_sha256"
 fi
 echo "    output dir   : $OUT_DIR"
 echo ""
@@ -818,7 +841,12 @@ cat > "$result_json" <<EOF
   "fixture": "$FIXTURE",
   "fixture_sha256": "$fixture_sha256",
   "eval_set": "$EVAL_SET",
+  "eval_set_sha256": "$eval_set_sha256",
   "query_source": "$query_source",
+  "config_profile": "${config_profile_path}",
+  "config_profile_sha256": "${config_profile_sha256}",
+  "rendered_config": "${rendered_cfg_path}",
+  "rendered_config_sha256": "${rendered_config_sha256}",
   "fixture_count": $fixture_count,
   "tenant_count": $tenant_count,
   "base_url": "$BASE_URL",
@@ -881,7 +909,12 @@ Embed model    : $OLLAMA_MODEL
 Fixture        : $FIXTURE
 Fixture SHA256 : $fixture_sha256
 Eval set       : ${EVAL_SET:-"(none)"}
+Eval set SHA256: ${eval_set_sha256:-"(n/a)"}
 Query source   : $query_source
+Config profile : ${config_profile_path:-"(external server)"}
+Config SHA256  : ${config_profile_sha256:-"(n/a)"}
+Rendered config: ${rendered_cfg_path:-"(external server)"}
+Rendered SHA256: ${rendered_config_sha256:-"(n/a)"}
 Fixture count  : $fixture_count
 Tenant count   : $tenant_count
 Base URL       : $BASE_URL
