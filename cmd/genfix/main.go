@@ -79,7 +79,7 @@ func main() {
 	model := flag.String("model", "phi4-mini", "Ollama model to use for generation")
 	count := flag.Int("count", 100, "Number of memories to generate")
 	tenants := flag.Int("tenants", 10, "Number of synthetic tenants")
-	out := flag.String("out", "test/fixtures/memories.json", "Output file path")
+	out := flag.String("out", "test/benchmarks/generated/memories.generated.json", "Output file path")
 	seed := flag.Int("seed", 0, "Random seed (0 = time-based)")
 	ollamaURL := flag.String("ollama", "http://localhost:11434", "Ollama base URL")
 	parallel := flag.Int("parallel", max(2, runtime.NumCPU()/2), "Parallel Ollama generate requests")

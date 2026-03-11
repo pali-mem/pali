@@ -8,17 +8,10 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
 
 	"github.com/pali-mem/pali/internal/api"
 	"github.com/pali-mem/pali/internal/config"
-	corememory "github.com/pali-mem/pali/internal/core/memory"
-	coretenant "github.com/pali-mem/pali/internal/core/tenant"
-	"github.com/pali-mem/pali/internal/embeddings"
-	palimcp "github.com/pali-mem/pali/internal/mcp"
-	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
 	"github.com/pali-mem/pali/internal/startup"
-	"github.com/pali-mem/pali/internal/wiring"
 )
 
 const (
@@ -72,84 +65,14 @@ func runAPI(cfg config.Config) {
 }
 
 func runMCP(cfg config.Config) {
-	db, err := sqliterepo.Open(context.Background(), cfg.Database.SQLiteDSN)
+	runtime, err := startup.NewMCPRuntime(cfg)
 	if err != nil {
-		log.Fatalf("open sqlite: %v", err)
+		log.Fatalf("build mcp runtime: %v", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("db close error: %v", err)
-		}
-	}()
+	defer runtime.Cleanup()
 
-	tenantRepo := sqliterepo.NewTenantRepository(db)
-	memoryRepo := sqliterepo.NewMemoryRepository(db)
-	entityFactRepo, entityFactCleanup, err := wiring.BuildEntityFactRepository(cfg, db)
-	if err != nil {
-		log.Fatalf("build entity fact repository: %v", err)
-	}
-	defer func() {
-		if err := entityFactCleanup(); err != nil {
-			log.Printf("entity fact repo close error: %v", err)
-		}
-	}()
-	vectorStore, err := wiring.BuildVectorStore(cfg, db)
-	if err != nil {
-		log.Fatalf("build vector store: %v", err)
-	}
-	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
-	if err != nil {
-		log.Fatalf("build embedder: %v", err)
-	}
-	scorer, err := wiring.BuildImportanceScorer(cfg)
-	if err != nil {
-		log.Fatalf("build scorer: %v", err)
-	}
-	infoParser, err := wiring.BuildInfoParser(cfg)
-	if err != nil {
-		log.Fatalf("build parser: %v", err)
-	}
-	decomposer, err := wiring.BuildMultiHopQueryDecomposer(cfg)
-	if err != nil {
-		log.Fatalf("build multi-hop decomposer: %v", err)
-	}
-	serviceOptions := wiring.BuildMemoryServiceOptions(cfg, infoParser, entityFactRepo, decomposer)
-	memoryService := corememory.NewService(memoryRepo, tenantRepo, vectorStore, embedder, scorer, serviceOptions...)
-	stopPostprocess := func() {}
-	if cfg.Postprocess.Enabled {
-		stop, err := memoryService.StartPostprocessWorkers(context.Background(), corememory.PostprocessWorkerOptions{
-			Enabled:      cfg.Postprocess.Enabled,
-			PollInterval: time.Duration(cfg.Postprocess.PollIntervalMS) * time.Millisecond,
-			BatchSize:    cfg.Postprocess.BatchSize,
-			WorkerCount:  cfg.Postprocess.WorkerCount,
-			Lease:        time.Duration(cfg.Postprocess.LeaseMS) * time.Millisecond,
-			MaxAttempts:  cfg.Postprocess.MaxAttempts,
-			RetryBase:    time.Duration(cfg.Postprocess.RetryBaseMS) * time.Millisecond,
-			RetryMax:     time.Duration(cfg.Postprocess.RetryMaxMS) * time.Millisecond,
-		})
-		if err != nil {
-			log.Fatalf("start postprocess workers: %v", err)
-		}
-		stopPostprocess = stop
-	}
-	defer stopPostprocess()
-	tenantService := coretenant.NewService(tenantRepo)
-
-	server, err := palimcp.NewServer(palimcp.Services{
-		Memory: memoryService,
-		Tenant: tenantService,
-	}, palimcp.Options{
-		DefaultTenantID: cfg.DefaultTenantID,
-		AuthEnabled:     cfg.Auth.Enabled,
-		Logger:          log.Default(),
-	})
-	if err != nil {
-		log.Fatalf("build mcp server: %v", err)
-	}
-
-	startup.Log(cfg, tenantRepo, memoryRepo, embedMeta)
 	log.Printf("starting pali mcp server over stdio")
-	if err := server.RunStdio(context.Background()); err != nil {
+	if err := runtime.Server.RunStdio(context.Background()); err != nil {
 		log.Fatalf("mcp server exited: %v", err)
 	}
 }
