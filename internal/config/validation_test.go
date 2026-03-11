@@ -217,3 +217,46 @@ func TestValidate_PostprocessOptions(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "postprocess.retry_base_ms")
 }
+
+func TestValidate_MultiHopGraphOptions(t *testing.T) {
+	cfg := Defaults()
+	cfg.Retrieval.MultiHop.GraphMaxHops = 0
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.multi_hop.graph_max_hops")
+
+	cfg = Defaults()
+	cfg.Retrieval.MultiHop.GraphSeedLimit = 0
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.multi_hop.graph_seed_limit")
+
+	cfg = Defaults()
+	cfg.Retrieval.MultiHop.GraphPathLimit = 0
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.multi_hop.graph_path_limit")
+
+	cfg = Defaults()
+	cfg.Retrieval.MultiHop.GraphMinScore = 1.1
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.multi_hop.graph_min_score")
+
+	cfg = Defaults()
+	cfg.Retrieval.MultiHop.GraphWeight = -0.1
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.multi_hop.graph_weight")
+}
+
+func TestValidate_CategoryImprovementFlagsAreAdditive(t *testing.T) {
+	cfg := Defaults()
+	cfg.Retrieval.AnswerTypeRoutingEnabled = true
+	cfg.Retrieval.EarlyRankRerankEnabled = true
+	cfg.Retrieval.TemporalResolverEnabled = true
+	cfg.Retrieval.OpenDomainAlternativeResolverEnabled = true
+	cfg.Parser.AnswerSpanRetentionEnabled = true
+	cfg.ProfileLayer.SupportLinksEnabled = true
+	require.NoError(t, Validate(cfg))
+}

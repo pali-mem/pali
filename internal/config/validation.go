@@ -152,6 +152,21 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("neo4j.batch_size must be > 0")
 		}
 	}
+	if cfg.Retrieval.MultiHop.GraphMaxHops < 1 || cfg.Retrieval.MultiHop.GraphMaxHops > 4 {
+		return fmt.Errorf("retrieval.multi_hop.graph_max_hops must be in [1,4]")
+	}
+	if cfg.Retrieval.MultiHop.GraphSeedLimit <= 0 {
+		return fmt.Errorf("retrieval.multi_hop.graph_seed_limit must be > 0")
+	}
+	if cfg.Retrieval.MultiHop.GraphPathLimit <= 0 {
+		return fmt.Errorf("retrieval.multi_hop.graph_path_limit must be > 0")
+	}
+	if cfg.Retrieval.MultiHop.GraphMinScore < 0 || cfg.Retrieval.MultiHop.GraphMinScore > 1 {
+		return fmt.Errorf("retrieval.multi_hop.graph_min_score must be in [0,1]")
+	}
+	if cfg.Retrieval.MultiHop.GraphWeight < 0 || cfg.Retrieval.MultiHop.GraphWeight > 1 {
+		return fmt.Errorf("retrieval.multi_hop.graph_weight must be in [0,1]")
+	}
 	if cfg.Auth.Enabled && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
 		return fmt.Errorf("auth.jwt_secret is required when auth.enabled=true")
 	}
