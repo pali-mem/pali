@@ -220,22 +220,18 @@ func (h *Handlers) Stats(c *gin.Context) {
 }
 
 func (h *Handlers) listTenantsWithCounts(c *gin.Context) ([]TenantView, error) {
-	tenants, err := h.tenantService.List(c.Request.Context(), 200)
+	tenants, err := h.tenantService.ListWithStats(c.Request.Context(), 200)
 	if err != nil {
 		return nil, err
 	}
 
 	out := make([]TenantView, 0, len(tenants))
 	for _, t := range tenants {
-		stats, err := h.tenantService.Stats(c.Request.Context(), t.ID)
-		if err != nil {
-			return nil, err
-		}
 		out = append(out, TenantView{
-			ID:          t.ID,
-			Name:        t.Name,
-			CreatedAt:   t.CreatedAt.Format("2006-01-02 15:04"),
-			MemoryCount: stats.MemoryCount,
+			ID:          t.Tenant.ID,
+			Name:        t.Tenant.Name,
+			CreatedAt:   t.Tenant.CreatedAt.Format("2006-01-02 15:04"),
+			MemoryCount: t.Stats.MemoryCount,
 		})
 	}
 	return out, nil

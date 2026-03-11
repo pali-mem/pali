@@ -241,6 +241,18 @@ func TestMemorySearchFilters(t *testing.T) {
 	r.ServeHTTP(invalidTierW, invalidTierReq)
 	require.Equal(t, http.StatusBadRequest, invalidTierW.Code)
 
+	entityKindReq := httptest.NewRequest(http.MethodPost, "/v1/memory/search", bytes.NewBufferString(`{"tenant_id":"tenant_filters","query":"user likes","top_k":10,"retrieval_kind":"entity"}`))
+	entityKindReq.Header.Set("Content-Type", "application/json")
+	entityKindW := httptest.NewRecorder()
+	r.ServeHTTP(entityKindW, entityKindReq)
+	require.Equal(t, http.StatusOK, entityKindW.Code)
+
+	invalidRetrievalKindReq := httptest.NewRequest(http.MethodPost, "/v1/memory/search", bytes.NewBufferString(`{"tenant_id":"tenant_filters","query":"user likes","top_k":10,"retrieval_kind":"graph"}`))
+	invalidRetrievalKindReq.Header.Set("Content-Type", "application/json")
+	invalidRetrievalKindW := httptest.NewRecorder()
+	r.ServeHTTP(invalidRetrievalKindW, invalidRetrievalKindReq)
+	require.Equal(t, http.StatusBadRequest, invalidRetrievalKindW.Code)
+
 	invalidMinScoreReq := httptest.NewRequest(http.MethodPost, "/v1/memory/search", bytes.NewBufferString(`{"tenant_id":"tenant_filters","query":"user likes","top_k":10,"min_score":1.5}`))
 	invalidMinScoreReq.Header.Set("Content-Type", "application/json")
 	invalidMinScoreW := httptest.NewRecorder()
