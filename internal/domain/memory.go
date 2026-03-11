@@ -28,6 +28,19 @@ const (
 	MemoryKindEvent       MemoryKind = "event"
 )
 
+type MemoryAnswerMetadata struct {
+	AnswerKind         string
+	SourceSentence     string
+	SurfaceSpan        string
+	TemporalAnchor     string
+	RelativeTimePhrase string
+	ResolvedTimeStart  string
+	ResolvedTimeEnd    string
+	TimeGranularity    string
+	SupportMemoryIDs   []string
+	SupportLines       []string
+}
+
 type Memory struct {
 	ID               string
 	TenantID         string
@@ -45,6 +58,7 @@ type Memory struct {
 	ExtractorVersion string
 	Importance       float64
 	RecallCount      int
+	AnswerMetadata   MemoryAnswerMetadata
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	LastAccessedAt   time.Time
@@ -52,12 +66,36 @@ type Memory struct {
 }
 
 type EntityFact struct {
-	ID          string
-	TenantID    string
-	Entity      string
-	Relation    string
-	RelationRaw string
-	Value       string
-	MemoryID    string
-	CreatedAt   time.Time
+	ID                  string
+	TenantID            string
+	Entity              string
+	Relation            string
+	RelationRaw         string
+	Value               string
+	MemoryID            string
+	CreatedAt           time.Time
+	ObservedAt          time.Time
+	ValidFrom           time.Time
+	ValidTo             *time.Time
+	InvalidatedByFactID string
+	Confidence          float64
+}
+
+type EntityFactPathQuery struct {
+	SeedEntities     []string
+	RelationHints    []string
+	MaxHops          int
+	Limit            int
+	TemporalValidity bool
+}
+
+type EntityFactPathCandidate struct {
+	MemoryID       string
+	FactIDs        []string
+	Entities       []string
+	Relations      []string
+	PathLength     int
+	SupportCount   int
+	TemporalValid  bool
+	TraversalScore float64
 }

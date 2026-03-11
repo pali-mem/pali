@@ -196,11 +196,39 @@ type EntityFactBatchRepository interface {
 	StoreBatch(ctx context.Context, facts []EntityFact) ([]EntityFact, error)
 }
 
+// EntityFactInvalidationRepository is an optional extension for repositories
+// that can close out older singleton facts when a newer canonical fact wins.
+type EntityFactInvalidationRepository interface {
+	InvalidateEntityRelation(
+		ctx context.Context,
+		tenantID, entity, relation, activeValue, invalidatedByFactID string,
+		validTo time.Time,
+	) error
+}
+
+// EntityFactGraphRepository is an optional extension for repositories that
+// can traverse graph neighborhoods around seed entities.
+type EntityFactGraphRepository interface {
+	ListByEntityNeighborhood(ctx context.Context, tenantID string, seeds []string, limit int) ([]EntityFact, error)
+}
+
+// EntityFactPathRepository is an optional extension for repositories that
+// can return path-aware graph candidates for multi-hop retrieval.
+type EntityFactPathRepository interface {
+	ListByEntityPaths(ctx context.Context, tenantID string, query EntityFactPathQuery) ([]EntityFactPathCandidate, error)
+}
+
 type TenantRepository interface {
 	Create(ctx context.Context, t Tenant) (Tenant, error)
 	Exists(ctx context.Context, tenantID string) (bool, error)
 	MemoryCount(ctx context.Context, tenantID string) (int64, error)
 	List(ctx context.Context, limit int) ([]Tenant, error)
+}
+
+// TenantMemoryCountsRepository is an optional extension for repositories that
+// can return per-tenant memory totals in one call.
+type TenantMemoryCountsRepository interface {
+	ListMemoryCounts(ctx context.Context, tenantIDs []string) (map[string]int64, error)
 }
 
 // TenantCountRepository is an optional extension for repositories that can

@@ -56,13 +56,14 @@ type StoreMemoryBatchResponse struct {
 
 // SearchMemoryRequest is the request payload for POST /v1/memory/search.
 type SearchMemoryRequest struct {
-	TenantID     string   `json:"tenant_id"`
-	Query        string   `json:"query"`
-	TopK         int      `json:"top_k"`
-	MinScore     float64  `json:"min_score,omitempty"`
-	Tiers        []string `json:"tiers,omitempty"`
-	Kinds        []string `json:"kinds,omitempty"`
-	DisableTouch bool     `json:"disable_touch,omitempty"`
+	TenantID      string   `json:"tenant_id"`
+	Query         string   `json:"query"`
+	TopK          int      `json:"top_k"`
+	MinScore      float64  `json:"min_score,omitempty"`
+	Tiers         []string `json:"tiers,omitempty"`
+	Kinds         []string `json:"kinds,omitempty"`
+	RetrievalKind string   `json:"retrieval_kind,omitempty"`
+	DisableTouch  bool     `json:"disable_touch,omitempty"`
 }
 
 // MemoryResponse is a single memory item returned by search.
