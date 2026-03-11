@@ -27,7 +27,7 @@ For now, this repo tracks a **no-judge** adaptation:
 
 ```bash
 research/run_ollama_vs_lexical.sh \
-  --fixture test/fixtures/memories_real_phi4_combined.json \
+  --fixture test/benchmarks/generated/memories_real_phi4_combined.json \
   --max-queries 200 \
   --top-k 10 \
   --ollama-model all-minilm
@@ -49,8 +49,8 @@ Optional curated eval-set:
 
 ```bash
 research/run_ollama_vs_lexical.sh \
-  --fixture test/fixtures/memories_real_phi4_combined.json \
-  --eval-set test/fixtures/retrieval_eval.sample.json
+  --fixture test/benchmarks/generated/memories_real_phi4_combined.json \
+  --eval-set testdata/benchmarks/evals/release_curated.json
 ```
 
 ## Interpreting "Benchmark Quality"

@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-FIXTURE="test/fixtures/memories_real_phi4_combined.json"
+FIXTURE="test/benchmarks/generated/memories_real_phi4_combined.json"
 EVAL_SET=""
 BACKEND="sqlite"
 TOP_K=10
@@ -20,7 +20,7 @@ Usage:
   research/run_ollama_vs_lexical.sh [flags]
 
 Flags:
-  --fixture <path>       Fixture JSON (default: test/fixtures/memories_real_phi4_combined.json)
+  --fixture <path>       Fixture JSON (default: test/benchmarks/generated/memories_real_phi4_combined.json)
   --eval-set <path>      Optional labeled eval set (recommended for stronger signal)
   --backend <name>       sqlite (default: sqlite)
   --top-k <n>            top_k for retrieval eval (default: 10)
