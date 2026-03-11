@@ -13,11 +13,10 @@ import (
 	"github.com/schollz/progressbar/v2"
 )
 
-// parserBatchConcurrency is the max number of parallel parser calls issued
-// when processing a batch. Network-bound parsers (OpenRouter, Ollama) benefit
-// from high concurrency; the heuristic parser is CPU-bound but fast enough
-// that 8 concurrent goroutines won't cause contention.
-const parserBatchConcurrency = 8
+const (
+	defaultParserBatchConcurrency    = 8
+	openRouterParserBatchConcurrency = 16
+)
 
 type parserBatchItem struct {
 	item             preparedStoreInput
@@ -80,7 +79,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		)
 	}
 	{
-		sem := make(chan struct{}, parserBatchConcurrency)
+		sem := make(chan struct{}, s.parserBatchConcurrency())
 		var wg sync.WaitGroup
 		for i, item := range items {
 			wg.Add(1)
@@ -394,6 +393,18 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	return out, nil
 }
 
+func (s *Service) parserBatchConcurrency() int {
+	if s == nil {
+		return defaultParserBatchConcurrency
+	}
+	switch strings.ToLower(strings.TrimSpace(s.parser.Provider)) {
+	case "openrouter":
+		return openRouterParserBatchConcurrency
+	default:
+		return defaultParserBatchConcurrency
+	}
+}
+
 func (s *Service) storeBatchWithParserSequential(ctx context.Context, items []preparedStoreInput) ([]domain.Memory, error) {
 	out := make([]domain.Memory, 0, len(items))
 	for _, item := range items {
@@ -460,14 +471,15 @@ func (s *Service) applyParsedFactWithPending(
 	tupleKey, _ := normalizedRelationTupleKey(fact)
 	*pending = append(*pending, parserPendingWrite{
 		memory: applyIdentityToMemory(domain.Memory{
-			TenantID:      tenantID,
-			Content:       content,
-			QueryViewText: fact.QueryViewText,
-			Tier:          domain.MemoryTierSemantic,
-			Kind:          kind,
-			Tags:          mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
-			Source:        appendDerivedSource(baseSource, "parser"),
-			CreatedBy:     domain.MemoryCreatedBySystem,
+			TenantID:       tenantID,
+			Content:        content,
+			QueryViewText:  fact.QueryViewText,
+			Tier:           domain.MemoryTierSemantic,
+			Kind:           kind,
+			Tags:           mergeTags(baseTags, append(append([]string{}, fact.Tags...), "memory_op:add", "memory_state:active")...),
+			Source:         appendDerivedSource(baseSource, "parser"),
+			CreatedBy:      domain.MemoryCreatedBySystem,
+			AnswerMetadata: fact.AnswerMetadata,
 		}, identity),
 		embedding:        append([]float32{}, embedding...),
 		relationTupleKey: tupleKey,

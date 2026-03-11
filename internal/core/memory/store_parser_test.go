@@ -274,6 +274,50 @@ func TestStoreBatchWithParserWritesEntityFacts(t *testing.T) {
 	require.NotEmpty(t, entityRepo.stored[0].MemoryID)
 }
 
+func TestStoreBatchWithParserRetainsAnswerMetadata(t *testing.T) {
+	repo := &structuredRepoStub{}
+	vector := &structuredVectorStub{}
+	embedder := &countingBatchEmbedder{}
+	svc := NewService(
+		repo,
+		tenantRepoStub{existsByID: map[string]bool{"tenant_1": true}},
+		vector,
+		embedder,
+		scorerStub{},
+		ParserOptions{
+			Enabled:                    true,
+			StoreRawTurn:               false,
+			MaxFacts:                   4,
+			DedupeThreshold:            0.88,
+			UpdateThreshold:            0.94,
+			AnswerSpanRetentionEnabled: true,
+		},
+		WithInfoParser(parserStub{
+			facts: []ParsedFact{
+				{
+					Content:  "Caroline attended a LGBTQ support group.",
+					Kind:     domain.MemoryKindEvent,
+					Entity:   "Caroline",
+					Relation: "event",
+					Value:    "LGBTQ support group",
+				},
+			},
+		}),
+	)
+
+	stored, err := svc.StoreBatch(context.Background(), []StoreInput{
+		{TenantID: "tenant_1", Content: "[time:1:56 pm on 8 May, 2023] Caroline: I attended a LGBTQ support group yesterday.", Kind: domain.MemoryKindRawTurn},
+		{TenantID: "tenant_1", Content: "[time:9:10 am on 9 May, 2023] Caroline: The support group was inspiring.", Kind: domain.MemoryKindRawTurn},
+	})
+	require.NoError(t, err)
+	require.Len(t, stored, 2)
+	require.Len(t, repo.stored, 1)
+	require.Equal(t, "entity", repo.stored[0].AnswerMetadata.AnswerKind)
+	require.Equal(t, "LGBTQ support group", repo.stored[0].AnswerMetadata.SurfaceSpan)
+	require.Equal(t, "8 May 2023", repo.stored[0].AnswerMetadata.TemporalAnchor)
+	require.NotEmpty(t, repo.stored[0].AnswerMetadata.SourceSentence)
+}
+
 func TestStoreWithParserDedupesExistingFact(t *testing.T) {
 	repo := &structuredRepoStub{}
 	vector := &structuredVectorStub{}
@@ -1122,7 +1166,7 @@ func TestPrepareParsedFactsForStoreSplitsCompoundFactWithRepeatedSubject(t *test
 			Content: source,
 			Kind:    domain.MemoryKindObservation,
 		},
-	})
+	}, false)
 	require.Len(t, prepared, 2)
 	require.Equal(t, "Alice likes tea", prepared[0].Content)
 	require.Equal(t, "Alice moved to Austin.", prepared[1].Content)
@@ -1135,7 +1179,7 @@ func TestPrepareParsedFactsForStoreKeepsCompoundFactWithImplicitSubject(t *testi
 			Content: source,
 			Kind:    domain.MemoryKindObservation,
 		},
-	})
+	}, false)
 	require.Len(t, prepared, 1)
 	require.Equal(t, "Alice is vegetarian and avoids dairy.", prepared[0].Content)
 }
@@ -1149,9 +1193,56 @@ func TestPrepareParsedFactsForStoreBackfillsUserEntityWhenRelationPresent(t *tes
 			Relation: "tool",
 			Value:    "TypeScript",
 		},
-	})
+	}, false)
 	require.Len(t, prepared, 1)
 	require.Equal(t, "user", strings.ToLower(prepared[0].Entity))
 	require.Equal(t, "tool", prepared[0].Relation)
 	require.Equal(t, "TypeScript", prepared[0].Value)
+}
+
+func TestPrepareParsedFactsForStoreRetainsAnswerMetadataWhenEnabled(t *testing.T) {
+	source := `[time:1:56 pm on 8 May, 2023] Caroline: I went to the "LGBTQ support group" yesterday.`
+	prepared := prepareParsedFactsForStore(source, []ParsedFact{
+		{
+			Content: `Caroline went to the "LGBTQ support group" yesterday.`,
+			Kind:    domain.MemoryKindEvent,
+		},
+	}, true)
+	require.Len(t, prepared, 1)
+	require.Equal(t, "quote", prepared[0].AnswerMetadata.AnswerKind)
+	require.Equal(t, "LGBTQ support group", prepared[0].AnswerMetadata.SurfaceSpan)
+	require.Equal(t, "8 May 2023", prepared[0].AnswerMetadata.TemporalAnchor)
+	require.Equal(t, "yesterday", strings.ToLower(prepared[0].AnswerMetadata.RelativeTimePhrase))
+}
+
+func TestPrepareParsedFactsForStoreRejectsParserScaffoldTimestampFact(t *testing.T) {
+	source := `[time:11:41 am on 6 November, 2023] Tim: That is one of my favorite fantasy shows.`
+	prepared := prepareParsedFactsForStore(source, []ParsedFact{
+		{
+			Content: `Tim made this statement said that 11:41 am on 6 November 2023.`,
+			Kind:    domain.MemoryKindEvent,
+			Entity:  "Tim",
+			Value:   "11:41 am on 6 November 2023",
+		},
+	}, true)
+	require.Empty(t, prepared)
+}
+
+func TestPrepareParsedFactsForStoreDropsGenericQueryViewLines(t *testing.T) {
+	source := "Nate is providing custom controller decorations for everyone."
+	prepared := prepareParsedFactsForStore(source, []ParsedFact{
+		{
+			Content:  source,
+			Kind:     domain.MemoryKindEvent,
+			Entity:   "Nate",
+			Relation: "event",
+			Value:    "custom controller decorations for everyone",
+		},
+	}, false)
+	require.Len(t, prepared, 1)
+	require.Equal(
+		t,
+		"when did Nate custom controller decorations for everyone\nwhat event did Nate attend custom controller decorations for everyone\nNate custom controller decorations for everyone",
+		prepared[0].QueryViewText,
+	)
 }

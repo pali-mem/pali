@@ -18,6 +18,7 @@ type Service struct {
 	queryCache *queryEmbeddingCache
 
 	structured                 StructuredMemoryOptions
+	retrieval                  RetrievalBehaviorOptions
 	ranking                    RankingOptions
 	rerank                     RerankOptions
 	multiHop                   MultiHopOptions
@@ -35,6 +36,14 @@ type StructuredMemoryOptions struct {
 	DualWriteObservations bool
 	DualWriteEvents       bool
 	MaxObservations       int
+}
+
+type RetrievalBehaviorOptions struct {
+	AnswerTypeRoutingEnabled             bool
+	EarlyRankRerankEnabled               bool
+	TemporalResolverEnabled              bool
+	OpenDomainAlternativeResolverEnabled bool
+	ProfileSupportLinksEnabled           bool
 }
 
 type RankingOptions struct {
@@ -65,31 +74,41 @@ type RerankOptions struct {
 }
 
 type MultiHopOptions struct {
-	EntityFactBridgeEnabled bool
-	LLMDecompositionEnabled bool
-	MaxDecompositionQueries int
-	EnablePairwiseRerank    bool
-	TokenExpansionFallback  bool
+	EntityFactBridgeEnabled    bool
+	LLMDecompositionEnabled    bool
+	MaxDecompositionQueries    int
+	EnablePairwiseRerank       bool
+	TokenExpansionFallback     bool
+	GraphPathEnabled           bool
+	GraphMaxHops               int
+	GraphSeedLimit             int
+	GraphPathLimit             int
+	GraphMinScore              float64
+	GraphWeight                float64
+	GraphTemporalValidity      bool
+	GraphSingletonInvalidation bool
 }
 
 type ParserOptions struct {
-	Enabled         bool
-	Provider        string
-	Model           string
-	StoreRawTurn    bool
-	MaxFacts        int
-	DedupeThreshold float64
-	UpdateThreshold float64
+	Enabled                    bool
+	Provider                   string
+	Model                      string
+	StoreRawTurn               bool
+	MaxFacts                   int
+	DedupeThreshold            float64
+	UpdateThreshold            float64
+	AnswerSpanRetentionEnabled bool
 }
 
 type ParsedFact struct {
-	Content       string
-	QueryViewText string
-	Kind          domain.MemoryKind
-	Tags          []string
-	Entity        string
-	Relation      string
-	Value         string
+	Content        string
+	QueryViewText  string
+	Kind           domain.MemoryKind
+	Tags           []string
+	Entity         string
+	Relation       string
+	Value          string
+	AnswerMetadata domain.MemoryAnswerMetadata
 }
 
 type InfoParser interface {
@@ -140,6 +159,13 @@ func (o RankingOptions) apply(s *Service) {
 		return
 	}
 	s.ranking = normalizeRankingOptions(o)
+}
+
+func (o RetrievalBehaviorOptions) apply(s *Service) {
+	if s == nil {
+		return
+	}
+	s.retrieval = normalizeRetrievalBehaviorOptions(o)
 }
 
 func (o RerankOptions) apply(s *Service) {
@@ -253,25 +279,44 @@ func defaultRankingOptions() RankingOptions {
 	}
 }
 
+func defaultRetrievalBehaviorOptions() RetrievalBehaviorOptions {
+	return RetrievalBehaviorOptions{
+		AnswerTypeRoutingEnabled:             false,
+		EarlyRankRerankEnabled:               false,
+		TemporalResolverEnabled:              false,
+		OpenDomainAlternativeResolverEnabled: false,
+		ProfileSupportLinksEnabled:           false,
+	}
+}
+
 func defaultParserOptions() ParserOptions {
 	return ParserOptions{
-		Enabled:         false,
-		Provider:        "heuristic",
-		Model:           "",
-		StoreRawTurn:    true,
-		MaxFacts:        4,
-		DedupeThreshold: 0.88,
-		UpdateThreshold: 0.94,
+		Enabled:                    false,
+		Provider:                   "heuristic",
+		Model:                      "",
+		StoreRawTurn:               true,
+		MaxFacts:                   4,
+		DedupeThreshold:            0.88,
+		UpdateThreshold:            0.94,
+		AnswerSpanRetentionEnabled: false,
 	}
 }
 
 func defaultMultiHopOptions() MultiHopOptions {
 	return MultiHopOptions{
-		EntityFactBridgeEnabled: true,
-		LLMDecompositionEnabled: false,
-		MaxDecompositionQueries: 3,
-		EnablePairwiseRerank:    true,
-		TokenExpansionFallback:  true,
+		EntityFactBridgeEnabled:    true,
+		LLMDecompositionEnabled:    false,
+		MaxDecompositionQueries:    3,
+		EnablePairwiseRerank:       true,
+		TokenExpansionFallback:     true,
+		GraphPathEnabled:           false,
+		GraphMaxHops:               2,
+		GraphSeedLimit:             12,
+		GraphPathLimit:             128,
+		GraphMinScore:              0.12,
+		GraphWeight:                0.25,
+		GraphTemporalValidity:      false,
+		GraphSingletonInvalidation: false,
 	}
 }
 
@@ -299,6 +344,11 @@ func normalizeRankingOptions(in RankingOptions) RankingOptions {
 	if out.Match.Recency+out.Match.Relevance+out.Match.Importance+out.Match.QueryOverlap+out.Match.Routing == 0 {
 		out.Match = defaultRankingOptions().Match
 	}
+	return out
+}
+
+func normalizeRetrievalBehaviorOptions(in RetrievalBehaviorOptions) RetrievalBehaviorOptions {
+	out := in
 	return out
 }
 
@@ -343,6 +393,27 @@ func normalizeMultiHopOptions(in MultiHopOptions) MultiHopOptions {
 	if out.MaxDecompositionQueries <= 0 {
 		out.MaxDecompositionQueries = def.MaxDecompositionQueries
 	}
+	if out.GraphMaxHops <= 0 {
+		out.GraphMaxHops = def.GraphMaxHops
+	}
+	if out.GraphSeedLimit <= 0 {
+		out.GraphSeedLimit = def.GraphSeedLimit
+	}
+	if out.GraphPathLimit <= 0 {
+		out.GraphPathLimit = def.GraphPathLimit
+	}
+	if out.GraphMinScore < 0 {
+		out.GraphMinScore = 0
+	}
+	if out.GraphMinScore > 1 {
+		out.GraphMinScore = 1
+	}
+	if out.GraphWeight < 0 {
+		out.GraphWeight = 0
+	}
+	if out.GraphWeight > 1 {
+		out.GraphWeight = 1
+	}
 	return out
 }
 
@@ -382,6 +453,7 @@ func NewService(
 		scorer:     scorer,
 		queryCache: newQueryEmbeddingCache(defaultQueryEmbeddingCacheCapacity),
 		structured: defaultStructuredMemoryOptions(),
+		retrieval:  defaultRetrievalBehaviorOptions(),
 		ranking:    defaultRankingOptions(),
 		rerank:     defaultRerankOptions(),
 		multiHop:   defaultMultiHopOptions(),
@@ -394,6 +466,7 @@ func NewService(
 		opt.apply(svc)
 	}
 	svc.ranking = normalizeRankingOptions(svc.ranking)
+	svc.retrieval = normalizeRetrievalBehaviorOptions(svc.retrieval)
 	svc.rerank = normalizeRerankOptions(svc.rerank)
 	svc.multiHop = normalizeMultiHopOptions(svc.multiHop)
 	svc.parser = normalizeParserOptions(svc.parser)
