@@ -94,37 +94,30 @@ Operational notes:
 ```mermaid
 flowchart TB
     C["Clients"]
-
     subgraph Ingress["Ingress"]
         direction LR
         REST["REST API"] & MCP["MCP Server"] & DASH["Dashboard"]
     end
-
     subgraph Auth["Auth"]
         direction LR
         A["Tenant Resolution"] & T["Tenant Service"]
     end
-
     subgraph Core["Core Services"]
         direction LR
         MS["Memory Service"] & PP["Postprocess Workers"]
     end
-
     subgraph Retrieval["Retrieval"]
         direction LR
         RET["Fusion RRF"] --> RERANK["WMR Reranker"]
     end
-
     subgraph Providers["Providers"]
         direction LR
-        EMB["Embeddings\nlexical · ollama · onnx"] & SCORE["Scorer\nheuristic · ollama"] & PARSER["Parser\nheuristic · ollama"]
+        EMB["Embeddings"] & SCORE["Scorer"] & PARSER["Parser"]
     end
-
     subgraph Storage["Storage"]
         direction LR
         SQLITE["SQLite"] & QDRANT["Qdrant"] & NEO4J["Neo4j"]
     end
-
     C --> Ingress
     Ingress --> Auth
     Auth --> Core

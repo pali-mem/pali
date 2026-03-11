@@ -46,7 +46,7 @@ Flags:
   --host <ip>              Server host for auto-start mode (default: 127.0.0.1)
   --port <port>            Server port for auto-start mode (default: 18080)
   --base-url <url>         Use an already-running server, disables auto-start
-  --embedding-provider <p> ollama | onnx | lexical | mock (default: ollama)
+  --embedding-provider <p> ollama | onnx | lexical | mock | openrouter (default: ollama)
   --entity-fact-backend <b> sqlite | neo4j (default: from selected profile)
   --config-profile <path>  Base provider profile YAML (default: auto from provider/backend)
   --embedding-model <name> Ollama model name (default: all-minilm)
@@ -68,6 +68,7 @@ Examples:
   scripts/benchmark.sh --fixture testdata/benchmarks/fixtures/release_memories.json --search-ops 500
   scripts/benchmark.sh --base-url http://127.0.0.1:8080 --fixture testdata/benchmarks/fixtures/release_memories.json
   scripts/benchmark.sh --fixture testdata/benchmarks/fixtures/release_memories.json --embedding-provider lexical  # raw mode (no Ollama)
+  scripts/benchmark.sh --fixture testdata/benchmarks/fixtures/release_memories.json --embedding-provider openrouter  # requires OPENROUTER_API_KEY
 EOF
 }
 
@@ -224,10 +225,10 @@ case "$BACKEND" in
 esac
 
 case "$EMBEDDING_PROVIDER" in
-  ollama|onnx|mock|lexical)
+  ollama|onnx|mock|lexical|openrouter)
     ;;
   *)
-    echo "ERROR: --embedding-provider must be one of: ollama, onnx, mock, lexical"
+    echo "ERROR: --embedding-provider must be one of: ollama, onnx, mock, lexical, openrouter"
     exit 1
     ;;
 esac
@@ -310,6 +311,9 @@ resolve_profile_path() {
   case "${BACKEND}:${EMBEDDING_PROVIDER}" in
     qdrant:ollama)
       printf 'test/config/providers/qdrant-ollama.yaml\n'
+      ;;
+    *:openrouter)
+      printf 'test/config/providers/openrouter.yaml\n'
       ;;
     *:mock)
       printf 'test/config/providers/mock.yaml\n'

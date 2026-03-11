@@ -1,6 +1,8 @@
 APP=pali
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
 
-.PHONY: run mcp setup build test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-freshness dead-code-sweep release-gate
+.PHONY: run mcp setup build install test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-freshness dead-code-sweep release-gate
 
 run:
 	go run ./cmd/pali -config pali.yaml
@@ -13,6 +15,10 @@ setup:
 
 build:
 	go build -o bin/$(APP) ./cmd/pali
+
+install: build
+	install -d "$(BINDIR)"
+	install -m 0755 "bin/$(APP)" "$(BINDIR)/$(APP)"
 
 # Unit tests only (package-level, no tags)
 test:

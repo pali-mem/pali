@@ -1,11 +1,20 @@
 # Pali Benchmarks
 
+Pali is infrastructure-first memory software, not a single locked product profile. Out of the box, defaults prioritize reliable local bring-up and operability over peak retrieval quality. Expect tuning (providers, scoring, parser/routing flags, vector backends, and data curation) as part of real deployments.
+
+Recent benchmark snapshots from this workspace (March 11, 2026):
+
+| Lane | Backend / Embedding | Workload | Key Metrics |
+|---|---|---|---|
+| release retrieval smoke | `sqlite` / `lexical` | curated fixture (8 memories), `top_k=5`, 8 queries | `Top1HitRate=1.000`, `Top5Accuracy=1.000`, `Recall@5=1.000` |
+| release throughput smoke | `sqlite` / `lexical` | curated fixture (8 memories), 40 search ops | store `128.547 ops/s`, search `36.499 ops/s` |
+| scaled throughput baseline | `sqlite` / `lexical` | generated fixture (10,000 memories, 250 tenants), 2,000 search ops, `top_k=10` | store `875.033 ops/s`, search `18.702 ops/s`, search `p95=63.158ms` |
+| research LOCOMO basic | `sqlite` / `lexical` | LOCOMO-derived fixture (5,882 rows), 200 eval queries, `top_k=10` | `Recall@10=0.4776`, `nDCG@10=0.3352`, `MRR=0.3097` |
+
 Pali has two benchmark lanes:
 
 - release benchmarks on a checked-in canonical fixture and eval set
 - research benchmarks on larger external datasets such as LOCOMO
-
-Only the release lane should drive v0.1 defaults and go or no-go decisions.
 
 ## Canonical Release Assets
 
@@ -19,7 +28,9 @@ Use these wrappers instead of rebuilding commands by hand:
 
 - `test/benchmarks/profiles/release-curated-ollama.sh`
 - `test/benchmarks/profiles/release-curated-lexical.sh`
+- `test/benchmarks/profiles/release-curated-openrouter.sh`
 - `test/benchmarks/profiles/throughput-ollama.sh`
+- `test/benchmarks/profiles/throughput-lexical.sh`
 
 Every benchmark run now copies both config inputs into the result directory:
 
@@ -63,6 +74,18 @@ Throughput run:
 
 ```bash
 bash test/benchmarks/profiles/throughput-ollama.sh
+```
+
+OpenRouter retrieval run (requires `OPENROUTER_API_KEY`):
+
+```bash
+bash test/benchmarks/profiles/release-curated-openrouter.sh
+```
+
+Local no-dependency throughput run:
+
+```bash
+bash test/benchmarks/profiles/throughput-lexical.sh
 ```
 
 Direct script form:

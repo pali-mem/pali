@@ -3,6 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  else
+    echo "ERROR: Python interpreter not found (python3 or python required)"
+    exit 1
+  fi
+fi
+
 echo "==> Dead-code and artifact sweep"
 
 tracked_artifacts="$(git ls-files \
@@ -20,7 +32,7 @@ echo "Tracked artifact policy: clean"
 
 echo ""
 echo "Potential orphan references (manual review list):"
-python - <<'PY'
+"$PYTHON_BIN" - <<'PY'
 from __future__ import annotations
 
 import subprocess

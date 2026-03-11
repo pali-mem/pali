@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Macos files
+.DS_Store
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -62,4 +65,6 @@ genfix
 .vscode/
 
 
-# Todo files
+# Test files
+
+test/fixtures/

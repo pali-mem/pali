@@ -16,6 +16,21 @@
 go build -o bin/pali ./cmd/pali
 ```
 
+Optional install to PATH:
+
+```bash
+make install
+pali -config /etc/pali/pali.yaml
+```
+
+User-local PATH install (no sudo):
+
+```bash
+make install PREFIX="$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+pali -config pali.yaml
+```
+
 ## Configure
 
 1. Bootstrap the config file you want to run:

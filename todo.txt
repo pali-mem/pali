@@ -1,2 +1,0 @@
-make sure our final neo4j imnpelemntion doesn't have such low results(maybe something wrong with how we are doing entiries)]
--> after that plug this into evel and see if multi hop jumps or not proerply!

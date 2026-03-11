@@ -3,6 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  else
+    echo "ERROR: Python interpreter not found (python3 or python required)"
+    exit 1
+  fi
+fi
+
 tmp_dir="$(mktemp -d)"
 cleanup_api() {
   :
@@ -47,7 +59,7 @@ case "$(uname -s)" in
     ;;
 esac
 go build -o "$api_bin" ./cmd/pali
-if ! python - <<'PY' "$(to_host_path "$api_bin")" "$(to_host_path "$rendered_cfg")" "$(to_host_path "$tmp_dir/api.log")"
+if ! "$PYTHON_BIN" - <<'PY' "$(to_host_path "$api_bin")" "$(to_host_path "$rendered_cfg")" "$(to_host_path "$tmp_dir/api.log")"
 from __future__ import annotations
 
 import subprocess

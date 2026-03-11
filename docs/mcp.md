@@ -87,7 +87,6 @@ Run:
 go test ./internal/mcp -v
 ```
 
-## Human Testing Checklist
 
 1. Start MCP server:
    - `go run ./cmd/pali mcp run -config pali.yaml`

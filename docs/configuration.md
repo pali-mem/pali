@@ -96,6 +96,14 @@ retrieval:
     max_decomposition_queries: 3
     enable_pairwise_rerank: true
     token_expansion_fallback: true
+    graph_path_enabled: false
+    graph_max_hops: 2
+    graph_seed_limit: 12
+    graph_path_limit: 128
+    graph_min_score: 0.12
+    graph_weight: 0.25
+    graph_temporal_validity: false
+    graph_singleton_invalidation: false
 
 parser:
   enabled: false
