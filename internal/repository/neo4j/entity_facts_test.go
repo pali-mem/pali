@@ -140,6 +140,45 @@ func TestListByEntityRelation_ValidationAndDefaults(t *testing.T) {
 	require.Contains(t, err.Error(), "not initialized")
 }
 
+func TestListByEntityPaths_ValidationAndDefaults(t *testing.T) {
+	repo := &EntityFactRepository{}
+
+	_, err := repo.ListByEntityPaths(context.Background(), "", domain.EntityFactPathQuery{
+		SeedEntities: []string{"alice"},
+	})
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+
+	paths, err := repo.ListByEntityPaths(context.Background(), "tenant_1", domain.EntityFactPathQuery{})
+	require.NoError(t, err)
+	require.Empty(t, paths)
+
+	_, err = repo.ListByEntityPaths(context.Background(), " tenant_1 ", domain.EntityFactPathQuery{
+		SeedEntities: []string{" Alice "},
+		MaxHops:      0,
+		Limit:        0,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not initialized")
+}
+
+func TestInvalidateEntityRelation_ValidationAndDefaults(t *testing.T) {
+	repo := &EntityFactRepository{}
+	_, err := repo.ListByEntityRelation(context.Background(), "", "alice", "role", 10)
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+
+	err = repo.InvalidateEntityRelation(
+		context.Background(),
+		" tenant_1 ",
+		" Alice ",
+		" ROLE ",
+		"engineer",
+		"ef_new",
+		time.Now().UTC(),
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not initialized")
+}
+
 func TestNormalizeEntityFactHelpers(t *testing.T) {
 	require.Equal(t, "alice johnson", normalizeEntityFactKey("  Alice   JOHNSON  "))
 	require.Equal(t, "favorite color", normalizeEntityFactKey(" Favorite   Color "))
@@ -158,6 +197,11 @@ func TestScanEntityFactRecord_Success(t *testing.T) {
 			"relation_raw",
 			"value",
 			"memory_id",
+			"observed_at_ns",
+			"valid_from_ns",
+			"valid_to_ns",
+			"invalidated_by_fact_id",
+			"confidence",
 			"created_at_ns",
 		},
 		Values: []any{
@@ -168,6 +212,11 @@ func TestScanEntityFactRecord_Success(t *testing.T) {
 			"job_title",
 			"engineer",
 			"mem_1",
+			now.UnixNano(),
+			now.UnixNano(),
+			int64(0),
+			"",
+			0.91,
 			now.UnixNano(),
 		},
 	}
@@ -181,6 +230,9 @@ func TestScanEntityFactRecord_Success(t *testing.T) {
 	require.Equal(t, "job_title", fact.RelationRaw)
 	require.Equal(t, "engineer", fact.Value)
 	require.Equal(t, "mem_1", fact.MemoryID)
+	require.True(t, fact.ObservedAt.Equal(now))
+	require.True(t, fact.ValidFrom.Equal(now))
+	require.InDelta(t, 0.91, fact.Confidence, 0.001)
 	require.True(t, fact.CreatedAt.Equal(now))
 }
 
@@ -204,6 +256,51 @@ func TestScanEntityFactRecord_MissingRequiredColumns(t *testing.T) {
 	require.Contains(t, err.Error(), "missing tenant_id")
 }
 
+func TestScanEntityFactPathRecord_Success(t *testing.T) {
+	record := &neo4j.Record{
+		Keys: []string{
+			"memory_id",
+			"fact_ids",
+			"entities",
+			"relations",
+			"path_length",
+			"support_count",
+			"temporal_valid",
+			"traversal_score",
+		},
+		Values: []any{
+			"mem_1",
+			[]any{"ef_1", "ef_2", "ef_1"},
+			[]any{"alice", "bob", "alice"},
+			[]any{"event", "place", "event"},
+			int64(3),
+			int64(2),
+			true,
+			0.82,
+		},
+	}
+
+	candidate, err := scanEntityFactPathRecord(record)
+	require.NoError(t, err)
+	require.Equal(t, "mem_1", candidate.MemoryID)
+	require.Equal(t, []string{"ef_1", "ef_2"}, candidate.FactIDs)
+	require.Equal(t, []string{"alice", "bob"}, candidate.Entities)
+	require.Equal(t, []string{"event", "place"}, candidate.Relations)
+	require.Equal(t, 3, candidate.PathLength)
+	require.Equal(t, 2, candidate.SupportCount)
+	require.True(t, candidate.TemporalValid)
+	require.Equal(t, 0.82, candidate.TraversalScore)
+}
+
+func TestScanEntityFactPathRecord_RequiresMemoryID(t *testing.T) {
+	_, err := scanEntityFactPathRecord(&neo4j.Record{
+		Keys:   []string{"fact_ids"},
+		Values: []any{[]any{"ef_1"}},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "memory_id")
+}
+
 func TestAsInt64AndMinInt(t *testing.T) {
 	v, ok := asInt64(int64(7))
 	require.True(t, ok)
@@ -216,6 +313,9 @@ func TestAsInt64AndMinInt(t *testing.T) {
 
 	require.Equal(t, 3, minInt(3, 9))
 	require.Equal(t, 2, minInt(7, 2))
+	require.Equal(t, 6, graphPathMaxEdges(2))
+	require.Equal(t, []string{"alice", "bob"}, normalizeEntityFactKeys([]string{" Alice ", "bob", "alice"}))
+	require.Equal(t, []string{"one", "two"}, uniqueStrings([]string{"one", "two", "one"}))
 }
 
 func TestSchemaStatementsCoverMergeKeysAndLookup(t *testing.T) {
