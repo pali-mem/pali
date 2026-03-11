@@ -95,3 +95,44 @@ func (r *TenantRepository) List(ctx context.Context, limit int) ([]domain.Tenant
 	return out, nil
 }
 
+func (r *TenantRepository) ListMemoryCounts(ctx context.Context, tenantIDs []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(tenantIDs))
+	if len(tenantIDs) == 0 {
+		return out, nil
+	}
+
+	args := make([]any, 0, len(tenantIDs))
+	placeholders := make([]string, 0, len(tenantIDs))
+	for _, tenantID := range tenantIDs {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID == "" {
+			continue
+		}
+		args = append(args, tenantID)
+		placeholders = append(placeholders, "?")
+		out[tenantID] = 0
+	}
+	if len(args) == 0 {
+		return out, nil
+	}
+
+	query := fmt.Sprintf(ListTenantMemoryCountsSQL, strings.Join(placeholders, ", "))
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list tenant memory counts: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tenantID string
+		var count int64
+		if err := rows.Scan(&tenantID, &count); err != nil {
+			return nil, fmt.Errorf("scan tenant memory count: %w", err)
+		}
+		out[tenantID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tenant memory counts: %w", err)
+	}
+	return out, nil
+}
