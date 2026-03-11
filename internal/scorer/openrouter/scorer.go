@@ -23,7 +23,7 @@ var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)
 var thinkTagPattern = regexp.MustCompile(`(?i)</?think>`)
 var (
 	openRouterMaxBatchScores      = 50
-	openRouterMaxParallelScorings = 4
+	openRouterMaxParallelScorings = 8
 )
 
 func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {

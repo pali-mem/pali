@@ -19,7 +19,7 @@ const (
 
 var (
 	openRouterMaxBatchInputs     = 50
-	openRouterMaxParallelBatches = 4
+	openRouterMaxParallelBatches = 8
 )
 
 type Embedder struct {
