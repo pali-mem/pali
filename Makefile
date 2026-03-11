@@ -1,6 +1,6 @@
 APP=pali
 
-.PHONY: run mcp setup build test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring
+.PHONY: run mcp setup build test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-freshness dead-code-sweep release-gate
 
 run:
 	go run ./cmd/pali -config pali.yaml
@@ -41,16 +41,25 @@ tidy:
 	go mod tidy
 
 bench-setup:
-	./scripts/bench_setup.sh
+	bash ./scripts/bench_setup.sh
 
 benchmark:
-	./scripts/benchmark.sh --fixture $${FIXTURE:-test/fixtures/memories.json} --backend $${BACKEND:-sqlite}
+	bash ./scripts/benchmark.sh --fixture $${FIXTURE:-testdata/benchmarks/fixtures/release_memories.json} --eval-set $${EVAL_SET:-testdata/benchmarks/evals/release_curated.json} --backend $${BACKEND:-sqlite}
 
 retrieval-quality:
-	./scripts/retrieval_quality.sh --fixture $${FIXTURE:-test/fixtures/memories.json} --backend $${BACKEND:-sqlite}
+	bash ./scripts/retrieval_quality.sh --fixture $${FIXTURE:-testdata/benchmarks/fixtures/release_memories.json} --eval-set $${EVAL_SET:-testdata/benchmarks/evals/release_curated.json} --backend $${BACKEND:-sqlite}
 
 retrieval-trend:
-	./scripts/retrieval_trend.sh --fixture $${FIXTURE:-test/fixtures/memories.json} --backend $${BACKEND:-sqlite}
+	bash ./scripts/retrieval_trend.sh --fixture $${FIXTURE:-testdata/benchmarks/fixtures/release_memories.json} --eval-set $${EVAL_SET:-testdata/benchmarks/evals/release_curated.json} --backend $${BACKEND:-sqlite}
 
 check-wiring:
 	go test ./internal/core/memory ./internal/repository/sqlite -run 'Test(SearchBuildsIterativeQueriesForMultiHopQuestion|SearchWithFiltersAppliesKindFilter|SearchAggregationRouteRespectsMinScore|StoreMarksIndexStateTransitions|StoreMarksIndexStateFailedOnVectorFailure|DeleteMarksIndexStateTombstoned|DeleteMarksIndexStateFailedOnVectorFailure|MemoryRepositoryIndexJobLifecycle)' -count=1
+
+docs-freshness:
+	bash ./scripts/check_docs_freshness.sh
+
+dead-code-sweep:
+	bash ./scripts/dead_code_sweep.sh
+
+release-gate:
+	bash ./scripts/release_gate.sh

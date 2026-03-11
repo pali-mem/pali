@@ -48,18 +48,12 @@ models/all-MiniLM-L6-v2/tokenizer.json
 *.db-shm
 *.db-wal
 
-# Benchmark results
-test/benchmarks/results
+# Benchmark results and generated fixture outputs
+test/benchmarks/results/
+test/benchmarks/generated/
 
-# Fixtures
-test/fixtures/
-
-# Research — track scripts/code, ignore generated artifacts
-/research/data/
-/research/cache/
-/research/results/
-/research/debug/
-/research/__pycache__/
+# Research
+/research/*
 
 # Built binaries (root-level)
 genfix
@@ -67,5 +61,5 @@ genfix
 
 .vscode/
 
-# Internal planning docs
-pre_release.md
+
+# Todo files

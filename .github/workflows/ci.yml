@@ -6,6 +6,14 @@ on:
   pull_request:
 
 jobs:
+  docs-freshness:
+    name: docs-freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docs freshness
+        run: bash ./scripts/check_docs_freshness.sh
+
   lint:
     name: lint
     runs-on: ubuntu-latest
@@ -32,7 +40,7 @@ jobs:
           go-version: '1.24'
           cache: true
       - name: Run unit tests
-        run: go test ./...
+        run: go test ./internal/... ./pkg/... ./cmd/...
 
   test-integration:
     name: test-integration
@@ -44,10 +52,36 @@ jobs:
           go-version: '1.24'
           cache: true
       - name: Run integration tests
-        run: go test ./test/integration/...
+        run: go test -tags integration ./test/integration/...
         env:
           PALI_VECTOR_BACKEND: sqlite
           PALI_EMBEDDING_PROVIDER: lexical
+
+  test-e2e:
+    name: test-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      - name: Run e2e tests
+        run: go test -tags e2e ./test/e2e/...
+
+  release-hygiene:
+    name: release-hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      - name: Sweep repo artifacts
+        run: bash ./scripts/dead_code_sweep.sh
+      - name: Verify documented examples
+        run: bash ./scripts/verify_docs_examples.sh
 
   build:
     name: build
