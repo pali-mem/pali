@@ -27,10 +27,6 @@ from pathlib import Path
 ROOT = Path.cwd()
 DOC_FILES = [
     "README.md",
-    "BENCHMARKS.MD",
-    "TODO.md",
-    "pre_release.md",
-    "instructions.md",
     "cmd/setup/README.md",
     "docs/README.md",
     "docs/api.md",
