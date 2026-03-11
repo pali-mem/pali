@@ -18,6 +18,7 @@ type Config struct {
 	StructuredMemory  StructuredMemoryConfig `yaml:"structured_memory"`
 	Retrieval         RetrievalConfig        `yaml:"retrieval"`
 	Parser            ParserConfig           `yaml:"parser"`
+	ProfileLayer      ProfileLayerConfig     `yaml:"profile_layer"`
 	Database          Database               `yaml:"database"`
 	Qdrant            QdrantConfig           `yaml:"qdrant"`
 	Neo4j             Neo4jConfig            `yaml:"neo4j"`
@@ -102,8 +103,12 @@ type PostprocessConfig struct {
 }
 
 type RetrievalConfig struct {
-	Scoring  RetrievalScoringConfig  `yaml:"scoring"`
-	MultiHop RetrievalMultiHopConfig `yaml:"multi_hop"`
+	Scoring                              RetrievalScoringConfig  `yaml:"scoring"`
+	MultiHop                             RetrievalMultiHopConfig `yaml:"multi_hop"`
+	AnswerTypeRoutingEnabled             bool                    `yaml:"answer_type_routing_enabled"`
+	EarlyRankRerankEnabled               bool                    `yaml:"early_rank_rerank_enabled"`
+	TemporalResolverEnabled              bool                    `yaml:"temporal_resolver_enabled"`
+	OpenDomainAlternativeResolverEnabled bool                    `yaml:"open_domain_alternative_resolver_enabled"`
 }
 
 type RetrievalScoringConfig struct {
@@ -113,16 +118,24 @@ type RetrievalScoringConfig struct {
 }
 
 type RetrievalMultiHopConfig struct {
-	EntityFactBridgeEnabled bool   `yaml:"entity_fact_bridge_enabled"`
-	LLMDecompositionEnabled bool   `yaml:"llm_decomposition_enabled"`
-	DecompositionProvider   string `yaml:"decomposition_provider"`
-	OpenRouterModel         string `yaml:"openrouter_model"`
-	OllamaBaseURL           string `yaml:"ollama_base_url"`
-	OllamaModel             string `yaml:"ollama_model"`
-	OllamaTimeoutMS         int    `yaml:"ollama_timeout_ms"`
-	MaxDecompositionQueries int    `yaml:"max_decomposition_queries"`
-	EnablePairwiseRerank    bool   `yaml:"enable_pairwise_rerank"`
-	TokenExpansionFallback  bool   `yaml:"token_expansion_fallback"`
+	EntityFactBridgeEnabled    bool    `yaml:"entity_fact_bridge_enabled"`
+	LLMDecompositionEnabled    bool    `yaml:"llm_decomposition_enabled"`
+	DecompositionProvider      string  `yaml:"decomposition_provider"`
+	OpenRouterModel            string  `yaml:"openrouter_model"`
+	OllamaBaseURL              string  `yaml:"ollama_base_url"`
+	OllamaModel                string  `yaml:"ollama_model"`
+	OllamaTimeoutMS            int     `yaml:"ollama_timeout_ms"`
+	MaxDecompositionQueries    int     `yaml:"max_decomposition_queries"`
+	EnablePairwiseRerank       bool    `yaml:"enable_pairwise_rerank"`
+	TokenExpansionFallback     bool    `yaml:"token_expansion_fallback"`
+	GraphPathEnabled           bool    `yaml:"graph_path_enabled"`
+	GraphMaxHops               int     `yaml:"graph_max_hops"`
+	GraphSeedLimit             int     `yaml:"graph_seed_limit"`
+	GraphPathLimit             int     `yaml:"graph_path_limit"`
+	GraphMinScore              float64 `yaml:"graph_min_score"`
+	GraphWeight                float64 `yaml:"graph_weight"`
+	GraphTemporalValidity      bool    `yaml:"graph_temporal_validity"`
+	GraphSingletonInvalidation bool    `yaml:"graph_singleton_invalidation"`
 }
 
 type ScoringWeightsConfig struct {
@@ -140,16 +153,21 @@ type MatchScoringWeightsConfig struct {
 }
 
 type ParserConfig struct {
-	Enabled         bool    `yaml:"enabled"`
-	Provider        string  `yaml:"provider"`
-	OllamaBaseURL   string  `yaml:"ollama_base_url"`
-	OllamaModel     string  `yaml:"ollama_model"`
-	OpenRouterModel string  `yaml:"openrouter_model"`
-	OllamaTimeoutMS int     `yaml:"ollama_timeout_ms"`
-	StoreRawTurn    bool    `yaml:"store_raw_turn"`
-	MaxFacts        int     `yaml:"max_facts"`
-	DedupeThreshold float64 `yaml:"dedupe_threshold"`
-	UpdateThreshold float64 `yaml:"update_threshold"`
+	Enabled                    bool    `yaml:"enabled"`
+	Provider                   string  `yaml:"provider"`
+	OllamaBaseURL              string  `yaml:"ollama_base_url"`
+	OllamaModel                string  `yaml:"ollama_model"`
+	OpenRouterModel            string  `yaml:"openrouter_model"`
+	OllamaTimeoutMS            int     `yaml:"ollama_timeout_ms"`
+	StoreRawTurn               bool    `yaml:"store_raw_turn"`
+	MaxFacts                   int     `yaml:"max_facts"`
+	DedupeThreshold            float64 `yaml:"dedupe_threshold"`
+	UpdateThreshold            float64 `yaml:"update_threshold"`
+	AnswerSpanRetentionEnabled bool    `yaml:"answer_span_retention_enabled"`
+}
+
+type ProfileLayerConfig struct {
+	SupportLinksEnabled bool `yaml:"support_links_enabled"`
 }
 
 type LoggingConfig struct {
