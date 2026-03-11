@@ -49,7 +49,21 @@ func TestBuildQueryPlanTemporalRoute(t *testing.T) {
 	profile := classifyQuery("when did Alex move to Austin?")
 	plan := buildQueryPlan("when did Alex move to Austin?", profile)
 	require.Equal(t, "temporal_lookup", plan.Intent)
+	require.Equal(t, "temporal_absolute", plan.AnswerType)
 	require.Equal(t, "time_anchored_fact", plan.RequiredEvidence)
+}
+
+func TestBuildQueryPlanAnswerTypeSingleFactQuote(t *testing.T) {
+	profile := classifyQuery("What did the poster say?")
+	plan := buildQueryPlan("What did the poster say?", profile)
+	require.Equal(t, "single_fact_quote", plan.AnswerType)
+}
+
+func TestBuildQueryPlanAnswerTypeOpenDomainLabel(t *testing.T) {
+	profile := classifyQuery("What is Caroline's political leaning?")
+	plan := buildQueryPlan("What is Caroline's political leaning?", profile)
+	require.Equal(t, "profile_summary_lookup", plan.Intent)
+	require.Equal(t, "open_domain_label", plan.AnswerType)
 }
 
 func TestClassifyAggregationQuery_DoesNotHijackFactualQuestion(t *testing.T) {

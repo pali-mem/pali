@@ -8,11 +8,20 @@ import (
 )
 
 var (
-	temporalPattern   = regexp.MustCompile(`\b(when|what time|date|day|month|year|before|after|first|last|earlier|later|yesterday|today|tomorrow)\b`)
-	personPattern     = regexp.MustCompile(`\b(who|name|which person|whose)\b`)
-	multiHopPattern   = regexp.MustCompile(`\b(before|after|first|last|both|either|then|and|while|followed|prior|previously)\b`)
-	entityNamePattern = regexp.MustCompile(`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b`)
-	timeTagPattern    = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
+	temporalPattern         = regexp.MustCompile(`\b(when|what time|date|day|month|year|before|after|first|last|earlier|later|yesterday|today|tomorrow)\b`)
+	personPattern           = regexp.MustCompile(`\b(who|name|which person|whose)\b`)
+	multiHopPattern         = regexp.MustCompile(`\b(before|after|first|last|both|either|then|and|while|followed|prior|previously)\b`)
+	entityNamePattern       = regexp.MustCompile(`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b`)
+	timeTagPattern          = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
+	booleanQueryPattern     = regexp.MustCompile(`^(?:is|are|was|were|do|does|did|can|could|would|should|has|have|had|will)\b`)
+	quoteQueryPattern       = regexp.MustCompile(`\b(?:quote|quoted|say|said|poster|posters|sign|signs|slogan|written|wrote|exact words?)\b`)
+	listQueryPattern        = regexp.MustCompile(`\b(?:what all|list|which activities|which events|which places|which books|which hobbies|which interests)\b`)
+	locationQueryPattern    = regexp.MustCompile(`\b(?:where|what country|what city|what town|what state|which person|who|whose)\b`)
+	durationQueryPattern    = regexp.MustCompile(`\b(?:how long|duration|for how many|for how long)\b`)
+	relativeTemporalPattern = regexp.MustCompile(`\b(?:before|after|earlier|later|last|next|yesterday|today|tomorrow|ago|week before|month before|year before)\b`)
+	openDomainBinaryPattern = regexp.MustCompile(`\b(?:would|could|likely|probably|might|consider|interested|leaning|support|value|belief)\b`)
+	openDomainLabelPattern  = regexp.MustCompile(`\b(?:political|leaning|religious|religion|faith|spiritual|financial status|class|personality|trait|traits)\b`)
+	openDomainChoicePattern = regexp.MustCompile(`\b(?:or|rather than|instead of|between)\b`)
 
 	aggregationIntentPattern           = regexp.MustCompile(`(?i)\b(what all|list|activities?|events?|places?|books?|hobbies?|interests?)\b`)
 	aggregationEntityDoesDoPattern     = regexp.MustCompile(`(?i)\b(?:does|did)\s+([a-z][a-z0-9'\-]*(?:\s+[a-z][a-z0-9'\-]*){0,2})\s+do\b`)
@@ -40,6 +49,7 @@ type aggregationQuery struct {
 type queryPlan struct {
 	Intent           string
 	Confidence       float64
+	AnswerType       string
 	Entities         []string
 	Relations        []string
 	TimeConstraints  []string
@@ -69,9 +79,11 @@ func classifyQuery(query string) queryProfile {
 }
 
 func buildQueryPlan(query string, profile queryProfile) queryPlan {
+	answerType := classifyAnswerType(query, profile)
 	plan := queryPlan{
 		Intent:           "hybrid_vector_fallback",
 		Confidence:       0.55,
+		AnswerType:       answerType,
 		Temporal:         profile.Temporal,
 		Person:           profile.Person,
 		MultiHop:         profile.MultiHop,
@@ -117,6 +129,16 @@ func buildQueryPlan(query string, profile queryProfile) queryPlan {
 		return plan
 	}
 
+	if strings.HasPrefix(answerType, "open_domain_") {
+		plan.Intent = "profile_summary_lookup"
+		plan.Confidence = 0.66
+		plan.RequiredEvidence = "profile_summary_or_supported_facts"
+		if entity, ok := classifyEntityHintQuery(query, profile); ok {
+			plan.Entities = []string{normalizeEntityFactEntity(entity)}
+		}
+		plan.FallbackPath = []string{"direct_fact_lookup", "hybrid_vector_fallback"}
+		return plan
+	}
 	if entity, ok := classifyEntityHintQuery(query, profile); ok {
 		plan.Entities = []string{normalizeEntityFactEntity(entity)}
 	}
@@ -266,6 +288,8 @@ func inferAggregationRelation(loweredQuery string) string {
 		return "book"
 	case strings.Contains(loweredQuery, "place"), strings.Contains(loweredQuery, "visited"), strings.Contains(loweredQuery, "went"):
 		return "place"
+	case strings.Contains(loweredQuery, "favorite"), strings.Contains(loweredQuery, "prefer"), strings.Contains(loweredQuery, "likes"), strings.Contains(loweredQuery, "enjoys"):
+		return "preference"
 	case strings.Contains(loweredQuery, "activit"), strings.Contains(loweredQuery, "hobb"), strings.Contains(loweredQuery, "interest"), strings.Contains(loweredQuery, "thing"), strings.Contains(loweredQuery, "done"):
 		return "activity"
 	default:
@@ -350,7 +374,49 @@ func extractTimeHints(query string) []string {
 	return out
 }
 
-func routeBoost(m domain.Memory, profile queryProfile) float64 {
+func classifyAnswerType(query string, profile queryProfile) string {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return "single_fact"
+	}
+	if profile.Temporal {
+		switch {
+		case durationQueryPattern.MatchString(q):
+			return "temporal_duration"
+		case relativeTemporalPattern.MatchString(q):
+			return "temporal_relative"
+		default:
+			return "temporal_absolute"
+		}
+	}
+	if openDomainLabelPattern.MatchString(q) {
+		return "open_domain_label"
+	}
+	if openDomainChoicePattern.MatchString(q) && openDomainBinaryPattern.MatchString(q) {
+		return "open_domain_choice"
+	}
+	if booleanQueryPattern.MatchString(q) && openDomainBinaryPattern.MatchString(q) {
+		return "open_domain_binary"
+	}
+	if quoteQueryPattern.MatchString(q) {
+		return "single_fact_quote"
+	}
+	if listQueryPattern.MatchString(q) {
+		return "single_fact_list"
+	}
+	if booleanQueryPattern.MatchString(q) {
+		return "single_fact_boolean"
+	}
+	if locationQueryPattern.MatchString(q) {
+		return "single_fact_location_or_person"
+	}
+	if openDomainBinaryPattern.MatchString(q) {
+		return "open_domain_binary"
+	}
+	return "single_fact"
+}
+
+func routeBoost(m domain.Memory, profile queryProfile, plan queryPlan, behavior RetrievalBehaviorOptions) float64 {
 	boost := 1.0
 
 	if profile.Temporal {
@@ -388,6 +454,87 @@ func routeBoost(m domain.Memory, profile queryProfile) float64 {
 		}
 		if strings.Contains(strings.ToLower(m.Content), "[dialog:") {
 			boost *= 1.02
+		}
+	}
+
+	if behavior.AnswerTypeRoutingEnabled {
+		switch plan.AnswerType {
+		case "single_fact_boolean", "single_fact_quote":
+			switch m.Kind {
+			case domain.MemoryKindRawTurn:
+				boost *= 1.15
+			case domain.MemoryKindEvent:
+				boost *= 1.12
+			case domain.MemoryKindSummary:
+				boost *= 0.93
+			}
+		case "single_fact_list":
+			switch m.Kind {
+			case domain.MemoryKindSummary:
+				boost *= 1.14
+			case domain.MemoryKindObservation:
+				boost *= 1.10
+			case domain.MemoryKindEvent:
+				boost *= 1.06
+			case domain.MemoryKindRawTurn:
+				boost *= 0.92
+			}
+		case "single_fact_location_or_person":
+			switch m.Kind {
+			case domain.MemoryKindObservation:
+				boost *= 1.14
+			case domain.MemoryKindEvent:
+				boost *= 1.09
+			case domain.MemoryKindSummary:
+				boost *= 0.95
+			case domain.MemoryKindRawTurn:
+				boost *= 0.94
+			}
+		case "temporal_absolute", "temporal_relative", "temporal_duration":
+			switch m.Kind {
+			case domain.MemoryKindEvent:
+				boost *= 1.15
+			case domain.MemoryKindRawTurn:
+				boost *= 1.08
+			case domain.MemoryKindSummary:
+				boost *= 0.94
+			}
+			if strings.TrimSpace(m.AnswerMetadata.TemporalAnchor) != "" ||
+				strings.TrimSpace(m.AnswerMetadata.RelativeTimePhrase) != "" ||
+				strings.TrimSpace(m.AnswerMetadata.ResolvedTimeStart) != "" {
+				boost *= 1.08
+			}
+		case "open_domain_binary", "open_domain_choice", "open_domain_label":
+			switch m.Kind {
+			case domain.MemoryKindSummary:
+				boost *= 1.18
+			case domain.MemoryKindObservation:
+				boost *= 1.06
+			case domain.MemoryKindRawTurn:
+				boost *= 0.94
+			}
+			if behavior.ProfileSupportLinksEnabled && len(m.AnswerMetadata.SupportLines) > 0 {
+				boost *= 1.05
+			}
+		}
+	}
+
+	switch plan.AnswerType {
+	case "single_fact_quote":
+		if strings.TrimSpace(m.AnswerMetadata.AnswerKind) == "quote" {
+			boost *= 1.12
+		}
+	case "single_fact_boolean":
+		if strings.TrimSpace(m.AnswerMetadata.AnswerKind) == "boolean" {
+			boost *= 1.10
+		}
+	case "single_fact_location_or_person":
+		if strings.TrimSpace(m.AnswerMetadata.AnswerKind) == "entity" {
+			boost *= 1.08
+		}
+	case "open_domain_binary", "open_domain_choice", "open_domain_label":
+		if len(m.AnswerMetadata.SupportLines) > 0 || len(m.AnswerMetadata.SupportMemoryIDs) > 0 {
+			boost *= 1.04
 		}
 	}
 
