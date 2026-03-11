@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/pali-mem/pali/internal/domain"
 )
@@ -19,19 +20,50 @@ var (
 	factBookValuePattern     = regexp.MustCompile(`(?i)\b(?:read(?:ing)?|reads?|book(?:s)?)\s+([^.,;]+)`)
 	factPlaceValuePattern    = regexp.MustCompile(`(?i)\b(?:lives? in|moved to|went to|visited)\s+([^.,;]+)`)
 	factPlanValuePattern     = regexp.MustCompile(`(?i)\b(?:plans? to|planning to|going to|will)\s+([^.,;]+)`)
+	factRelationshipPattern  = regexp.MustCompile(`(?i)\b(?:husband|wife|partner|boyfriend|girlfriend|spouse|friend|friends|mentor|mentors|parent|mother|father|son|daughter|child|children|kids?)\b`)
+	factStatusPattern        = regexp.MustCompile(`(?i)\b(?:single|married|divorced|engaged|dating|widowed|separated|in a relationship)\b`)
+	factPreferencePattern    = regexp.MustCompile(`(?i)\b(?:favorite|prefer(?:s)?|likes?|loves?|enjoys?)\b`)
+	factBeliefPattern        = regexp.MustCompile(`(?i)\b(?:believes?|believed|thinks?|thought|values?|valued|cares? about|stands? for)\b`)
+	factTraitPattern         = regexp.MustCompile(`(?i)\b(?:personality|trait|traits|tendency|tendencies|character|characteristic|known for)\b`)
 	factLeadingVerbPattern   = regexp.MustCompile(`(?i)^(?:is|was|attended|participated in|joined|went to|visited|likes?|loves?|enjoys?|practices?|plays?|uses?|using|does|chooses?|prefers?)\s+`)
 	factValueStopPattern     = regexp.MustCompile(`(?i)\b(?:because|since|while|although|but|and\s+(?:it|that|this)\b)\b`)
 
 	entityFactCanonicalRelations = map[string]struct{}{
-		"activity": {},
-		"event":    {},
-		"plan":     {},
-		"identity": {},
-		"role":     {},
-		"place":    {},
-		"book":     {},
+		"activity":            {},
+		"attribute":           {},
+		"belief":              {},
+		"book":                {},
+		"event":               {},
+		"goal":                {},
+		"identity":            {},
+		"place":               {},
+		"plan":                {},
+		"preference":          {},
+		"relationship":        {},
+		"relationship status": {},
+		"role":                {},
+		"trait":               {},
+		"value":               {},
 	}
 )
+
+var entityFactRelationFamilies = map[string][]string{
+	"activity":            {"activity", "preference"},
+	"attribute":           {"attribute", "trait", "value", "belief"},
+	"belief":              {"belief", "value", "trait", "attribute"},
+	"book":                {"book"},
+	"event":               {"event"},
+	"goal":                {"goal", "plan"},
+	"identity":            {"identity", "role", "trait", "attribute"},
+	"place":               {"place"},
+	"plan":                {"plan", "goal"},
+	"preference":          {"preference", "activity"},
+	"relationship":        {"relationship", "relationship status"},
+	"relationship status": {"relationship status", "relationship"},
+	"role":                {"role", "identity"},
+	"trait":               {"trait", "attribute", "belief", "value"},
+	"value":               {"value", "belief", "trait", "attribute"},
+}
 
 func inferEntityRelationValue(content string, kind domain.MemoryKind) (string, string, string) {
 	content = strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
@@ -74,8 +106,20 @@ func inferRelationFromFact(content string, kind domain.MemoryKind) string {
 		return "book"
 	case strings.Contains(l, "place"), strings.Contains(l, "lives in"), strings.Contains(l, "moved to"), strings.Contains(l, "visited"):
 		return "place"
+	case factStatusPattern.MatchString(l):
+		return "relationship status"
+	case factRelationshipPattern.MatchString(l):
+		return "relationship"
 	case strings.Contains(l, "plan to"), strings.Contains(l, "planning to"), strings.Contains(l, "going to"), strings.Contains(l, " will "):
 		return "plan"
+	case strings.Contains(l, "goal"), strings.Contains(l, "dream"), strings.Contains(l, "aim"), strings.Contains(l, "aspire"):
+		return "goal"
+	case factPreferencePattern.MatchString(l):
+		return "preference"
+	case factBeliefPattern.MatchString(l):
+		return "belief"
+	case factTraitPattern.MatchString(l):
+		return "trait"
 	case identityValuePattern.MatchString(l):
 		return "identity"
 	case strings.Contains(l, "works as"), strings.Contains(l, "job"), roleValuePattern.MatchString(l):
@@ -170,26 +214,45 @@ func normalizeEntityFactRelation(value string) string {
 		"place", "location", "city", "country", "moved", "move", "lives",
 		"live", "reside", "visited", "visit", "travel"):
 		return "place"
+	case relationHasAny(relation,
+		"relationship status", "marital", "single", "married", "dating",
+		"divorc", "engaged", "widowed", "separated"):
+		return "relationship status"
+	case relationHasAny(relation,
+		"relationship", "family", "friend", "partner", "spouse", "wife",
+		"husband", "boyfriend", "girlfriend", "mentor", "child", "parent"):
+		return "relationship"
 	case relationHasAny(relation, "role", "job", "profession", "career", "occupation", "works as"):
 		return "role"
 	case relationHasAny(relation,
 		"plan", "goal", "intention", "intent", "purpose", "aim", "hopes",
 		"hope", "will ", "going to"):
 		return "plan"
+	case relationHasAny(relation, "goal", "dream", "aspiration", "milestone"):
+		return "goal"
+	case relationHasAny(relation,
+		"preference", "favorite", "likes", "like ", "prefers", "prefer",
+		"loves", "love", "enjoys", "enjoy"):
+		return "preference"
 	case relationHasAny(relation,
 		"activity", "hobby", "interest", "prefer", "preference", "desire",
 		"passion", "motivation", "coping", "practice", "play", "enjoy",
 		"like ", "likes", "love", "action", "appreciat"):
 		return "activity"
+	case relationHasAny(relation, "belief", "believes", "thinks", "opinion", "stance", "worldview"):
+		return "belief"
+	case relationHasAny(relation, "value", "values", "principle", "priority", "ethic"):
+		return "value"
+	case relationHasAny(relation, "trait", "personality", "character", "tendency", "temperament"):
+		return "trait"
 	case relationHasAny(relation,
 		"identity", "name", "belief", "opinion", "value", "emotion", "feeling",
 		"feels", "state", "characteristic", "quality", "attribute", "description",
-		"assessment", "evaluation", "sentiment", "perception", "support", "has",
-		"possession", "appearance"):
+		"assessment", "evaluation", "sentiment", "perception", "support",
+		"appearance", "gender", "orientation"):
 		return "identity"
 	default:
-		// Keep retrieval graph addressable by collapsing long-tail relations.
-		return "identity"
+		return "attribute"
 	}
 }
 
@@ -213,6 +276,73 @@ func relationHasAny(relation string, needles ...string) bool {
 	return false
 }
 
+func expandEntityFactRelations(relations []string) []string {
+	out := make([]string, 0, len(relations)*2)
+	seen := make(map[string]struct{}, len(relations)*2)
+	add := func(relation string) {
+		relation = normalizeEntityFactRelation(relation)
+		if relation == "" {
+			return
+		}
+		if _, ok := seen[relation]; ok {
+			return
+		}
+		seen[relation] = struct{}{}
+		out = append(out, relation)
+	}
+	for _, relation := range relations {
+		normalized := normalizeEntityFactRelation(relation)
+		if normalized == "" {
+			continue
+		}
+		add(normalized)
+		if family, ok := entityFactRelationFamilies[normalized]; ok {
+			for _, member := range family {
+				add(member)
+			}
+		}
+	}
+	return out
+}
+
+func normalizeEntityFactValueForRelation(relation, value, content string) string {
+	relation = normalizeEntityFactRelation(relation)
+	value = normalizeEntityFactValue(value)
+	content = normalizeFactContent(content)
+	if value == "" {
+		value = inferSpecificValueCandidate(content)
+	}
+	switch relation {
+	case "relationship status":
+		lowered := strings.ToLower(strings.TrimSpace(value + " " + content))
+		switch {
+		case strings.Contains(lowered, "single"):
+			return "single"
+		case strings.Contains(lowered, "married"):
+			return "married"
+		case strings.Contains(lowered, "divorc"):
+			return "divorced"
+		case strings.Contains(lowered, "engaged"):
+			return "engaged"
+		case strings.Contains(lowered, "widowed"):
+			return "widowed"
+		case strings.Contains(lowered, "separated"):
+			return "separated"
+		case strings.Contains(lowered, "dating"), strings.Contains(lowered, "in a relationship"):
+			return "dating"
+		}
+	case "identity":
+		if match := identityValuePattern.FindString(strings.ToLower(value + " " + content)); match != "" {
+			return strings.TrimSpace(match)
+		}
+	case "role":
+		if match := roleValuePattern.FindString(strings.ToLower(value + " " + content)); match != "" {
+			return strings.TrimSpace(match)
+		}
+	}
+	return value
+}
+
 func buildEntityFactRecord(memory domain.Memory, fact ParsedFact) (domain.EntityFact, bool) {
 	if strings.TrimSpace(memory.ID) == "" {
 		return domain.EntityFact{}, false
@@ -220,7 +350,7 @@ func buildEntityFactRecord(memory domain.Memory, fact ParsedFact) (domain.Entity
 	entity := normalizeEntityFactEntity(fact.Entity)
 	relationRaw := normalizeEntityFactRawRelation(fact.Relation)
 	relation := normalizeEntityFactRelation(fact.Relation)
-	value := normalizeEntityFactValue(fact.Value)
+	value := normalizeEntityFactValueForRelation(relation, fact.Value, fact.Content)
 	if entity == "" || relation == "" || value == "" {
 		return domain.EntityFact{}, false
 	}
@@ -269,6 +399,9 @@ func (s *Service) findMemoryByRelationTuple(
 	records, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, 16)
 	if err != nil {
 		return nil, err
+	}
+	if s.multiHop.GraphSingletonInvalidation {
+		records = filterActiveEntityFacts(records)
 	}
 
 	ids := make([]string, 0, len(records))
@@ -330,11 +463,81 @@ func (s *Service) storeEntityFacts(ctx context.Context, facts []domain.EntityFac
 		return nil
 	}
 	if batchRepo, ok := s.entityRepo.(domain.EntityFactBatchRepository); ok && batchRepo != nil {
-		_, err := batchRepo.StoreBatch(ctx, unique)
-		return err
+		stored, err := batchRepo.StoreBatch(ctx, unique)
+		if err != nil {
+			return err
+		}
+		return s.invalidateSupersededEntityFacts(ctx, stored)
 	}
 	for _, fact := range unique {
-		if _, err := s.entityRepo.Store(ctx, fact); err != nil {
+		stored, err := s.entityRepo.Store(ctx, fact)
+		if err != nil {
+			return err
+		}
+		if err := s.invalidateSupersededEntityFacts(ctx, []domain.EntityFact{stored}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func filterActiveEntityFacts(facts []domain.EntityFact) []domain.EntityFact {
+	if len(facts) == 0 {
+		return []domain.EntityFact{}
+	}
+	out := make([]domain.EntityFact, 0, len(facts))
+	for _, fact := range facts {
+		if strings.TrimSpace(fact.InvalidatedByFactID) != "" {
+			continue
+		}
+		if fact.ValidTo != nil && !fact.ValidTo.IsZero() {
+			continue
+		}
+		out = append(out, fact)
+	}
+	return out
+}
+
+func entityFactUsesSingletonInvalidation(relation string) bool {
+	switch normalizeEntityFactRelation(relation) {
+	case "identity", "role", "relationship status", "place":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) invalidateSupersededEntityFacts(ctx context.Context, facts []domain.EntityFact) error {
+	if s == nil || !s.multiHop.GraphSingletonInvalidation || len(facts) == 0 {
+		return nil
+	}
+	invalidator, ok := s.entityRepo.(domain.EntityFactInvalidationRepository)
+	if !ok || invalidator == nil {
+		return nil
+	}
+	for _, fact := range facts {
+		if !entityFactUsesSingletonInvalidation(fact.Relation) {
+			continue
+		}
+		validTo := fact.ValidFrom
+		if validTo.IsZero() {
+			validTo = fact.ObservedAt
+		}
+		if validTo.IsZero() {
+			validTo = fact.CreatedAt
+		}
+		if validTo.IsZero() {
+			validTo = time.Now().UTC()
+		}
+		if err := invalidator.InvalidateEntityRelation(
+			ctx,
+			fact.TenantID,
+			fact.Entity,
+			fact.Relation,
+			fact.Value,
+			fact.ID,
+			validTo,
+		); err != nil {
 			return err
 		}
 	}
