@@ -28,18 +28,9 @@ func NewMemoryHandler(service *corememory.Service, maxPostprocessAttempts ...int
 }
 
 func (h *MemoryHandler) Store(c *gin.Context) {
-	var req dto.StoreMemoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
-		return
-	}
-	if err := enforceTenantAccess(c, req.TenantID); err != nil {
-		writeError(c, err)
-		return
-	}
-	storeInput, err := parseStoreInput(req)
+	storeInput, err := bindStoreInput(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeBindError(c, err)
 		return
 	}
 
@@ -56,28 +47,10 @@ func (h *MemoryHandler) Store(c *gin.Context) {
 }
 
 func (h *MemoryHandler) StoreBatch(c *gin.Context) {
-	var req dto.StoreMemoryBatchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+	inputs, err := bindStoreBatchInputs(c)
+	if err != nil {
+		writeBindError(c, err)
 		return
-	}
-	if len(req.Items) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "items must not be empty"})
-		return
-	}
-
-	inputs := make([]corememory.StoreInput, 0, len(req.Items))
-	for _, item := range req.Items {
-		if err := enforceTenantAccess(c, item.TenantID); err != nil {
-			writeError(c, err)
-			return
-		}
-		storeInput, err := parseStoreInput(item)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		inputs = append(inputs, storeInput)
 	}
 
 	stored, err := h.service.StoreBatch(c.Request.Context(), inputs)
@@ -96,18 +69,9 @@ func (h *MemoryHandler) StoreBatch(c *gin.Context) {
 }
 
 func (h *MemoryHandler) Ingest(c *gin.Context) {
-	var req dto.StoreMemoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
-		return
-	}
-	if err := enforceTenantAccess(c, req.TenantID); err != nil {
-		writeError(c, err)
-		return
-	}
-	storeInput, err := parseStoreInput(req)
+	storeInput, err := bindStoreInput(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeBindError(c, err)
 		return
 	}
 
@@ -125,28 +89,10 @@ func (h *MemoryHandler) Ingest(c *gin.Context) {
 }
 
 func (h *MemoryHandler) IngestBatch(c *gin.Context) {
-	var req dto.StoreMemoryBatchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+	inputs, err := bindStoreBatchInputs(c)
+	if err != nil {
+		writeBindError(c, err)
 		return
-	}
-	if len(req.Items) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "items must not be empty"})
-		return
-	}
-
-	inputs := make([]corememory.StoreInput, 0, len(req.Items))
-	for _, item := range req.Items {
-		if err := enforceTenantAccess(c, item.TenantID); err != nil {
-			writeError(c, err)
-			return
-		}
-		storeInput, err := parseStoreInput(item)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		inputs = append(inputs, storeInput)
 	}
 
 	receipt, err := h.service.IngestBatchAsync(c.Request.Context(), inputs, h.maxPostprocessAttempt)
@@ -160,6 +106,41 @@ func (h *MemoryHandler) IngestBatch(c *gin.Context) {
 		JobIDs:     append([]string{}, receipt.JobIDs...),
 		AcceptedAt: receipt.AcceptedAt,
 	})
+}
+
+func bindStoreInput(c *gin.Context) (corememory.StoreInput, error) {
+	var req dto.StoreMemoryBatchRequest
+	_ = req
+	var single dto.StoreMemoryRequest
+	if err := c.ShouldBindJSON(&single); err != nil {
+		return corememory.StoreInput{}, errInvalidJSONBody
+	}
+	if err := enforceTenantAccess(c, single.TenantID); err != nil {
+		return corememory.StoreInput{}, err
+	}
+	return parseStoreInput(single)
+}
+
+func bindStoreBatchInputs(c *gin.Context) ([]corememory.StoreInput, error) {
+	var req dto.StoreMemoryBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return nil, errInvalidJSONBody
+	}
+	if len(req.Items) == 0 {
+		return nil, errEmptyBatchItems
+	}
+	inputs := make([]corememory.StoreInput, 0, len(req.Items))
+	for _, item := range req.Items {
+		if err := enforceTenantAccess(c, item.TenantID); err != nil {
+			return nil, err
+		}
+		storeInput, err := parseStoreInput(item)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, storeInput)
+	}
+	return inputs, nil
 }
 
 func (h *MemoryHandler) Search(c *gin.Context) {
@@ -182,16 +163,22 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	retrievalKind, err := parseSearchRetrievalKind(req.RetrievalKind)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := enforceTenantAccess(c, req.TenantID); err != nil {
 		writeError(c, err)
 		return
 	}
 
 	searchOpts := corememory.SearchOptions{
-		MinScore:     req.MinScore,
-		Tiers:        searchTiers,
-		Kinds:        searchKinds,
-		DisableTouch: req.DisableTouch,
+		MinScore:      req.MinScore,
+		Tiers:         searchTiers,
+		Kinds:         searchKinds,
+		RetrievalKind: retrievalKind,
+		DisableTouch:  req.DisableTouch,
 	}
 	var (
 		items []domain.Memory
@@ -209,6 +196,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 
 	out := make([]dto.MemoryResponse, 0, len(items))
 	for _, m := range items {
+		answerMetadata := toAnswerMetadataDTO(m.AnswerMetadata)
 		out = append(out, dto.MemoryResponse{
 			ID:             m.ID,
 			TenantID:       m.TenantID,
@@ -219,6 +207,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 			CreatedBy:      string(m.CreatedBy),
 			Kind:           string(m.Kind),
 			RecallCount:    m.RecallCount,
+			AnswerMetadata: answerMetadata,
 			CreatedAt:      m.CreatedAt,
 			UpdatedAt:      m.UpdatedAt,
 			LastAccessedAt: m.LastAccessedAt,
@@ -232,6 +221,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 			Plan: dto.SearchPlanDebugDTO{
 				Intent:           debug.Plan.Intent,
 				Confidence:       debug.Plan.Confidence,
+				AnswerType:       debug.Plan.AnswerType,
 				Entities:         append([]string{}, debug.Plan.Entities...),
 				Relations:        append([]string{}, debug.Plan.Relations...),
 				TimeConstraints:  append([]string{}, debug.Plan.TimeConstraints...),
@@ -387,6 +377,19 @@ func parseSearchKinds(raw []string) ([]domain.MemoryKind, error) {
 	return out, nil
 }
 
+func parseSearchRetrievalKind(raw string) (corememory.SearchRetrievalKind, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(corememory.SearchRetrievalKindAuto):
+		return corememory.SearchRetrievalKindAuto, nil
+	case string(corememory.SearchRetrievalKindVector):
+		return corememory.SearchRetrievalKindVector, nil
+	case string(corememory.SearchRetrievalKindEntity):
+		return corememory.SearchRetrievalKindEntity, nil
+	default:
+		return "", domain.ErrInvalidInput
+	}
+}
+
 func parseCreatedBy(raw string) (domain.MemoryCreatedBy, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", string(domain.MemoryCreatedByAuto):
@@ -429,14 +432,60 @@ func parseStoreInput(req dto.StoreMemoryRequest) (corememory.StoreInput, error) 
 		return corememory.StoreInput{}, err
 	}
 	return corememory.StoreInput{
-		TenantID:  req.TenantID,
-		Content:   req.Content,
-		Tags:      req.Tags,
-		Tier:      tier,
-		Kind:      kind,
-		Source:    req.Source,
-		CreatedBy: createdBy,
+		TenantID:       req.TenantID,
+		Content:        req.Content,
+		Tags:           req.Tags,
+		Tier:           tier,
+		Kind:           kind,
+		Source:         req.Source,
+		CreatedBy:      createdBy,
+		AnswerMetadata: fromAnswerMetadataDTO(req.AnswerMetadata),
 	}, nil
+}
+
+func fromAnswerMetadataDTO(in *dto.AnswerMetadataDTO) domain.MemoryAnswerMetadata {
+	if in == nil {
+		return domain.MemoryAnswerMetadata{}
+	}
+	return domain.MemoryAnswerMetadata{
+		AnswerKind:         in.AnswerKind,
+		SourceSentence:     in.SourceSentence,
+		SurfaceSpan:        in.SurfaceSpan,
+		TemporalAnchor:     in.TemporalAnchor,
+		RelativeTimePhrase: in.RelativeTimePhrase,
+		ResolvedTimeStart:  in.ResolvedTimeStart,
+		ResolvedTimeEnd:    in.ResolvedTimeEnd,
+		TimeGranularity:    in.TimeGranularity,
+		SupportMemoryIDs:   append([]string{}, in.SupportMemoryIDs...),
+		SupportLines:       append([]string{}, in.SupportLines...),
+	}
+}
+
+func toAnswerMetadataDTO(in domain.MemoryAnswerMetadata) *dto.AnswerMetadataDTO {
+	if strings.TrimSpace(in.AnswerKind) == "" &&
+		strings.TrimSpace(in.SourceSentence) == "" &&
+		strings.TrimSpace(in.SurfaceSpan) == "" &&
+		strings.TrimSpace(in.TemporalAnchor) == "" &&
+		strings.TrimSpace(in.RelativeTimePhrase) == "" &&
+		strings.TrimSpace(in.ResolvedTimeStart) == "" &&
+		strings.TrimSpace(in.ResolvedTimeEnd) == "" &&
+		strings.TrimSpace(in.TimeGranularity) == "" &&
+		len(in.SupportMemoryIDs) == 0 &&
+		len(in.SupportLines) == 0 {
+		return nil
+	}
+	return &dto.AnswerMetadataDTO{
+		AnswerKind:         in.AnswerKind,
+		SourceSentence:     in.SourceSentence,
+		SurfaceSpan:        in.SurfaceSpan,
+		TemporalAnchor:     in.TemporalAnchor,
+		RelativeTimePhrase: in.RelativeTimePhrase,
+		ResolvedTimeStart:  in.ResolvedTimeStart,
+		ResolvedTimeEnd:    in.ResolvedTimeEnd,
+		TimeGranularity:    in.TimeGranularity,
+		SupportMemoryIDs:   append([]string{}, in.SupportMemoryIDs...),
+		SupportLines:       append([]string{}, in.SupportLines...),
+	}
 }
 
 func parsePostprocessStatuses(values []string, csv string) ([]domain.PostprocessJobStatus, error) {
