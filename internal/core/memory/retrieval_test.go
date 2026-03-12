@@ -357,7 +357,13 @@ func TestApplyEarlyRankRerankBoostsSupportedProfileSummary(t *testing.T) {
 	}
 	plan := queryPlan{AnswerType: "open_domain_label"}
 
-	reranked := svc.applyEarlyRankRerank(scored, "What is Caroline's political leaning?", plan)
+	reranked := svc.applyEarlyRankRerank(
+		scored,
+		"What is Caroline's political leaning?",
+		plan,
+		5,
+		classifyQuery("What is Caroline's political leaning?"),
+	)
 	require.Len(t, reranked, 2)
 	require.Equal(t, "profile", reranked[0].Memory.ID)
 }

@@ -306,7 +306,7 @@ func TestOpenRouterInfoParser_ParseEmptyContent(t *testing.T) {
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		called = true
 		return "", nil
-	}, "gpt-4o-mini")
+	}, "gpt-oss-20b:nitro")
 	facts, err := p.Parse(context.Background(), "   ", 5)
 	require.NoError(t, err)
 	require.Empty(t, facts)
@@ -314,7 +314,7 @@ func TestOpenRouterInfoParser_ParseEmptyContent(t *testing.T) {
 }
 
 func TestOpenRouterInfoParser_ParseZeroMaxFacts(t *testing.T) {
-	p := newOpenRouterParserWithMock(nil, "gpt-4o-mini")
+	p := newOpenRouterParserWithMock(nil, "gpt-oss-20b:nitro")
 	_, err := p.Parse(context.Background(), "Alice works at ACME Corp", 0)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "max facts")
@@ -340,7 +340,7 @@ func TestOpenRouterInfoParser_ParseHappyPath(t *testing.T) {
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "Alice works at ACME Corp", 5)
 	require.NoError(t, err)
@@ -364,7 +364,7 @@ func TestOpenRouterInfoParser_ParseEventKind(t *testing.T) {
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "Alice got married to Bob last Saturday", 5)
 	require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestOpenRouterInfoParser_ParseLimitsToMaxFacts(t *testing.T) {
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "some content here", 2)
 	require.NoError(t, err)
@@ -395,7 +395,7 @@ func TestOpenRouterInfoParser_ParseDeduplicatesFacts(t *testing.T) {
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "some content here", 5)
 	require.NoError(t, err)
@@ -409,7 +409,7 @@ func TestOpenRouterInfoParser_ParseFiltersLowSignalFacts(t *testing.T) {
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "some content here", 5)
 	require.NoError(t, err)
@@ -420,7 +420,7 @@ func TestOpenRouterInfoParser_ParseFiltersLowSignalFacts(t *testing.T) {
 func TestOpenRouterInfoParser_ParseGenerateError(t *testing.T) {
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return "", fmt.Errorf("upstream provider error")
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	_, err := p.Parse(context.Background(), "Alice works at ACME Corp", 5)
 	require.Error(t, err)
@@ -430,7 +430,7 @@ func TestOpenRouterInfoParser_ParseGenerateError(t *testing.T) {
 func TestOpenRouterInfoParser_ParseInvalidJSON(t *testing.T) {
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return "not json at all", nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	_, err := p.Parse(context.Background(), "Alice works at ACME Corp", 5)
 	require.Error(t, err)
@@ -445,7 +445,7 @@ func TestOpenRouterInfoParser_ParseJSONEmbeddedInText(t *testing.T) {
 
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return wrapped, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "Alice works at ACME Corp", 5)
 	require.NoError(t, err)
@@ -459,7 +459,7 @@ func TestOpenRouterInfoParser_ParseInfersEntityWhenMissing(t *testing.T) {
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "Alice lives in Seattle and works remotely", 5)
 	require.NoError(t, err)
@@ -473,7 +473,7 @@ func TestOpenRouterInfoParser_ParsePreservesProvidedRelationValueWhenEntityMissi
 	})
 	p := newOpenRouterParserWithMock(func(_ context.Context, _ string) (string, error) {
 		return parserJSON, nil
-	}, "openai/gpt-4o-mini")
+	}, "openai/gpt-oss-20b:nitro")
 
 	facts, err := p.Parse(context.Background(), "I use TypeScript", 5)
 	require.NoError(t, err)
