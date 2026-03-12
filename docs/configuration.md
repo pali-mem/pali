@@ -69,9 +69,9 @@ structured_memory:
   max_observations: 3
 
 retrieval:
-  answer_type_routing_enabled: false
-  early_rank_rerank_enabled: false
-  temporal_resolver_enabled: false
+  answer_type_routing_enabled: true
+  early_rank_rerank_enabled: true
+  temporal_resolver_enabled: true
   open_domain_alternative_resolver_enabled: false
   scoring:
     algorithm: wal
@@ -85,6 +85,19 @@ retrieval:
       importance: 0.10
       query_overlap: 0.10
       routing: 0.05
+  search:
+    adaptive_query_expansion_enabled: false
+    adaptive_query_max_extra_queries: 2
+    adaptive_query_weak_lexical_threshold: 0.62
+    adaptive_query_plan_confidence_threshold: 0
+    candidate_window_multiplier: 5
+    candidate_window_min: 50
+    candidate_window_max: 200
+    candidate_window_temporal_boost: 40
+    candidate_window_multi_hop_boost: 80
+    candidate_window_filter_boost: 30
+    early_rerank_base_window: 25
+    early_rerank_max_window: 25
   multi_hop:
     entity_fact_bridge_enabled: true
     llm_decomposition_enabled: false
@@ -103,7 +116,7 @@ retrieval:
     graph_min_score: 0.12
     graph_weight: 0.25
     graph_temporal_validity: false
-    graph_singleton_invalidation: false
+    graph_singleton_invalidation: true
 
 parser:
   enabled: false
@@ -180,9 +193,10 @@ logging:
 - `embedding.provider: onnx` requires both model files and an ONNX Runtime shared library.
 - `embedding.provider: openrouter` requires `openrouter.api_key`.
 - `retrieval.multi_hop.llm_decomposition_enabled` is off by default.
-- `retrieval.answer_type_routing_enabled` keeps single-hop, temporal, and open-domain routing changes additive until validated.
-- `retrieval.early_rank_rerank_enabled` is intended to lift relevant hits from ranks `11-25` into `1-10` before increasing retrieval depth.
-- `retrieval.temporal_resolver_enabled` is the gated path for stronger temporal answer normalization.
+- `retrieval.answer_type_routing_enabled` is on by default.
+- `retrieval.early_rank_rerank_enabled` is on by default and is intended to lift relevant hits from ranks `11-25` into `1-10` before increasing retrieval depth.
+- `retrieval.temporal_resolver_enabled` is on by default for stronger temporal answer normalization.
+- `retrieval.search.*` controls adaptive query variants, candidate overfetch windows, and rerank window depth.
 - `retrieval.open_domain_alternative_resolver_enabled` is the gated path for deterministic open-domain label/choice resolution.
 - `parser.answer_span_retention_enabled` stores extra answer-bearing metadata on parsed memories without replacing existing canonical memory content.
 - `profile_layer.support_links_enabled` stores source-support lines on summary/profile memories so retrieval can surface the summary and its backing evidence together.
@@ -190,17 +204,17 @@ logging:
 
 ## Category Improvement Rollout
 
-These flags were added for the single-hop / temporal / open-domain improvement slice.
+These flags were originally added for the single-hop / temporal / open-domain improvement slice.
+They are now enabled by default in runtime defaults and `pali.yaml.example`.
 
-- Leave them `false` for baseline and benchmark-comparable runs.
-- Enable them together for category-focused experiments:
-  - `retrieval.answer_type_routing_enabled: true`
-  - `retrieval.early_rank_rerank_enabled: true`
-  - `retrieval.temporal_resolver_enabled: true`
-  - `retrieval.open_domain_alternative_resolver_enabled: true`
-  - `parser.answer_span_retention_enabled: true`
-  - `profile_layer.support_links_enabled: true`
-- Roll back by flipping those flags back to `false`; the schema changes are additive and existing memories remain readable.
+- For baseline-only comparison runs, disable these explicitly:
+  - `retrieval.answer_type_routing_enabled: false`
+  - `retrieval.early_rank_rerank_enabled: false`
+  - `retrieval.temporal_resolver_enabled: false`
+- Optional, still-experimental toggles remain off by default:
+  - `retrieval.open_domain_alternative_resolver_enabled: false`
+  - `parser.answer_span_retention_enabled: false`
+  - `profile_layer.support_links_enabled: false`
 
 ## Benchmark and Test Profiles
 
@@ -254,6 +268,7 @@ Useful flags:
 ## Validation Rules Worth Remembering
 
 - `postprocess.*` timing and batch fields must be positive
+- `retrieval.search.*` window and threshold fields must remain within their documented bounds
 - `parser.max_facts` must be positive
 - parser thresholds must stay in `[0,1]`
 - `structured_memory.max_observations` must be positive when dual-write modes are enabled

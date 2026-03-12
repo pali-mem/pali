@@ -162,7 +162,7 @@ Add under `retrieval.multi_hop`:
 - `graph_min_score: 0.12`
 - `graph_weight: 0.25`
 - `graph_temporal_validity: false`
-- `graph_singleton_invalidation: false` (write-path behavior gate)
+- `graph_singleton_invalidation: true` (write-path behavior gate)
 
 These must be additive to the Neo4j config flags that already exist in the repo:
 - `entity_fact_backend=neo4j`
