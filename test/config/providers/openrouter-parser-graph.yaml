@@ -2,8 +2,8 @@ server:
   host: 127.0.0.1
   port: 8080
 
-vector_backend: qdrant
-entity_fact_backend: neo4j
+vector_backend: sqlite
+entity_fact_backend: sqlite
 default_tenant_id: ""
 importance_scorer: heuristic
 
@@ -11,7 +11,7 @@ postprocess:
   enabled: true
   poll_interval_ms: 250
   batch_size: 32
-  worker_count: 2
+  worker_count: 32
   lease_ms: 30000
   max_attempts: 5
   retry_base_ms: 500
@@ -39,10 +39,30 @@ retrieval:
       importance: 0.10
       query_overlap: 0.10
       routing: 0.05
+  multi_hop:
+    entity_fact_bridge_enabled: true
+    llm_decomposition_enabled: false
+    decomposition_provider: openrouter
+    openrouter_model: openai/gpt-oss-120b:nitro
+    ollama_base_url: http://127.0.0.1:11434
+    ollama_model: deepseek-r1:7b
+    ollama_timeout_ms: 2000
+    max_decomposition_queries: 3
+    enable_pairwise_rerank: true
+    token_expansion_fallback: true
+    graph_path_enabled: false
+    graph_max_hops: 2
+    graph_seed_limit: 12
+    graph_path_limit: 128
+    graph_min_score: 0.12
+    graph_weight: 0.25
+    graph_temporal_validity: false
+    graph_singleton_invalidation: true
 
 parser:
   enabled: true
-  provider: heuristic
+  provider: openrouter
+  openrouter_model: openai/gpt-oss-20b:nitro
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: deepseek-r1:7b
   ollama_timeout_ms: 20000
@@ -57,7 +77,7 @@ database:
 qdrant:
   base_url: http://127.0.0.1:6333
   api_key: ""
-  collection: pali_memories_lexical
+  collection: pali_memories
   timeout_ms: 2000
 
 neo4j:
@@ -69,7 +89,7 @@ neo4j:
   batch_size: 256
 
 embedding:
-  provider: lexical
+  provider: openrouter
   fallback_provider: lexical
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: mxbai-embed-large
