@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -305,6 +306,11 @@ func (s *Service) parseFactsWithFallback(ctx context.Context, content string, tu
 	primaryFacts, primaryErr := s.infoParser.Parse(ctx, content, s.parser.MaxFacts)
 	if primaryErr == nil && len(primaryFacts) > 0 {
 		prepared := prepareParsedFactsForStore(content, primaryFacts, s.parser.AnswerSpanRetentionEnabled)
+		maxPreparedFacts := s.parser.MaxFacts
+		if strings.EqualFold(strings.TrimSpace(s.parser.Provider), heuristicExtractorName) && s.parser.StoreRawTurn && maxPreparedFacts > 1 {
+			maxPreparedFacts = 1
+		}
+		prepared = optimizePreparedFactsForParser(content, prepared, s.parser.Provider, maxPreparedFacts)
 		if len(prepared) > 0 {
 			s.logDebugf(
 				"[pali-parser] turn=%d provider=%s model=%s status=ok ms=%d facts=%d",
@@ -326,6 +332,11 @@ func (s *Service) parseFactsWithFallback(ctx context.Context, content string, tu
 	fallbackFacts, fallbackErr := fallback.Parse(ctx, content, s.parser.MaxFacts)
 	if fallbackErr == nil && len(fallbackFacts) > 0 {
 		prepared := prepareParsedFactsForStore(content, fallbackFacts, s.parser.AnswerSpanRetentionEnabled)
+		maxPreparedFacts := s.parser.MaxFacts
+		if s.parser.StoreRawTurn && maxPreparedFacts > 1 {
+			maxPreparedFacts = 1
+		}
+		prepared = optimizePreparedFactsForParser(content, prepared, heuristicExtractorName, maxPreparedFacts)
 		if len(prepared) > 0 {
 			s.logDebugf(
 				"[pali-parser] turn=%d provider=%s model=%s status=fallback_heuristic ms=%d facts=%d",
@@ -697,6 +708,105 @@ func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact, retain
 		prepared = append(prepared, expandCompoundPreparedFacts(sourceContent, fact, retainAnswerSpans)...)
 	}
 	return dedupePreparedFacts(prepared)
+}
+
+func optimizePreparedFactsForParser(sourceContent string, facts []ParsedFact, provider string, maxFacts int) []ParsedFact {
+	if len(facts) == 0 {
+		return []ParsedFact{}
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	filtered := make([]ParsedFact, 0, len(facts))
+	for _, fact := range facts {
+		if provider == heuristicExtractorName && shouldDropHeuristicSpeechFact(fact) {
+			continue
+		}
+		filtered = append(filtered, fact)
+	}
+	filtered = dedupePreparedFacts(filtered)
+	if provider != heuristicExtractorName || len(filtered) <= 1 {
+		return filtered
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		iScore := heuristicFactConfidenceScore(sourceContent, filtered[i])
+		jScore := heuristicFactConfidenceScore(sourceContent, filtered[j])
+		if iScore != jScore {
+			return iScore > jScore
+		}
+		return len(filtered[i].Content) < len(filtered[j].Content)
+	})
+
+	limit := 2
+	if maxFacts > 0 && maxFacts < limit {
+		limit = maxFacts
+	}
+	if limit <= 0 || len(filtered) <= limit {
+		return filtered
+	}
+	return filtered[:limit]
+}
+
+func shouldDropHeuristicSpeechFact(fact ParsedFact) bool {
+	content := strings.ToLower(normalizeFactContent(fact.Content))
+	if !genericSpeechPattern.MatchString(content) {
+		return false
+	}
+	if strings.Contains(content, "said that") {
+		return true
+	}
+	candidate := normalizeEntityFactValue(fact.Value)
+	if candidate == "" {
+		candidate = inferSpecificValueCandidate(fact.Content)
+	}
+	candidate = strings.ToLower(normalizeFactContent(candidate))
+	if candidate == "" {
+		return true
+	}
+	if chatterLeadPattern.MatchString(candidate) {
+		return true
+	}
+	words := strings.Fields(candidate)
+	return len(words) < 3
+}
+
+func heuristicFactConfidenceScore(sourceContent string, fact ParsedFact) int {
+	score := 0
+	content := normalizeFactContent(fact.Content)
+	if content == "" {
+		return -100
+	}
+	relation := normalizeEntityFactRelation(fact.Relation)
+	if relation != "" && relation != "unknown" {
+		score += 4
+	}
+	entity := strings.TrimSpace(fact.Entity)
+	if entity == "" {
+		entity = inferEntityFromFact(content)
+	}
+	if entity != "" {
+		score += 2
+	}
+	value := normalizeEntityFactValue(fact.Value)
+	if value == "" {
+		value = inferSpecificValueCandidate(content)
+	}
+	if len(strings.Fields(value)) >= 2 {
+		score += 2
+	}
+	if strings.TrimSpace(fact.QueryViewText) != "" {
+		score += 1
+	}
+	if isTemporalFact(content, fact) && hasAbsoluteOrAnchoredTime(sourceContent, content) {
+		score += 1
+	}
+	lowerContent := strings.ToLower(content)
+	if genericSpeechPattern.MatchString(lowerContent) {
+		score -= 5
+	}
+	if len(content) > 220 {
+		score--
+	}
+	return score
 }
 
 func expandCompoundPreparedFacts(sourceContent string, fact ParsedFact, retainAnswerSpans bool) []ParsedFact {

@@ -44,6 +44,22 @@ type RetrievalBehaviorOptions struct {
 	TemporalResolverEnabled              bool
 	OpenDomainAlternativeResolverEnabled bool
 	ProfileSupportLinksEnabled           bool
+	SearchTuning                         RetrievalSearchTuningOptions
+}
+
+type RetrievalSearchTuningOptions struct {
+	AdaptiveQueryExpansionEnabled        bool
+	AdaptiveQueryMaxExtraQueries         int
+	AdaptiveQueryWeakLexicalThreshold    float64
+	AdaptiveQueryPlanConfidenceThreshold float64
+	CandidateWindowMultiplier            int
+	CandidateWindowMin                   int
+	CandidateWindowMax                   int
+	CandidateWindowTemporalBoost         int
+	CandidateWindowMultiHopBoost         int
+	CandidateWindowFilterBoost           int
+	EarlyRerankBaseWindow                int
+	EarlyRerankMaxWindow                 int
 }
 
 type RankingOptions struct {
@@ -281,11 +297,29 @@ func defaultRankingOptions() RankingOptions {
 
 func defaultRetrievalBehaviorOptions() RetrievalBehaviorOptions {
 	return RetrievalBehaviorOptions{
-		AnswerTypeRoutingEnabled:             false,
-		EarlyRankRerankEnabled:               false,
-		TemporalResolverEnabled:              false,
+		AnswerTypeRoutingEnabled:             true,
+		EarlyRankRerankEnabled:               true,
+		TemporalResolverEnabled:              true,
 		OpenDomainAlternativeResolverEnabled: false,
 		ProfileSupportLinksEnabled:           false,
+		SearchTuning:                         defaultRetrievalSearchTuningOptions(),
+	}
+}
+
+func defaultRetrievalSearchTuningOptions() RetrievalSearchTuningOptions {
+	return RetrievalSearchTuningOptions{
+		AdaptiveQueryExpansionEnabled:        false,
+		AdaptiveQueryMaxExtraQueries:         2,
+		AdaptiveQueryWeakLexicalThreshold:    0.62,
+		AdaptiveQueryPlanConfidenceThreshold: 0,
+		CandidateWindowMultiplier:            5,
+		CandidateWindowMin:                   50,
+		CandidateWindowMax:                   200,
+		CandidateWindowTemporalBoost:         40,
+		CandidateWindowMultiHopBoost:         80,
+		CandidateWindowFilterBoost:           30,
+		EarlyRerankBaseWindow:                25,
+		EarlyRerankMaxWindow:                 25,
 	}
 }
 
@@ -316,7 +350,7 @@ func defaultMultiHopOptions() MultiHopOptions {
 		GraphMinScore:              0.12,
 		GraphWeight:                0.25,
 		GraphTemporalValidity:      false,
-		GraphSingletonInvalidation: false,
+		GraphSingletonInvalidation: true,
 	}
 }
 
@@ -349,6 +383,52 @@ func normalizeRankingOptions(in RankingOptions) RankingOptions {
 
 func normalizeRetrievalBehaviorOptions(in RetrievalBehaviorOptions) RetrievalBehaviorOptions {
 	out := in
+	out.SearchTuning = normalizeRetrievalSearchTuningOptions(out.SearchTuning)
+	return out
+}
+
+func normalizeRetrievalSearchTuningOptions(in RetrievalSearchTuningOptions) RetrievalSearchTuningOptions {
+	def := defaultRetrievalSearchTuningOptions()
+	out := in
+	if out.AdaptiveQueryMaxExtraQueries <= 0 {
+		out.AdaptiveQueryMaxExtraQueries = def.AdaptiveQueryMaxExtraQueries
+	}
+	if out.AdaptiveQueryWeakLexicalThreshold < 0 || out.AdaptiveQueryWeakLexicalThreshold > 1 {
+		out.AdaptiveQueryWeakLexicalThreshold = def.AdaptiveQueryWeakLexicalThreshold
+	}
+	if out.AdaptiveQueryPlanConfidenceThreshold < 0 || out.AdaptiveQueryPlanConfidenceThreshold > 1 {
+		out.AdaptiveQueryPlanConfidenceThreshold = def.AdaptiveQueryPlanConfidenceThreshold
+	}
+	if out.CandidateWindowMultiplier <= 0 {
+		out.CandidateWindowMultiplier = def.CandidateWindowMultiplier
+	}
+	if out.CandidateWindowMin <= 0 {
+		out.CandidateWindowMin = def.CandidateWindowMin
+	}
+	if out.CandidateWindowMax <= 0 {
+		out.CandidateWindowMax = def.CandidateWindowMax
+	}
+	if out.CandidateWindowMax < out.CandidateWindowMin {
+		out.CandidateWindowMax = out.CandidateWindowMin
+	}
+	if out.CandidateWindowTemporalBoost < 0 {
+		out.CandidateWindowTemporalBoost = def.CandidateWindowTemporalBoost
+	}
+	if out.CandidateWindowMultiHopBoost < 0 {
+		out.CandidateWindowMultiHopBoost = def.CandidateWindowMultiHopBoost
+	}
+	if out.CandidateWindowFilterBoost < 0 {
+		out.CandidateWindowFilterBoost = def.CandidateWindowFilterBoost
+	}
+	if out.EarlyRerankBaseWindow <= 0 {
+		out.EarlyRerankBaseWindow = def.EarlyRerankBaseWindow
+	}
+	if out.EarlyRerankMaxWindow <= 0 {
+		out.EarlyRerankMaxWindow = def.EarlyRerankMaxWindow
+	}
+	if out.EarlyRerankMaxWindow < out.EarlyRerankBaseWindow {
+		out.EarlyRerankMaxWindow = out.EarlyRerankBaseWindow
+	}
 	return out
 }
 
