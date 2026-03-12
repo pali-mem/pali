@@ -27,9 +27,9 @@ func Defaults() Config {
 			MaxObservations:       3,
 		},
 		Retrieval: RetrievalConfig{
-			AnswerTypeRoutingEnabled:             false,
-			EarlyRankRerankEnabled:               false,
-			TemporalResolverEnabled:              false,
+			AnswerTypeRoutingEnabled:             true,
+			EarlyRankRerankEnabled:               true,
+			TemporalResolverEnabled:              true,
 			OpenDomainAlternativeResolverEnabled: false,
 			Scoring: RetrievalScoringConfig{
 				Algorithm: "wal",
@@ -45,6 +45,20 @@ func Defaults() Config {
 					QueryOverlap: 0.10,
 					Routing:      0.05,
 				},
+			},
+			Search: RetrievalSearchConfig{
+				AdaptiveQueryExpansionEnabled:        false,
+				AdaptiveQueryMaxExtraQueries:         2,
+				AdaptiveQueryWeakLexicalThreshold:    0.62,
+				AdaptiveQueryPlanConfidenceThreshold: 0,
+				CandidateWindowMultiplier:            5,
+				CandidateWindowMin:                   50,
+				CandidateWindowMax:                   200,
+				CandidateWindowTemporalBoost:         40,
+				CandidateWindowMultiHopBoost:         80,
+				CandidateWindowFilterBoost:           30,
+				EarlyRerankBaseWindow:                25,
+				EarlyRerankMaxWindow:                 25,
 			},
 			MultiHop: RetrievalMultiHopConfig{
 				EntityFactBridgeEnabled:    true,
@@ -64,7 +78,7 @@ func Defaults() Config {
 				GraphMinScore:              0.12,
 				GraphWeight:                0.25,
 				GraphTemporalValidity:      false,
-				GraphSingletonInvalidation: false,
+				GraphSingletonInvalidation: true,
 			},
 		},
 		Parser: ParserConfig{
