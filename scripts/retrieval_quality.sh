@@ -470,6 +470,46 @@ file_sha256() {
   printf 'unavailable\n'
 }
 
+resolve_parser_enabled_effective() {
+  if [[ -n "$PARSER_ENABLED_OVERRIDE" ]]; then
+    local override
+    override="$(printf '%s' "$PARSER_ENABLED_OVERRIDE" | tr '[:upper:]' '[:lower:]' | tr -d '\r' | xargs)"
+    case "$override" in
+      true|false)
+        printf '%s\n' "$override"
+        return
+        ;;
+    esac
+  fi
+
+  if [[ -n "$rendered_cfg_path" && -f "$rendered_cfg_path" ]]; then
+    local from_rendered
+    from_rendered="$(
+      awk '
+        BEGIN { in_parser=0 }
+        /^[^[:space:]]/ { in_parser=0 }
+        /^parser:[[:space:]]*$/ { in_parser=1; next }
+        in_parser && /^[[:space:]]+enabled:[[:space:]]*/ {
+          val=$0
+          sub(/^[[:space:]]+enabled:[[:space:]]*/, "", val)
+          gsub(/[[:space:]]+$/, "", val)
+          print tolower(val)
+          exit
+        }
+      ' "$rendered_cfg_path"
+    )"
+    from_rendered="$(printf '%s' "$from_rendered" | tr -d '\r' | xargs)"
+    case "$from_rendered" in
+      true|false)
+        printf '%s\n' "$from_rendered"
+        return
+        ;;
+    esac
+  fi
+
+  printf 'unknown\n'
+}
+
 timestamp_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 fixture_name="$(basename "$FIXTURE")"
@@ -509,33 +549,8 @@ if [[ "$BACKEND" == "qdrant" ]]; then
 fi
 
 eval_target_mode_resolved="$EVAL_TARGET_MODE"
-if [[ "$eval_target_mode_resolved" == "auto" ]]; then
-  if [[ "$PARSER_ENABLED_OVERRIDE" == "true" ]]; then
-    eval_target_mode_resolved="canonical"
-  else
-    eval_target_mode_resolved="raw_turn"
-  fi
-fi
-if [[ -z "$EVAL_SET" && "$eval_target_mode_resolved" != "raw_turn" ]]; then
-  echo "WARN: eval target '$eval_target_mode_resolved' requires --eval-set; falling back to raw_turn"
-  eval_target_mode_resolved="raw_turn"
-fi
 eval_label_strategy="raw_turn_ids"
 eval_search_kinds_json='[]'
-case "$eval_target_mode_resolved" in
-  raw_turn)
-    eval_label_strategy="raw_turn_ids"
-    eval_search_kinds_json='[]'
-    ;;
-  source_family)
-    eval_label_strategy="source_family_ids"
-    eval_search_kinds_json='[]'
-    ;;
-  canonical)
-    eval_label_strategy="canonical_non_raw_ids"
-    eval_search_kinds_json='["observation","event","summary"]'
-    ;;
-esac
 
 if [[ "$START_SERVER" -eq 1 ]]; then
   if [[ "$EMBEDDING_PROVIDER" == "ollama" ]]; then
@@ -617,6 +632,36 @@ fi
 if [[ -n "$rendered_cfg_path" && -f "$rendered_cfg_path" ]]; then
   cp "$rendered_cfg_path" "$run_dir/config.rendered.yaml"
 fi
+
+if [[ "$eval_target_mode_resolved" == "auto" ]]; then
+  parser_enabled_effective="$(resolve_parser_enabled_effective)"
+  if [[ "$parser_enabled_effective" == "true" ]]; then
+    eval_target_mode_resolved="canonical"
+  else
+    eval_target_mode_resolved="raw_turn"
+    if [[ "$parser_enabled_effective" == "unknown" ]]; then
+      echo "WARN: parser enabled state unavailable in auto mode; defaulting eval target to raw_turn"
+    fi
+  fi
+fi
+if [[ -z "$EVAL_SET" && "$eval_target_mode_resolved" != "raw_turn" ]]; then
+  echo "WARN: eval target '$eval_target_mode_resolved' requires --eval-set; falling back to raw_turn"
+  eval_target_mode_resolved="raw_turn"
+fi
+case "$eval_target_mode_resolved" in
+  raw_turn)
+    eval_label_strategy="raw_turn_ids"
+    eval_search_kinds_json='[]'
+    ;;
+  source_family)
+    eval_label_strategy="source_family_ids"
+    eval_search_kinds_json='[]'
+    ;;
+  canonical)
+    eval_label_strategy="canonical_non_raw_ids"
+    eval_search_kinds_json='["observation","event","summary"]'
+    ;;
+esac
 
 fixture_count="$(jq 'length' "$FIXTURE")"
 if [[ "$fixture_count" -le 0 ]]; then

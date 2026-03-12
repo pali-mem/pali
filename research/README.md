@@ -19,6 +19,7 @@ For now, this repo tracks a **no-judge** adaptation:
 - `run_ollama_vs_lexical.sh`: runs retrieval benchmark matrix (`ollama`, `lexical`) via `scripts/retrieval_quality.sh`.
 - `analyze_benchmark_quality.sh`: checks coverage, curation, and discriminative power; writes JSON + Markdown report.
 - `prepare_locomo_eval.py`: converts LOCOMO dialog + QA evidence into Pali fixture/eval formats.
+- `analyze_locomo_runs.py`: compares one or more LoCoMo runs from `locomo.fastsmoke.json`/`trace.jsonl`, including CI and per-query deltas.
 - `run_locomo_paper_style.sh`: end-to-end LOCOMO download/convert/run flow.
 - `results/` (gitignored): per-run artifacts.
 - `data/` (gitignored): downloaded and converted dataset artifacts.
@@ -63,3 +64,15 @@ The analyzer reports:
 - `query_leakage_risk`: high when auto-generated short prefix queries are used.
 
 This gives a practical answer to: "Are our benchmarks good enough yet?" without adding LLM judge scoring.
+
+## LoCoMo Run Delta + CI
+
+Use this when `q` is small and you want to know if a score change is likely real:
+
+```bash
+python research/analyze_locomo_runs.py \
+  --run research/results/neo4j_locomo/<baseline>/locomo.fastsmoke.json \
+  --run research/results/neo4j_locomo/<candidate>/locomo.fastsmoke.json \
+  --top-changes 10 \
+  --projected-n 150
+```
