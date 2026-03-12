@@ -24,6 +24,9 @@ structured_memory:
   max_observations: 3
 
 retrieval:
+  answer_type_routing_enabled: true
+  early_rank_rerank_enabled: true
+  temporal_resolver_enabled: true
   scoring:
     algorithm: wal
     wal:
