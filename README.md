@@ -393,6 +393,7 @@ Benchmarks:
 make bench-setup
 make benchmark
 make retrieval-quality
+make bench-suite
 ```
 
 Canonical release assets:
@@ -400,9 +401,13 @@ Canonical release assets:
 - `testdata/benchmarks/fixtures/release_memories.json`
 - `testdata/benchmarks/evals/release_curated.json`
 - `test/benchmarks/profiles/`
+- `test/benchmarks/suites/`
 
 Result output: `test/benchmarks/results/<timestamp>/`
 Each run now includes `config.profile.yaml` and `config.rendered.yaml`.
+
+Suite output: `test/benchmarks/results/suites/<timestamp>-<suite>/`
+Each suite run includes a combined `suite.json` and `suite.summary.md` scorecard.
 
 ## Docs
 

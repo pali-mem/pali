@@ -2,10 +2,10 @@ server:
   host: 127.0.0.1
   port: 8080
 
-vector_backend: sqlite
+vector_backend: qdrant
 entity_fact_backend: sqlite
 default_tenant_id: ""
-importance_scorer: heuristic
+importance_scorer: ollama
 
 postprocess:
   enabled: true
@@ -44,7 +44,7 @@ parser:
   enabled: false
   provider: heuristic
   ollama_base_url: http://127.0.0.1:11434
-  ollama_model: deepseek-r1:7b
+  ollama_model: phi3:mini
   ollama_timeout_ms: 20000
   store_raw_turn: true
   max_facts: 4
@@ -69,7 +69,7 @@ neo4j:
   batch_size: 256
 
 embedding:
-  provider: mock
+  provider: ollama
   fallback_provider: lexical
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: mxbai-embed-large
@@ -86,8 +86,8 @@ openrouter:
 
 ollama:
   base_url: http://127.0.0.1:11434
-  model: deepseek-r1:7b
-  timeout_ms: 2000
+  model: phi3:mini
+  timeout_ms: 10000
 
 auth:
   enabled: false

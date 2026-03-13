@@ -14,7 +14,7 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Code coverage 1rofiles and other test artifacts
 *.out
 coverage.*
 *.coverprofile
@@ -40,6 +40,9 @@ models/all-MiniLM-L6-v2/tokenizer.json
 
 # env file
 .env
+
+# Python virtual environment
+.venv/
 
 # Editor/IDE
 # .idea/

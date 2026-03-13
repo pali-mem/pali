@@ -1,0 +1,164 @@
+{
+  "name": "speed-qdrant-ollama-compare",
+  "description": "Profile-paired suite to compare sqlite+lexical baseline against qdrant+ollama, including ollama importance scorer impact.",
+  "out_root": "test/benchmarks/results/suites",
+  "fail_fast": false,
+  "common": {
+    "benchmark": {
+      "fixture": "testdata/benchmarks/fixtures/release_memories.json",
+      "eval_set": "testdata/benchmarks/evals/release_curated.json",
+      "top_k": 5,
+      "search_ops": 300
+    },
+    "retrieval_quality": {
+      "fixture": "testdata/benchmarks/fixtures/release_memories.json",
+      "eval_set": "testdata/benchmarks/evals/release_curated.json",
+      "top_k": 5,
+      "max_queries": 0
+    }
+  },
+  "scoring_defaults": {
+    "latency_slo_ms": {
+      "search": {
+        "p50": 80,
+        "p95": 130,
+        "p99": 200
+      },
+      "store": {
+        "p95": 40
+      }
+    },
+    "throughput_targets_ops_sec": {
+      "store": 15,
+      "search": 6
+    },
+    "weights": {
+      "latency": 0.7,
+      "throughput": 0.3
+    }
+  },
+  "scenarios": [
+    {
+      "id": "sqlite_lexical_speed",
+      "runner": "benchmark",
+      "enabled": true,
+      "args": {
+        "backend": "sqlite",
+        "embedding_provider": "lexical",
+        "config_profile": "test/config/providers/lexical.yaml"
+      }
+    },
+    {
+      "id": "qdrant_ollama_speed_heuristic_scorer",
+      "runner": "benchmark",
+      "enabled": true,
+      "args": {
+        "backend": "qdrant",
+        "embedding_provider": "ollama",
+        "embedding_model": "all-minilm",
+        "config_profile": "test/config/providers/qdrant-ollama.yaml",
+        "qdrant_url": "http://127.0.0.1:6333",
+        "qdrant_collection": "pali_memories_suite",
+        "qdrant_isolate_run": "true"
+      }
+    },
+    {
+      "id": "qdrant_ollama_speed_ollama_scorer",
+      "runner": "benchmark",
+      "enabled": true,
+      "args": {
+        "backend": "qdrant",
+        "embedding_provider": "ollama",
+        "embedding_model": "all-minilm",
+        "config_profile": "test/config/providers/qdrant-ollama-importance-ollama.yaml",
+        "qdrant_url": "http://127.0.0.1:6333",
+        "qdrant_collection": "pali_memories_suite",
+        "qdrant_isolate_run": "true"
+      }
+    },
+    {
+      "id": "sqlite_lexical_retrieval",
+      "runner": "retrieval_quality",
+      "enabled": true,
+      "args": {
+        "backend": "sqlite",
+        "embedding_provider": "lexical",
+        "config_profile": "test/config/providers/lexical.yaml"
+      }
+    },
+    {
+      "id": "qdrant_ollama_retrieval_heuristic_scorer",
+      "runner": "retrieval_quality",
+      "enabled": true,
+      "args": {
+        "backend": "qdrant",
+        "embedding_provider": "ollama",
+        "embedding_model": "all-minilm",
+        "config_profile": "test/config/providers/qdrant-ollama.yaml",
+        "qdrant_url": "http://127.0.0.1:6333",
+        "qdrant_collection": "pali_memories_suite",
+        "qdrant_isolate_run": "true"
+      }
+    },
+    {
+      "id": "qdrant_ollama_retrieval_ollama_scorer",
+      "runner": "retrieval_quality",
+      "enabled": true,
+      "args": {
+        "backend": "qdrant",
+        "embedding_provider": "ollama",
+        "embedding_model": "all-minilm",
+        "config_profile": "test/config/providers/qdrant-ollama-importance-ollama.yaml",
+        "qdrant_url": "http://127.0.0.1:6333",
+        "qdrant_collection": "pali_memories_suite",
+        "qdrant_isolate_run": "true"
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "id": "speed_lexical_vs_qdrant_heuristic",
+      "baseline": "sqlite_lexical_speed",
+      "candidate": "qdrant_ollama_speed_heuristic_scorer",
+      "metrics": [
+        "search_p95_ms",
+        "search_ops_sec",
+        "store_ops_sec",
+        "scoring.performance_score"
+      ]
+    },
+    {
+      "id": "speed_qdrant_heuristic_vs_ollama_scorer",
+      "baseline": "qdrant_ollama_speed_heuristic_scorer",
+      "candidate": "qdrant_ollama_speed_ollama_scorer",
+      "metrics": [
+        "search_p95_ms",
+        "search_ops_sec",
+        "store_ops_sec",
+        "scoring.performance_score"
+      ]
+    },
+    {
+      "id": "retrieval_lexical_vs_qdrant_heuristic",
+      "baseline": "sqlite_lexical_retrieval",
+      "candidate": "qdrant_ollama_retrieval_heuristic_scorer",
+      "metrics": [
+        "top1_hit_rate",
+        "recall_at_k",
+        "ndcg_at_k",
+        "mrr"
+      ]
+    },
+    {
+      "id": "retrieval_qdrant_heuristic_vs_ollama_scorer",
+      "baseline": "qdrant_ollama_retrieval_heuristic_scorer",
+      "candidate": "qdrant_ollama_retrieval_ollama_scorer",
+      "metrics": [
+        "top1_hit_rate",
+        "recall_at_k",
+        "ndcg_at_k",
+        "mrr"
+      ]
+    }
+  ]
+}

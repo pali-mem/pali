@@ -11,7 +11,7 @@ postprocess:
   enabled: true
   poll_interval_ms: 250
   batch_size: 32
-  worker_count: 2
+  worker_count: 32
   lease_ms: 30000
   max_attempts: 5
   retry_base_ms: 500
@@ -24,6 +24,9 @@ structured_memory:
   max_observations: 3
 
 retrieval:
+  answer_type_routing_enabled: true
+  early_rank_rerank_enabled: true
+  temporal_resolver_enabled: true
   scoring:
     algorithm: wal
     wal:
@@ -40,7 +43,7 @@ retrieval:
 parser:
   enabled: true
   provider: openrouter
-  openrouter_model: openai/gpt-4o-mini
+  openrouter_model: openai/gpt-oss-20b:nitro
   ollama_base_url: http://127.0.0.1:11434
   ollama_model: deepseek-r1:7b
   ollama_timeout_ms: 20000
