@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 type structuredRepoStub struct {

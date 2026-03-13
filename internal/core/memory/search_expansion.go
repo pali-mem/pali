@@ -70,6 +70,82 @@ func buildSearchQueries(query string, profile queryProfile) []string {
 	return queries
 }
 
+func buildAdaptiveSearchQueries(
+	query string,
+	profile queryProfile,
+	plan queryPlan,
+	lexical []lexicalCandidate,
+	tuning RetrievalSearchTuningOptions,
+) []string {
+	if !tuning.AdaptiveQueryExpansionEnabled || tuning.AdaptiveQueryMaxExtraQueries <= 0 {
+		return []string{}
+	}
+	bestLexical := bestLexicalCandidateScore(lexical)
+	if len(lexical) > 0 &&
+		plan.Confidence >= tuning.AdaptiveQueryPlanConfidenceThreshold &&
+		bestLexical >= tuning.AdaptiveQueryWeakLexicalThreshold {
+		return []string{}
+	}
+	maxExtra := tuning.AdaptiveQueryMaxExtraQueries
+	out := make([]string, 0, maxExtra)
+	out = appendUniqueSearchQueries(out, buildPseudoRelevanceQueries(query, profile, lexical, maxExtra))
+	remaining := maxExtra - len(out)
+	if remaining > 0 {
+		out = appendUniqueSearchQueries(out, buildLowConfidenceBackoffQueries(query, profile, remaining))
+	}
+	if len(out) > maxExtra {
+		out = out[:maxExtra]
+	}
+	return out
+}
+
+func buildLowConfidenceBackoffQueries(query string, profile queryProfile, maxQueries int) []string {
+	if maxQueries <= 0 {
+		return []string{}
+	}
+	out := make([]string, 0, maxQueries)
+	add := func(text string) {
+		if len(out) >= maxQueries {
+			return
+		}
+		text = condenseSearchQuery(text)
+		if text == "" {
+			return
+		}
+		out = appendUniqueSearchQueries(out, []string{text})
+	}
+
+	add(query)
+	if entity, ok := classifyEntityHintQuery(query, profile); ok {
+		add(entity)
+	}
+	if route, ok := classifyAggregationQuery(query); ok {
+		add(route.Entity + " " + route.Relation)
+	}
+	if profile.Temporal {
+		add(query + " date time")
+	}
+	if profile.MultiHop {
+		for _, part := range searchSplitPattern.Split(query, -1) {
+			add(part)
+			if len(out) >= maxQueries {
+				break
+			}
+		}
+	}
+	return out
+}
+
+func bestLexicalCandidateScore(candidates []lexicalCandidate) float64 {
+	best := 0.0
+	for _, candidate := range candidates {
+		if candidate.Score > best {
+			best = candidate.Score
+		}
+	}
+	return best
+}
+
 func buildIntentAwareRewrites(query string) []string {
 	lowered := strings.ToLower(strings.TrimSpace(query))
 	if lowered == "" {

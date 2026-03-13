@@ -2,7 +2,7 @@ APP=pali
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-.PHONY: run mcp setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-freshness dead-code-sweep release-gate
+.PHONY: run mcp setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend bench-suite bench-suite-medium bench-suite-qdrant bench-suite-openrouter bench-suite-openrouter-parser-graph benchmark-clean check-wiring docs-freshness dead-code-sweep release-gate
 
 run:
 	go run ./cmd/pali -config pali.yaml
@@ -60,6 +60,24 @@ retrieval-quality:
 
 retrieval-trend:
 	bash ./scripts/retrieval_trend.sh --fixture $${FIXTURE:-testdata/benchmarks/fixtures/release_memories.json} --eval-set $${EVAL_SET:-testdata/benchmarks/evals/release_curated.json} --backend $${BACKEND:-sqlite}
+
+bench-suite:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.local.json
+
+bench-suite-medium:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.fast.json
+
+bench-suite-qdrant:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.qdrant_ollama.json
+
+bench-suite-openrouter:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter.json
+
+bench-suite-openrouter-parser-graph:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter-parser-graph.json
+
+benchmark-clean:
+	rm -rf test/benchmarks/results/*
 
 check-wiring:
 	go test ./internal/core/memory ./internal/repository/sqlite -run 'Test(SearchBuildsIterativeQueriesForMultiHopQuestion|SearchWithFiltersAppliesKindFilter|SearchAggregationRouteRespectsMinScore|StoreMarksIndexStateTransitions|StoreMarksIndexStateFailedOnVectorFailure|DeleteMarksIndexStateTombstoned|DeleteMarksIndexStateFailedOnVectorFailure|MemoryRepositoryIndexJobLifecycle)' -count=1

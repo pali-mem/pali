@@ -250,6 +250,33 @@ func TestValidate_MultiHopGraphOptions(t *testing.T) {
 	require.Contains(t, err.Error(), "retrieval.multi_hop.graph_weight")
 }
 
+func TestValidate_RetrievalSearchTuningOptions(t *testing.T) {
+	cfg := Defaults()
+	cfg.Retrieval.Search.AdaptiveQueryMaxExtraQueries = 0
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.search.adaptive_query_max_extra_queries")
+
+	cfg = Defaults()
+	cfg.Retrieval.Search.AdaptiveQueryWeakLexicalThreshold = 1.1
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.search.adaptive_query_weak_lexical_threshold")
+
+	cfg = Defaults()
+	cfg.Retrieval.Search.CandidateWindowMin = 128
+	cfg.Retrieval.Search.CandidateWindowMax = 64
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.search.candidate_window_max")
+
+	cfg = Defaults()
+	cfg.Retrieval.Search.EarlyRerankBaseWindow = 0
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieval.search.early_rerank_base_window")
+}
+
 func TestValidate_CategoryImprovementFlagsAreAdditive(t *testing.T) {
 	cfg := Defaults()
 	cfg.Retrieval.AnswerTypeRoutingEnabled = true
