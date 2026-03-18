@@ -411,9 +411,16 @@ Each suite run includes a combined `suite.json` and `suite.summary.md` scorecard
 
 ## Docs
 
-- Read-first docs index: [`docs/README.md`](docs/README.md)
+- Published docs site: [https://pali-mem.github.io/pali/](https://pali-mem.github.io/pali/)
+- Local docs map: [`docs/README.md`](docs/README.md)
+- Local docs preview:
+
+  ```bash
+  pip install -r docs/requirements.txt
+  mkdocs serve
+  ```
+
 - Multi-tenant auth and isolation: [`docs/multitenancy.md`](docs/multitenancy.md)
-- SQLite notes: [`docs/internal/sqlite.md`](docs/internal/sqlite.md)
 - Operations/runbook: [`docs/operations.md`](docs/operations.md)
 - Configuration guide: [`docs/configuration.md`](docs/configuration.md)
 - MCP notes: [`docs/mcp.md`](docs/mcp.md)
@@ -423,7 +430,6 @@ Each suite run includes a combined `suite.json` and `suite.summary.md` scorecard
 - ONNX setup: [`docs/onnx.md`](docs/onnx.md)
 - Go client docs: [`docs/client/README.md`](docs/client/README.md)
 - Benchmark policy: [`BENCHMARKS.MD`](BENCHMARKS.MD)
-- Change/perf records: [`docs/changes/`](docs/changes/)
 - Research/dependencies: [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md)
 
 ## Module Path

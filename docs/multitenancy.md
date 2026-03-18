@@ -67,7 +67,7 @@ That means dashboard listing still works even when you enable Qdrant or Neo4j. T
 
 ## Config Knobs That Matter
 
-Relevant settings in [`configuration.md`](configuration.md) and [`../pali.yaml.example`](../pali.yaml.example):
+Relevant settings in [`configuration.md`](configuration.md) and [`pali.yaml.example` (GitHub)](https://github.com/pali-mem/pali/blob/main/pali.yaml.example):
 
 - `auth.enabled`
 - `auth.jwt_secret`
