@@ -55,6 +55,8 @@ nav:
   - Home: README.md
   - Start Here:
       - Getting Started: getting-started.md
+      - Quick Reference: quick-reference.md
+      - Operations Checklist: operations-checklist.md
   - Guides:
       - Multi-Tenancy: multitenancy.md
       - Configuration: configuration.md

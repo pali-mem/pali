@@ -5,7 +5,7 @@
   --pali-cyan: #67c1dd;
   --pali-slate: #55627d;
   --pali-gray: #e7e7e8;
-  --pali-bg: #f7f9fc;
+  --pali-bg: #ffffff;
   --md-sidebar-width: 10.5rem;
   --md-sidebar-width--secondary: 10rem;
 }
@@ -69,11 +69,11 @@
   color: #153571;
 }
 
+.md-main,
+.md-main__inner,
+.md-content,
 .md-content__inner {
   background: #ffffff;
-  border: 1px solid rgba(19, 34, 79, 0.08);
-  border-radius: 10px;
-  padding: 1.2rem 1.4rem;
 }
 
 @media screen and (min-width: 76.25em) {
