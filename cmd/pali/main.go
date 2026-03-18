@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/pali-mem/pali/internal/api"
 	"github.com/pali-mem/pali/internal/config"
@@ -58,9 +62,40 @@ func runAPI(cfg config.Config) {
 	}()
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("[pali-startup] starting pali server on http://localhost:%d", cfg.Server.Port)
-	if err := router.Run(addr); err != nil {
-		log.Fatalf("server exited: %v", err)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- server.ListenAndServe()
+	}()
+
+	log.Printf("[pali-startup] starting pali server on %s", addr)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server exited: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("[pali-shutdown] shutdown signal received")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("[pali-shutdown] graceful shutdown failed: %v", err)
+			if closeErr := server.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				log.Printf("[pali-shutdown] forced close failed: %v", closeErr)
+			}
+		}
+		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server exited: %v", err)
+		}
 	}
 }
 

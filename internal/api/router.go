@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
 	"github.com/pali-mem/pali/internal/startup"
 	"github.com/pali-mem/pali/internal/wiring"
+	webassets "github.com/pali-mem/pali/web"
 )
 
 func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
@@ -107,12 +109,19 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	r.Use(apimiddleware.Recovery())
 	r.Use(apimiddleware.CORS())
 
+	staticFS, err := fs.Sub(webassets.StaticFS, "static")
+	if err != nil {
+		_ = closeEntityFactRepo()
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("load embedded static assets: %w", err)
+	}
+
 	health := handlers.NewHealthHandler()
 	memory := handlers.NewMemoryHandler(memoryService, cfg.Postprocess.MaxAttempts)
 	tenant := handlers.NewTenantHandler(tenantService)
 	dashboardHandlers := dashboard.NewHandlers(memoryService, tenantService)
 
-	r.Static("/static", "./web/static")
+	r.StaticFS("/static", http.FS(staticFS))
 
 	r.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/dashboard")

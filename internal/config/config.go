@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -179,7 +178,12 @@ func Load(path string) (Config, error) {
 	cfg := Defaults()
 
 	if path == "" {
-		applyEnvironment(&cfg)
+		if err := applyEnvironment(&cfg); err != nil {
+			return Config{}, err
+		}
+		if err := Validate(cfg); err != nil {
+			return Config{}, err
+		}
 		return cfg, nil
 	}
 
@@ -190,21 +194,11 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
-	applyEnvironment(&cfg)
+	if err := applyEnvironment(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
-}
-
-func applyEnvironment(cfg *Config) {
-	if cfg == nil {
-		return
-	}
-	if strings.TrimSpace(cfg.OpenRouter.APIKey) == "" {
-		cfg.OpenRouter.APIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
-	}
-	if strings.TrimSpace(cfg.Neo4j.Password) == "" {
-		cfg.Neo4j.Password = strings.TrimSpace(os.Getenv("NEO4J_PASSWORD"))
-	}
 }
