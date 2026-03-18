@@ -7,6 +7,7 @@ Pali is open memory infrastructure for LLM and agent systems. This page is the f
 ### User
 
 - [Getting Started](getting-started.md)
+- [Docker Deployment](deployment.md#docker)
 - [Deployment](deployment.md)
 - [Operations](operations.md)
 
@@ -34,6 +35,14 @@ curl http://127.0.0.1:8080/health
 ```
 
 Then continue with [Getting Started](getting-started.md) for tenant creation plus first store/search calls.
+
+Container-first quick path:
+
+```bash
+docker build -t pali:local .
+docker run --rm -p 8080:8080 -v pali-data:/var/lib/pali pali:local
+curl http://127.0.0.1:8080/health
+```
 
 ## Recommended reading order
 

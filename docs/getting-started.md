@@ -6,6 +6,8 @@ This quick path gets Pali running locally and verifies a full tenant memory flow
 
 - Go `1.24+`
 
+If you want the fastest pull-and-run path instead of a source checkout, skip to [Docker quick start](deployment.md#docker).
+
 ## 1) Bootstrap config and checks
 
 ```bash

@@ -45,6 +45,13 @@ go run ./cmd/setup -config /etc/pali/pali.yaml -skip-model-download
    - Required secrets can come from env fallbacks:
      - `OPENROUTER_API_KEY`
      - `NEO4J_PASSWORD`
+   - Containerized deployments can also use explicit `PALI_*` environment overrides, for example:
+     - `PALI_SERVER_HOST`
+     - `PALI_DATABASE_SQLITE_DSN`
+     - `PALI_VECTOR_BACKEND`
+     - `PALI_QDRANT_BASE_URL`
+     - `PALI_NEO4J_PASSWORD`
+     - `PALI_AUTH_JWT_SECRET`
    - All other sensitive values should come from your deployment secret management strategy (config templating, Vault, SSM, etc.).
 
 Recommended production layout:
@@ -90,9 +97,55 @@ For local/dev:
 
 ### Docker
 
-- Mount `/etc/pali` as a read-only config/data volume.
-- Ensure DB path points to persistent storage, not ephemeral container storage.
-- Enable restart policy and wire `/health` into container probes.
+Base image build:
+
+```bash
+docker build -t pali:local .
+```
+
+Run the base zero-dependency profile:
+
+```bash
+docker run --name pali \
+  -p 8080:8080 \
+  -v pali-data:/var/lib/pali \
+  pali:local
+```
+
+The image default command is:
+
+```bash
+/app/pali -config /etc/pali/pali.yaml
+```
+
+The baked container config:
+
+- binds to `0.0.0.0:8080`
+- persists SQLite at `/var/lib/pali/pali.db`
+- points optional services at `qdrant`, `neo4j`, and `ollama`
+
+Override settings with:
+
+- a mounted config file at `/etc/pali/pali.yaml`
+- explicit `PALI_*` environment variables
+
+Compose stacks:
+
+```bash
+docker compose -f deploy/docker/compose.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.neo4j.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.ollama.yaml up --build
+```
+
+Notes:
+
+- `compose.qdrant.yaml` switches `vector_backend` to `qdrant`
+- `compose.neo4j.yaml` switches `entity_fact_backend` to `neo4j`
+- `compose.ollama.yaml` starts Ollama and points the Ollama URLs at that service, but you still need to pull the model before enabling Ollama-backed embedding/parser/scorer
+- Docker health checks are wired to `/health`, Qdrant `/healthz`, Neo4j `cypher-shell`, and `ollama list`
+
+For Compose secrets and port overrides, start from `deploy/docker/.env.example`.
 
 ### systemd
 

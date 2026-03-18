@@ -1,0 +1,25 @@
+services:
+  pali:
+    image: ${PALI_IMAGE:-pali:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PALI_BIND_PORT:-8080}:8080"
+    volumes:
+      - pali-data:/var/lib/pali
+    environment:
+      - PALI_AUTH_ENABLED
+      - PALI_AUTH_JWT_SECRET
+      - PALI_DATABASE_SQLITE_DSN
+      - PALI_EMBEDDING_PROVIDER
+      - PALI_ENTITY_FACT_BACKEND
+      - PALI_NEO4J_PASSWORD
+      - PALI_OPENROUTER_API_KEY
+      - PALI_SERVER_HOST
+      - PALI_SERVER_PORT
+      - PALI_VECTOR_BACKEND
+
+volumes:
+  pali-data:
