@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap");
-
 :root {
   --pali-navy: #13224f;
   --pali-royal: #2453a6;
@@ -8,6 +6,8 @@
   --pali-slate: #55627d;
   --pali-gray: #e7e7e8;
   --pali-bg: #f7f9fc;
+  --md-sidebar-width: 10.5rem;
+  --md-sidebar-width--secondary: 10rem;
 }
 
 [data-md-color-scheme="default"] {
@@ -24,20 +24,16 @@
   --md-code-fg-color: #0f2958;
 }
 
-body,
-input {
-  font-family: "Space Grotesk", "Segoe UI", sans-serif;
-}
-
-code,
-kbd,
-pre {
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-}
-
 .md-header {
   background: linear-gradient(90deg, #1a3570, var(--pali-royal));
   border-bottom: 1px solid rgba(103, 193, 221, 0.28);
+}
+
+.md-header__button.md-logo {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 0.18rem;
+  margin-right: 0.45rem;
 }
 
 .md-tabs {
@@ -48,6 +44,11 @@ pre {
 .md-tabs__link,
 .md-nav__link {
   color: #233a69;
+}
+
+.md-tabs__link:hover,
+.md-nav__link:hover {
+  color: var(--pali-royal);
 }
 
 .md-tabs__link--active,
@@ -73,4 +74,10 @@ pre {
   border: 1px solid rgba(19, 34, 79, 0.08);
   border-radius: 10px;
   padding: 1.2rem 1.4rem;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-grid {
+    max-width: 90rem;
+  }
 }

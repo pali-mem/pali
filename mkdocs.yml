@@ -13,7 +13,6 @@ theme:
   name: material
   logo: assets/pali_square.png
   favicon: assets/pali_square.png
-  font: false
   features:
     - content.code.copy
     - navigation.instant
