@@ -30,6 +30,7 @@ go.work.sum
 # Build and local runtime artifacts
 bin/
 .cache/
+site/
 
 # Local config
 pali.yaml
