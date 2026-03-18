@@ -1,0 +1,75 @@
+site_name: Pali Docs
+site_description: Open memory infrastructure for LLM and agent applications.
+site_url: https://pali-mem.github.io/pali/
+repo_url: https://github.com/pali-mem/pali
+repo_name: pali-mem/pali
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  logo: assets/pali_square.png
+  favicon: assets/favicon.png
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: blue
+      accent: light blue
+
+plugins:
+  - search:
+      lang: en
+
+exclude_docs: |
+  changes/**
+  internal/**
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: README.md
+  - Start Here:
+      - Getting Started: getting-started.md
+      - Quick Reference: quick-reference.md
+      - Operations Checklist: operations-checklist.md
+  - Guides:
+      - Multi-Tenancy: multitenancy.md
+      - Configuration: configuration.md
+      - Deployment: deployment.md
+      - Operations: operations.md
+  - Reference:
+      - API: api.md
+      - MCP Integration: mcp.md
+      - ONNX Runtime: onnx.md
+      - Go Client SDK: client/README.md
+  - Architecture:
+      - Overview: architecture.md
+  - Maintainers:
+      - Benchmark Policy: https://github.com/pali-mem/pali/blob/main/BENCHMARKS.MD
+      - Contributing: https://github.com/pali-mem/pali/blob/main/CONTRIBUTING.md
+      - Changelog: https://github.com/pali-mem/pali/blob/main/CHANGELOG.md

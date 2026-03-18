@@ -1,0 +1,114 @@
+{
+  "name": "speed-medium-fast",
+  "description": "Fast medium-scale benchmark lane (500 fixture rows, 231 labeled eval queries).",
+  "out_root": "test/benchmarks/results/suites",
+  "fail_fast": false,
+  "common": {
+    "benchmark": {
+      "fixture": "testdata/benchmarks/fixtures/locomo_medium500.fixture.json",
+      "eval_set": "testdata/benchmarks/evals/locomo_medium500.eval.json",
+      "top_k": 5,
+      "search_ops": 600
+    },
+    "retrieval_quality": {
+      "fixture": "testdata/benchmarks/fixtures/locomo_medium500.fixture.json",
+      "eval_set": "testdata/benchmarks/evals/locomo_medium500.eval.json",
+      "top_k": 5,
+      "max_queries": 0
+    }
+  },
+  "scoring_defaults": {
+    "latency_slo_ms": {
+      "search": {
+        "p50": 90,
+        "p95": 140,
+        "p99": 220
+      },
+      "store": {
+        "p95": 200
+      }
+    },
+    "throughput_targets_ops_sec": {
+      "store": 10,
+      "search": 6
+    },
+    "weights": {
+      "latency": 0.7,
+      "throughput": 0.3
+    }
+  },
+  "scenarios": [
+    {
+      "id": "sqlite_lexical_speed_medium",
+      "runner": "benchmark",
+      "enabled": true,
+      "args": {
+        "backend": "sqlite",
+        "embedding_provider": "lexical",
+        "config_profile": "test/config/providers/lexical.yaml"
+      }
+    },
+    {
+      "id": "qdrant_ollama_speed_medium",
+      "runner": "benchmark",
+      "enabled": true,
+      "args": {
+        "backend": "qdrant",
+        "embedding_provider": "ollama",
+        "embedding_model": "all-minilm",
+        "config_profile": "test/config/providers/qdrant-ollama.yaml",
+        "qdrant_url": "http://127.0.0.1:6333",
+        "qdrant_collection": "pali_memories_medium",
+        "qdrant_isolate_run": "true"
+      }
+    },
+    {
+      "id": "sqlite_lexical_retrieval_medium",
+      "runner": "retrieval_quality",
+      "enabled": true,
+      "args": {
+        "backend": "sqlite",
+        "embedding_provider": "lexical",
+        "config_profile": "test/config/providers/lexical.yaml"
+      }
+    },
+    {
+      "id": "qdrant_ollama_retrieval_medium",
+      "runner": "retrieval_quality",
+      "enabled": true,
+      "args": {
+        "backend": "qdrant",
+        "embedding_provider": "ollama",
+        "embedding_model": "all-minilm",
+        "config_profile": "test/config/providers/qdrant-ollama.yaml",
+        "qdrant_url": "http://127.0.0.1:6333",
+        "qdrant_collection": "pali_memories_medium",
+        "qdrant_isolate_run": "true"
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "id": "speed_sqlite_lexical_vs_qdrant_ollama_medium",
+      "baseline": "sqlite_lexical_speed_medium",
+      "candidate": "qdrant_ollama_speed_medium",
+      "metrics": [
+        "search_p95_ms",
+        "search_ops_sec",
+        "store_ops_sec",
+        "scoring.performance_score"
+      ]
+    },
+    {
+      "id": "retrieval_sqlite_lexical_vs_qdrant_ollama_medium",
+      "baseline": "sqlite_lexical_retrieval_medium",
+      "candidate": "qdrant_ollama_retrieval_medium",
+      "metrics": [
+        "top1_hit_rate",
+        "recall_at_k",
+        "ndcg_at_k",
+        "mrr"
+      ]
+    }
+  ]
+}

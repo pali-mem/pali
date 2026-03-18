@@ -2,7 +2,7 @@ APP=pali
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-.PHONY: run mcp setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend bench-suite bench-suite-medium bench-suite-qdrant bench-suite-openrouter bench-suite-openrouter-parser-graph benchmark-clean check-wiring docs-freshness dead-code-sweep release-gate
+.PHONY: run mcp setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
 
 run:
 	go run ./cmd/pali -config pali.yaml
@@ -81,6 +81,15 @@ benchmark-clean:
 
 check-wiring:
 	go test ./internal/core/memory ./internal/repository/sqlite -run 'Test(SearchBuildsIterativeQueriesForMultiHopQuestion|SearchWithFiltersAppliesKindFilter|SearchAggregationRouteRespectsMinScore|StoreMarksIndexStateTransitions|StoreMarksIndexStateFailedOnVectorFailure|DeleteMarksIndexStateTombstoned|DeleteMarksIndexStateFailedOnVectorFailure|MemoryRepositoryIndexJobLifecycle)' -count=1
+
+docs-deps:
+	python -m pip install -r docs/requirements.txt
+
+docs-run: docs-deps
+	mkdocs serve
+
+docs-build: docs-deps
+	mkdocs build --strict
 
 docs-freshness:
 	bash ./scripts/check_docs_freshness.sh
