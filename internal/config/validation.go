@@ -80,6 +80,45 @@ func Validate(cfg Config) error {
 	if err := validateMatchScoringWeights(cfg.Retrieval.Scoring.Match, "retrieval.scoring.match"); err != nil {
 		return err
 	}
+	if cfg.Retrieval.Search.AdaptiveQueryMaxExtraQueries <= 0 {
+		return fmt.Errorf("retrieval.search.adaptive_query_max_extra_queries must be > 0")
+	}
+	if cfg.Retrieval.Search.AdaptiveQueryWeakLexicalThreshold < 0 || cfg.Retrieval.Search.AdaptiveQueryWeakLexicalThreshold > 1 {
+		return fmt.Errorf("retrieval.search.adaptive_query_weak_lexical_threshold must be in [0,1]")
+	}
+	if cfg.Retrieval.Search.AdaptiveQueryPlanConfidenceThreshold < 0 || cfg.Retrieval.Search.AdaptiveQueryPlanConfidenceThreshold > 1 {
+		return fmt.Errorf("retrieval.search.adaptive_query_plan_confidence_threshold must be in [0,1]")
+	}
+	if cfg.Retrieval.Search.CandidateWindowMultiplier <= 0 {
+		return fmt.Errorf("retrieval.search.candidate_window_multiplier must be > 0")
+	}
+	if cfg.Retrieval.Search.CandidateWindowMin <= 0 {
+		return fmt.Errorf("retrieval.search.candidate_window_min must be > 0")
+	}
+	if cfg.Retrieval.Search.CandidateWindowMax <= 0 {
+		return fmt.Errorf("retrieval.search.candidate_window_max must be > 0")
+	}
+	if cfg.Retrieval.Search.CandidateWindowMax < cfg.Retrieval.Search.CandidateWindowMin {
+		return fmt.Errorf("retrieval.search.candidate_window_max must be >= retrieval.search.candidate_window_min")
+	}
+	if cfg.Retrieval.Search.CandidateWindowTemporalBoost < 0 {
+		return fmt.Errorf("retrieval.search.candidate_window_temporal_boost must be >= 0")
+	}
+	if cfg.Retrieval.Search.CandidateWindowMultiHopBoost < 0 {
+		return fmt.Errorf("retrieval.search.candidate_window_multi_hop_boost must be >= 0")
+	}
+	if cfg.Retrieval.Search.CandidateWindowFilterBoost < 0 {
+		return fmt.Errorf("retrieval.search.candidate_window_filter_boost must be >= 0")
+	}
+	if cfg.Retrieval.Search.EarlyRerankBaseWindow <= 0 {
+		return fmt.Errorf("retrieval.search.early_rerank_base_window must be > 0")
+	}
+	if cfg.Retrieval.Search.EarlyRerankMaxWindow <= 0 {
+		return fmt.Errorf("retrieval.search.early_rerank_max_window must be > 0")
+	}
+	if cfg.Retrieval.Search.EarlyRerankMaxWindow < cfg.Retrieval.Search.EarlyRerankBaseWindow {
+		return fmt.Errorf("retrieval.search.early_rerank_max_window must be >= retrieval.search.early_rerank_base_window")
+	}
 	if cfg.Retrieval.MultiHop.OllamaTimeoutMS < 0 {
 		return fmt.Errorf("retrieval.multi_hop.ollama_timeout_ms must be >= 0")
 	}

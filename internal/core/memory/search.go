@@ -169,7 +169,8 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	}
 	profile := classifyQuery(query)
 	plan := buildQueryPlan(query, profile)
-	candidateTopK := candidateWindow(topK, profile, len(opts.Kinds) > 0 || len(opts.Tiers) > 0)
+	searchTuning := normalizeRetrievalSearchTuningOptions(s.retrieval.SearchTuning)
+	candidateTopK := candidateWindow(topK, profile, plan, len(opts.Kinds) > 0 || len(opts.Tiers) > 0, searchTuning)
 	searchQueries := buildSearchQueries(query, profile)
 	var (
 		embedDur  time.Duration
@@ -221,6 +222,29 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		return nil, err
 	}
 	lexicalCandidates = append(lexicalCandidates, initialLexical...)
+	adaptiveQueries := buildAdaptiveSearchQueries(query, profile, plan, initialLexical, searchTuning)
+	if len(adaptiveQueries) > 0 {
+		plannedQueries = appendUniqueSearchQueries(plannedQueries, adaptiveQueries)
+		adaptiveLexical, err := s.collectLexicalCandidates(
+			ctx,
+			tenantID,
+			adaptiveQueries,
+			candidateTopK,
+			opts,
+			tierFilter,
+			kindFilter,
+		)
+		if err != nil {
+			return nil, err
+		}
+		lexicalCandidates = append(lexicalCandidates, adaptiveLexical...)
+		s.logDebugf(
+			"[pali-search] adaptive_expansion=true queries=%d best_lexical=%.3f confidence=%.3f",
+			len(adaptiveQueries),
+			bestLexicalCandidateScore(initialLexical),
+			clamp01(plan.Confidence),
+		)
+	}
 	enableGraphEntityBridge := s.entityRepo != nil && s.multiHop.EntityFactBridgeEnabled && (profile.MultiHop || retrievalKind == SearchRetrievalKindEntity)
 	if profile.MultiHop {
 		decomposedQueries, err := s.buildLLMMultiHopQueries(ctx, query)
@@ -369,7 +393,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		scored = s.rerankScoredCandidates(scored, query, topK)
 	}
 	if s.retrieval.EarlyRankRerankEnabled && !profile.MultiHop {
-		scored = s.applyEarlyRankRerank(scored, query, plan)
+		scored = s.applyEarlyRankRerank(scored, query, plan, topK, profile)
 	}
 
 	filtered := make([]scoredMemory, 0, len(scored))
@@ -1415,6 +1439,43 @@ type lexicalCandidate struct {
 	Score  float64
 }
 
+type retrievalSignalWeightSet struct {
+	DenseScore   float64
+	DenseRank    float64
+	LexicalScore float64
+	LexicalRank  float64
+	RRF          float64
+	Entity       float64
+	Route        float64
+}
+
+func retrievalSignalWeights(query string, profile queryProfile, signal candidateSignal) retrievalSignalWeightSet {
+	weights := retrievalSignalWeightSet{
+		DenseScore:   0.34,
+		DenseRank:    0.08,
+		LexicalScore: 0.12,
+		LexicalRank:  0.20,
+		RRF:          0.10,
+		Entity:       0.10,
+		Route:        0.06,
+	}
+	_ = query
+	_ = profile
+	if signal.DenseScore == 0 && signal.DenseRank == 0 {
+		weights.DenseScore = 0
+		weights.DenseRank = 0
+	}
+	return retrievalSignalWeightSet{
+		DenseScore:   max(0.0, weights.DenseScore),
+		DenseRank:    max(0.0, weights.DenseRank),
+		LexicalScore: max(0.0, weights.LexicalScore),
+		LexicalRank:  max(0.0, weights.LexicalRank),
+		RRF:          max(0.0, weights.RRF),
+		Entity:       max(0.0, weights.Entity),
+		Route:        max(0.0, weights.Route),
+	}
+}
+
 func rankMemories(
 	memories []domain.Memory,
 	signalByID map[string]candidateSignal,
@@ -1461,10 +1522,7 @@ func rankMemories(
 		lexicalRankNorm := rankToNormalized(signal.LexicalRank, candidateLimit)
 		routeFit := normalizedRouteBoost(routeBoost(m, profile, plan, behavior))
 		entitySlotHit := entityRelationSignal(plan, m.Content)
-		denseScoreW, denseRankW := 0.34, 0.08
-		if signal.DenseScore == 0 && signal.DenseRank == 0 {
-			denseScoreW, denseRankW = 0, 0
-		}
+		signalWeights := retrievalSignalWeights(query, profile, signal)
 		rawRel := weightedAverage(
 			[]float64{
 				signal.DenseScore,
@@ -1475,7 +1533,15 @@ func rankMemories(
 				entitySlotHit,
 				routeFit,
 			},
-			[]float64{denseScoreW, 0.12, denseRankW, 0.20, 0.10, 0.10, 0.06},
+			[]float64{
+				signalWeights.DenseScore,
+				signalWeights.LexicalScore,
+				signalWeights.DenseRank,
+				signalWeights.LexicalRank,
+				signalWeights.RRF,
+				signalWeights.Entity,
+				signalWeights.Route,
+			},
 		)
 		rel := scoring.Relevance(rawRel)
 		imp := m.Importance
@@ -1718,13 +1784,19 @@ func shouldApplyPairwiseRerank(profile queryProfile, multiHop MultiHopOptions) b
 	return true
 }
 
-func (s *Service) applyEarlyRankRerank(scored []scoredMemory, query string, plan queryPlan) []scoredMemory {
+func (s *Service) applyEarlyRankRerank(
+	scored []scoredMemory,
+	query string,
+	plan queryPlan,
+	topK int,
+	profile queryProfile,
+) []scoredMemory {
 	if len(scored) <= 1 {
 		return scored
 	}
-	window := 25
-	if len(scored) < window {
-		window = len(scored)
+	window := s.earlyRankRerankWindow(len(scored), topK, profile, plan)
+	if window <= 1 {
+		return scored
 	}
 	queryTokens := normalizedRankingTokens(query)
 	head := append([]scoredMemory{}, scored[:window]...)
@@ -1742,6 +1814,33 @@ func (s *Service) applyEarlyRankRerank(scored []scoredMemory, query string, plan
 		}
 	})
 	return append(head, scored[window:]...)
+}
+
+func (s *Service) earlyRankRerankWindow(scoredLen, topK int, profile queryProfile, plan queryPlan) int {
+	if scoredLen <= 1 {
+		return scoredLen
+	}
+	tuning := normalizeRetrievalSearchTuningOptions(s.retrieval.SearchTuning)
+	window := tuning.EarlyRerankBaseWindow
+	if topK > 0 && topK*4 > window {
+		window = topK * 4
+	}
+	if profile.Temporal || profile.MultiHop {
+		window += topK
+	}
+	if plan.Confidence < tuning.AdaptiveQueryPlanConfidenceThreshold {
+		window += max(8, topK*2)
+	}
+	if window > tuning.EarlyRerankMaxWindow {
+		window = tuning.EarlyRerankMaxWindow
+	}
+	if window > scoredLen {
+		window = scoredLen
+	}
+	if window < 2 {
+		return 2
+	}
+	return window
 }
 
 func earlyRankSignal(query string, queryTokens map[string]struct{}, plan queryPlan, memory domain.Memory, behavior RetrievalBehaviorOptions) float64 {
@@ -1926,22 +2025,35 @@ func queryOverlapScore(queryTokens, docTokens map[string]struct{}) float64 {
 	return float64(matches) / float64(len(queryTokens))
 }
 
-func candidateWindow(topK int, profile queryProfile, hasFilters bool) int {
-	n := topK * 5
-	if n < 50 {
-		n = 50
+func candidateWindow(
+	topK int,
+	profile queryProfile,
+	plan queryPlan,
+	hasFilters bool,
+	tuning RetrievalSearchTuningOptions,
+) int {
+	if topK <= 0 {
+		topK = 10
+	}
+	n := topK * tuning.CandidateWindowMultiplier
+	if n < tuning.CandidateWindowMin {
+		n = tuning.CandidateWindowMin
 	}
 	if profile.MultiHop {
-		n += 80
+		n += tuning.CandidateWindowMultiHopBoost
 	} else if profile.Temporal {
-		n += 40
+		n += tuning.CandidateWindowTemporalBoost
 	}
 	if hasFilters {
-		n += 30
+		n += tuning.CandidateWindowFilterBoost
 	}
-	maxWindow := 200
+	// Expand retrieval window when routing confidence is low.
+	if plan.Confidence < tuning.AdaptiveQueryPlanConfidenceThreshold {
+		n += topK * 2
+	}
+	maxWindow := tuning.CandidateWindowMax
 	if profile.MultiHop || hasFilters {
-		maxWindow = 320
+		maxWindow = max(maxWindow, 320)
 	}
 	if n > maxWindow {
 		n = maxWindow

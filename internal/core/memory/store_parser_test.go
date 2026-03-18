@@ -517,10 +517,10 @@ func TestStoreWithParserUsesBatchEmbeddingWhenAvailable(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, embedder.batchCalls)
-	require.Equal(t, 3, embedder.lastBatchLen)
+	require.Equal(t, 2, embedder.lastBatchLen)
 	require.Equal(t, 0, embedder.embedCalls)
-	require.Len(t, repo.stored, 3)
-	require.Len(t, vector.upserted, 3)
+	require.Len(t, repo.stored, 2)
+	require.Len(t, vector.upserted, 2)
 }
 
 func TestStoreWithParserFallsBackToSequentialEmbedWhenBatchFails(t *testing.T) {
@@ -554,9 +554,9 @@ func TestStoreWithParserFallsBackToSequentialEmbedWhenBatchFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, embedder.batchCalls)
-	require.Equal(t, 3, embedder.embedCalls)
-	require.Len(t, repo.stored, 3)
-	require.Len(t, vector.upserted, 3)
+	require.Equal(t, 2, embedder.embedCalls)
+	require.Len(t, repo.stored, 2)
+	require.Len(t, vector.upserted, 2)
 }
 
 func TestStoreBatchUsesBatchEmbedForNonParserInputs(t *testing.T) {
@@ -654,12 +654,12 @@ func TestStoreBatchWithParserUsesSingleBatchEmbedAcrossTurns(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, stored, 2)
 	require.Equal(t, 1, embedder.batchCalls)
-	require.Equal(t, 4, embedder.lastBatchLen)
+	require.Equal(t, 3, embedder.lastBatchLen)
 	require.Equal(t, 0, embedder.embedCalls)
 
 	// Facts dedupe across turns while both raw turns are preserved.
-	require.Len(t, repo.stored, 4)
-	require.Len(t, vector.upserted, 4)
+	require.Len(t, repo.stored, 3)
+	require.Len(t, vector.upserted, 3)
 	require.Equal(t, 1, vector.batchCalls)
 }
 
@@ -1242,7 +1242,46 @@ func TestPrepareParsedFactsForStoreDropsGenericQueryViewLines(t *testing.T) {
 	require.Len(t, prepared, 1)
 	require.Equal(
 		t,
-		"when did Nate custom controller decorations for everyone\nwhat event did Nate attend custom controller decorations for everyone\nNate custom controller decorations for everyone",
+		"when did Nate custom controller decorations for everyone\nwhat event did Nate attend custom controller decorations for everyone",
 		prepared[0].QueryViewText,
 	)
+}
+
+func TestOptimizePreparedFactsForParser_HeuristicDropsSaidThatAndCapsFacts(t *testing.T) {
+	facts := []ParsedFact{
+		{
+			Content:       "On 8 May 2023, Alice said that she moved to Austin",
+			QueryViewText: "where does Alice live",
+			Entity:        "Alice",
+			Relation:      "place",
+			Value:         "moved to Austin",
+			Kind:          domain.MemoryKindObservation,
+		},
+		{
+			Content:       "On 8 May 2023, Alice moved to Austin",
+			QueryViewText: "where does Alice live",
+			Entity:        "Alice",
+			Relation:      "place",
+			Value:         "Austin",
+			Kind:          domain.MemoryKindObservation,
+		},
+		{
+			Content:       "On 8 May 2023, Alice works as a counselor",
+			QueryViewText: "what is Alice job",
+			Entity:        "Alice",
+			Relation:      "role",
+			Value:         "counselor",
+			Kind:          domain.MemoryKindObservation,
+		},
+	}
+	out := optimizePreparedFactsForParser(
+		"[time:1:56 pm on 8 May, 2023] Alice: I moved to Austin and work as a counselor.",
+		facts,
+		heuristicExtractorName,
+		5,
+	)
+	require.Len(t, out, 2)
+	for _, fact := range out {
+		require.NotContains(t, strings.ToLower(fact.Content), "said that")
+	}
 }

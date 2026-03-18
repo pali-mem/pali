@@ -27,6 +27,42 @@ func TestBuildSearchQueriesAddsIntentAwareRewriteForSymbolQuery(t *testing.T) {
 	require.Contains(t, joined, "represents")
 }
 
+func TestBuildAdaptiveSearchQueriesSkipsWhenConfidenceAndLexicalAreStrong(t *testing.T) {
+	tuning := defaultRetrievalSearchTuningOptions()
+	queries := buildAdaptiveSearchQueries(
+		"Who met Jordan yesterday?",
+		queryProfile{},
+		queryPlan{Confidence: 0.91},
+		[]lexicalCandidate{
+			{
+				Memory: domain.Memory{ID: "m1", Kind: domain.MemoryKindObservation, Content: "Alex met Jordan yesterday."},
+				Score:  0.88,
+			},
+		},
+		tuning,
+	)
+	require.Empty(t, queries)
+}
+
+func TestBuildAdaptiveSearchQueriesAddsVariantsWhenFirstPassIsWeak(t *testing.T) {
+	tuning := defaultRetrievalSearchTuningOptions()
+	tuning.AdaptiveQueryExpansionEnabled = true
+	queries := buildAdaptiveSearchQueries(
+		"Which group did Caroline join near Austin?",
+		queryProfile{},
+		queryPlan{Confidence: 0.45},
+		[]lexicalCandidate{
+			{
+				Memory: domain.Memory{ID: "m1", Kind: domain.MemoryKindObservation, Content: "Caroline met friends in Austin."},
+				Score:  0.31,
+			},
+		},
+		tuning,
+	)
+	require.NotEmpty(t, queries)
+	require.LessOrEqual(t, len(queries), tuning.AdaptiveQueryMaxExtraQueries)
+}
+
 func TestBuildIterativeMultiHopQueriesSkipsStrongFirstHop(t *testing.T) {
 	queries := buildIterativeMultiHopQueries(
 		"who met Jordan before moving to Austin?",

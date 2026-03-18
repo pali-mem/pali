@@ -67,6 +67,18 @@ func TestPassesCanonicalFactAdmission_AcceptsHighSignalFact(t *testing.T) {
 	require.True(t, passesCanonicalFactAdmission("Alice is a vegetarian and avoids dairy", fact))
 }
 
+func TestPassesCanonicalFactAdmission_RejectsSaidThatFacts(t *testing.T) {
+	fact := ParsedFact{
+		Content:  "Alice said that she moved to Austin",
+		Entity:   "Alice",
+		Relation: "place",
+		Value:    "moved to Austin",
+		Kind:     domain.MemoryKindObservation,
+	}
+
+	require.False(t, passesCanonicalFactAdmission("Alice: I moved to Austin.", fact))
+}
+
 func TestIsBareEmotionFact_PersistsForEmotionFragments(t *testing.T) {
 	require.True(t, isBareEmotionFact("Alice is sad"))
 	require.False(t, isBareEmotionFact("Alice avoided the problem this morning."))
@@ -90,10 +102,10 @@ func TestBuildFactQuestionView_DeduplicatesAndBuildsEntityFromContent(t *testing
 
 	require.NotContains(t, view, "what does Alice do")
 	require.NotContains(t, view, "what activities does Alice do")
-	require.GreaterOrEqual(t, len(stringLines(view)), 2)
+	require.GreaterOrEqual(t, len(stringLines(view)), 1)
 	require.Greater(t, len(view), 0)
 	require.Contains(t, view, "what does Alice enjoy hiking")
-	require.Contains(t, view, "Alice hiking")
+	require.NotContains(t, view, "Alice hiking")
 }
 
 func TestBuildFactQuestionView_UsesKnownRelationTemplates(t *testing.T) {
@@ -108,7 +120,7 @@ func TestBuildFactQuestionView_UsesKnownRelationTemplates(t *testing.T) {
 	require.NotContains(t, view, "what does Alice do")
 	require.NotContains(t, view, "what activities does Alice do")
 	require.Contains(t, view, "what does Alice enjoy coffee")
-	require.Contains(t, view, "Alice coffee")
+	require.NotContains(t, view, "Alice coffee")
 }
 
 func stringLines(value string) []string {

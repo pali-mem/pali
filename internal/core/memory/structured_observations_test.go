@@ -64,3 +64,9 @@ func TestCanonicalizeTurnStyleFact_DropsLowSignalTurnEcho(t *testing.T) {
 	fact := "[time:9:55 am on 22 October, 2023] Melanie: Absolutely."
 	require.Empty(t, canonicalizeTurnStyleFact(source, fact))
 }
+
+func TestRewriteSpeakerPerspective_AvoidsSaidThatFallback(t *testing.T) {
+	rewritten := rewriteSpeakerPerspective("Melanie", "Wow, that workshop was very practical for my counseling goals.")
+	require.NotContains(t, rewritten, "said that")
+	require.Contains(t, rewritten, "Melanie")
+}

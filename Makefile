@@ -61,6 +61,24 @@ retrieval-quality:
 retrieval-trend:
 	bash ./scripts/retrieval_trend.sh --fixture $${FIXTURE:-testdata/benchmarks/fixtures/release_memories.json} --eval-set $${EVAL_SET:-testdata/benchmarks/evals/release_curated.json} --backend $${BACKEND:-sqlite}
 
+bench-suite:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.local.json
+
+bench-suite-medium:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.fast.json
+
+bench-suite-qdrant:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.qdrant_ollama.json
+
+bench-suite-openrouter:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter.json
+
+bench-suite-openrouter-parser-graph:
+	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter-parser-graph.json
+
+benchmark-clean:
+	rm -rf test/benchmarks/results/*
+
 check-wiring:
 	go test ./internal/core/memory ./internal/repository/sqlite -run 'Test(SearchBuildsIterativeQueriesForMultiHopQuestion|SearchWithFiltersAppliesKindFilter|SearchAggregationRouteRespectsMinScore|StoreMarksIndexStateTransitions|StoreMarksIndexStateFailedOnVectorFailure|DeleteMarksIndexStateTombstoned|DeleteMarksIndexStateFailedOnVectorFailure|MemoryRepositoryIndexJobLifecycle)' -count=1
 

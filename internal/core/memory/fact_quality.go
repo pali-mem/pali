@@ -25,6 +25,7 @@ var (
 	roleValuePattern        = regexp.MustCompile(`(?i)\b(?:teacher|student|engineer|developer|designer|doctor|nurse|lawyer|manager|writer|artist|researcher|photographer|chef|therapist|architect|consultant|analyst|accountant|counselor)\b`)
 	emotionWordPattern      = regexp.MustCompile(`(?i)\b(?:happy|thankful|grateful|excited|proud|glad|thrilled|relieved|nervous|sad|upset|angry|emotional|empowered|liberated|accepted|inspired|motivated|fulfilled|comforted)\b`)
 	emotionAnchorPattern    = regexp.MustCompile(`(?i)\b(?:about|for|because|after|during|when|while|to)\b`)
+	absoluteDatePattern     = regexp.MustCompile(`(?i)\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+\d{4}|(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+\d{1,2},?\s+\d{4})\b`)
 )
 
 var weakSingleTokenValues = map[string]struct{}{
@@ -35,6 +36,9 @@ var weakSingleTokenValues = map[string]struct{}{
 func passesCanonicalFactAdmission(sourceContent string, fact ParsedFact) bool {
 	content := normalizeFactContent(fact.Content)
 	if content == "" || !isInformativeFact(content) {
+		return false
+	}
+	if genericSpeechPattern.MatchString(strings.ToLower(content)) {
 		return false
 	}
 	if offerFactPattern.MatchString(content) {
@@ -284,6 +288,9 @@ func hasAbsoluteOrAnchoredTime(sourceContent, factContent string) bool {
 	if timeTagPattern.MatchString(strings.ToLower(factContent)) {
 		return true
 	}
+	if absoluteDatePattern.MatchString(strings.ToLower(factContent)) {
+		return true
+	}
 	_, ok := sourceTimeAnchor(sourceContent)
 	return ok
 }
@@ -341,7 +348,6 @@ func buildFactQuestionView(fact ParsedFact) string {
 		add("what is " + entity + " identity")
 		add("how does " + entity + " identify")
 	case "role":
-		add("what does " + entity + " do for work")
 		add("what is " + entity + " job")
 	case "relationship":
 		add("who is connected to " + entity)
@@ -361,12 +367,11 @@ func buildFactQuestionView(fact ParsedFact) string {
 		}
 	case "goal":
 		add("what is " + entity + " goal")
-		add("what does " + entity + " want to do")
+		add("what is " + entity + " trying to achieve")
 	}
 
-	if value != "" && !isTimeOnlyFactValue(value) {
-		add(entity + " " + value)
-	}
+	// Keep query-view lines relation-template driven to avoid generic
+	// lexical mirrors that inflate noisy retrieval prompts.
 	return filterSpecificQueryViewText(strings.Join(parts, "\n"))
 }
 

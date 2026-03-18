@@ -104,11 +104,27 @@ type PostprocessConfig struct {
 
 type RetrievalConfig struct {
 	Scoring                              RetrievalScoringConfig  `yaml:"scoring"`
+	Search                               RetrievalSearchConfig   `yaml:"search"`
 	MultiHop                             RetrievalMultiHopConfig `yaml:"multi_hop"`
 	AnswerTypeRoutingEnabled             bool                    `yaml:"answer_type_routing_enabled"`
 	EarlyRankRerankEnabled               bool                    `yaml:"early_rank_rerank_enabled"`
 	TemporalResolverEnabled              bool                    `yaml:"temporal_resolver_enabled"`
 	OpenDomainAlternativeResolverEnabled bool                    `yaml:"open_domain_alternative_resolver_enabled"`
+}
+
+type RetrievalSearchConfig struct {
+	AdaptiveQueryExpansionEnabled        bool    `yaml:"adaptive_query_expansion_enabled"`
+	AdaptiveQueryMaxExtraQueries         int     `yaml:"adaptive_query_max_extra_queries"`
+	AdaptiveQueryWeakLexicalThreshold    float64 `yaml:"adaptive_query_weak_lexical_threshold"`
+	AdaptiveQueryPlanConfidenceThreshold float64 `yaml:"adaptive_query_plan_confidence_threshold"`
+	CandidateWindowMultiplier            int     `yaml:"candidate_window_multiplier"`
+	CandidateWindowMin                   int     `yaml:"candidate_window_min"`
+	CandidateWindowMax                   int     `yaml:"candidate_window_max"`
+	CandidateWindowTemporalBoost         int     `yaml:"candidate_window_temporal_boost"`
+	CandidateWindowMultiHopBoost         int     `yaml:"candidate_window_multi_hop_boost"`
+	CandidateWindowFilterBoost           int     `yaml:"candidate_window_filter_boost"`
+	EarlyRerankBaseWindow                int     `yaml:"early_rerank_base_window"`
+	EarlyRerankMaxWindow                 int     `yaml:"early_rerank_max_window"`
 }
 
 type RetrievalScoringConfig struct {

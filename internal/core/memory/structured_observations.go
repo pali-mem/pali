@@ -316,7 +316,54 @@ func rewriteSpeakerPerspective(speaker, utterance string) string {
 	case strings.HasPrefix(lower, strings.ToLower(trimmedSpeaker)+" "):
 		return trimmedUtterance
 	default:
-		return trimmedSpeaker + " said that " + lowerFirstASCII(trimmedUtterance)
+		// Keep speaker anchoring without speech scaffolding like "said that",
+		// which tends to produce low-signal parser facts at scale.
+		anchored := anchorSpeakerToUtterance(trimmedSpeaker, trimmedUtterance)
+		if anchored == "" {
+			return trimmedUtterance
+		}
+		return anchored
+	}
+}
+
+func anchorSpeakerToUtterance(speaker, utterance string) string {
+	cleaned := strings.TrimSpace(utterance)
+	if cleaned == "" {
+		return ""
+	}
+	cleaned = stripConversationLead(cleaned)
+	if cleaned == "" {
+		return ""
+	}
+	lower := strings.ToLower(cleaned)
+	if strings.HasPrefix(lower, strings.ToLower(speaker)+" ") {
+		return normalizeFactContent(cleaned)
+	}
+	return normalizeFactContent(speaker + " " + lowerFirstASCII(cleaned))
+}
+
+func stripConversationLead(utterance string) string {
+	out := strings.TrimSpace(utterance)
+	if out == "" {
+		return ""
+	}
+	// Remove short acknowledgement-only prefixes that do not add fact content.
+	for {
+		next := strings.TrimSpace(out)
+		switch {
+		case strings.HasPrefix(strings.ToLower(next), "yeah,"):
+			out = strings.TrimSpace(next[len("yeah,"):])
+		case strings.HasPrefix(strings.ToLower(next), "yep,"):
+			out = strings.TrimSpace(next[len("yep,"):])
+		case strings.HasPrefix(strings.ToLower(next), "wow,"):
+			out = strings.TrimSpace(next[len("wow,"):])
+		case strings.HasPrefix(strings.ToLower(next), "hey,"):
+			out = strings.TrimSpace(next[len("hey,"):])
+		case strings.HasPrefix(strings.ToLower(next), "hi,"):
+			out = strings.TrimSpace(next[len("hi,"):])
+		default:
+			return out
+		}
 	}
 }
 
