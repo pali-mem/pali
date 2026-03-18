@@ -44,6 +44,7 @@
 .md-tabs__link,
 .md-nav__link {
   color: #233a69;
+  opacity: 1;
 }
 
 .md-tabs__link:hover,
@@ -52,8 +53,12 @@
 }
 
 .md-tabs__link--active,
-.md-nav__link--active {
+.md-tabs__item--active .md-tabs__link,
+.md-tabs__link[aria-current="page"],
+.md-nav__link--active,
+.md-nav__link[aria-current="page"] {
   color: var(--pali-royal);
+  font-weight: 700;
 }
 
 .md-typeset h1,

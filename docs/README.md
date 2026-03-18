@@ -16,6 +16,8 @@ Pali is open memory infrastructure for LLM and agent systems. This page is the f
 - [API](api.md)
 - [MCP Integration](mcp.md)
 - [Go Client SDK](client/README.md)
+- [Python SDK (`pali-py`)](https://github.com/pali-mem/pali-py)
+- [JavaScript SDK (`pali-js`)](https://github.com/pali-mem/pali-js)
 
 ### Future maintainer
 
@@ -51,7 +53,7 @@ Then continue with [Getting Started](getting-started.md) for tenant creation plu
 | Area | Docs |
 |---|---|
 | Setup and operations | [Getting Started](getting-started.md), [Deployment](deployment.md), [Operations](operations.md) |
-| Integration | [API](api.md), [MCP Integration](mcp.md), [Go Client SDK](client/README.md) |
+| Integration | [API](api.md), [MCP Integration](mcp.md), [Go Client SDK](client/README.md), [Python SDK](https://github.com/pali-mem/pali-py), [JavaScript SDK](https://github.com/pali-mem/pali-js) |
 | Runtime behavior | [Configuration](configuration.md), [Multi-Tenancy](multitenancy.md), [ONNX Runtime](onnx.md) |
 | System design | [Architecture](architecture.md) |
 

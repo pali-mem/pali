@@ -36,3 +36,5 @@ make docs-build
 - [README (GitHub)](https://github.com/pali-mem/pali/blob/main/README.md)
 - [Benchmark Policy (GitHub)](https://github.com/pali-mem/pali/blob/main/BENCHMARKS.MD)
 - [Contributing (GitHub)](https://github.com/pali-mem/pali/blob/main/CONTRIBUTING.md)
+- [Python SDK (`pali-py`)](https://github.com/pali-mem/pali-py)
+- [JavaScript SDK (`pali-js`)](https://github.com/pali-mem/pali-js)
