@@ -24,7 +24,7 @@ theme:
     - search.suggest
     - toc.follow
   palette:
-    - scheme: slate
+    - scheme: default
       primary: blue
       accent: light blue
 
