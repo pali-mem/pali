@@ -2,16 +2,22 @@ APP=pali
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-.PHONY: run mcp setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
+.PHONY: init serve run mcp mcp-serve setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
 
-run:
-	go run ./cmd/pali -config pali.yaml
+init:
+	go run ./cmd/pali init -skip-model-download
 
-mcp:
-	go run ./cmd/pali mcp run -config pali.yaml
+serve:
+	go run ./cmd/pali serve -config pali.yaml
 
-setup:
-	go run ./cmd/setup -skip-model-download
+run: serve
+
+mcp-serve:
+	go run ./cmd/pali mcp serve -config pali.yaml
+
+mcp: mcp-serve
+
+setup: init
 
 build:
 	go build -o bin/$(APP) ./cmd/pali
