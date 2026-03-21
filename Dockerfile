@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM --platform=$BUILDPLATFORM golang:1.24-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
@@ -44,7 +44,7 @@ RUN apk add --no-cache ca-certificates tzdata wget && \
 WORKDIR /app
 
 COPY --from=builder /out/pali /app/pali
-COPY deploy/docker/pali.yaml /etc/pali/pali.yaml
+COPY deploy/docker/pali.container.yaml /etc/pali/pali.yaml
 
 RUN chown -R pali:pali /app /etc/pali /var/lib/pali
 
