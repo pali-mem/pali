@@ -5,6 +5,14 @@ Use this page when you need the fastest path to common tasks.
 ## Run locally
 
 ```bash
+pali init
+pali serve
+curl http://127.0.0.1:8080/health
+```
+
+From a source checkout:
+
+```bash
 make setup
 make run
 curl http://127.0.0.1:8080/health

@@ -29,6 +29,14 @@ Pali is open memory infrastructure for LLM and agent systems. This page is the f
 ## Fast start
 
 ```bash
+pali init
+pali serve
+curl http://127.0.0.1:8080/health
+```
+
+If you are running from a source checkout instead of a release binary:
+
+```bash
 make setup
 make run
 curl http://127.0.0.1:8080/health
