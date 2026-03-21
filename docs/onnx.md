@@ -53,7 +53,7 @@ embedding:
   - shared library path is missing/wrong
   - set `ONNXRUNTIME_SHARED_LIBRARY_PATH` explicitly
 - Error: model file not found
-  - run `go run ./cmd/setup` to fetch missing model artifacts
+  - run `pali init -download-model` to fetch missing model artifacts
 
 ## References
 
