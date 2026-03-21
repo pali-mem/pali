@@ -159,6 +159,45 @@ Dashboard:
 open http://127.0.0.1:8080/dashboard
 ```
 
+## Docker Quickstart
+
+Build the image:
+
+```bash
+docker build -t pali:local .
+```
+
+Run the base zero-dependency container:
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -v pali-data:/var/lib/pali \
+  pali:local
+```
+
+The image ships with a container-safe config at `deploy/docker/pali.yaml`:
+
+- `server.host: 0.0.0.0`
+- SQLite data under `/var/lib/pali`
+- service-name defaults for optional dependencies like `qdrant`, `neo4j`, and `ollama`
+
+Docker Compose stacks live under `deploy/docker/`:
+
+```bash
+docker compose -f deploy/docker/compose.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.neo4j.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.ollama.yaml up --build
+```
+
+Notes:
+
+- the base Compose stack keeps Pali on `sqlite + lexical`
+- the Qdrant and Neo4j override files switch Pali to those backends automatically
+- the Ollama override file starts the Ollama service and points Pali at it, but you still need to pull a model before setting `PALI_EMBEDDING_PROVIDER=ollama`
+- copy `deploy/docker/.env.example` to `.env` in your Compose working directory if you want a checked-in starting point for local overrides
+
 ## Single-Binary Runtime (Optional)
 
 Pali can also be run as a single compiled binary (helpful for ops and local packaging):
@@ -372,6 +411,7 @@ Outputs:
 GitHub release automation:
 - pushing a tag like `v0.1.0` triggers `.github/workflows/release.yml`
 - the workflow builds Linux/macOS/Windows artifacts and attaches them to the GitHub Release automatically
+- the same workflow also publishes a multi-arch Docker image to `ghcr.io/pali-mem/pali`
 - manual run is also supported via Actions `workflow_dispatch` (provide an existing tag)
 
 ## Production Readiness Checklist

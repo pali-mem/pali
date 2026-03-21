@@ -7,6 +7,16 @@ import (
 	"strings"
 )
 
+const (
+	countMemoriesForFTSBackfillSQL = `SELECT COUNT(1) FROM memories;`
+	countMemoryFTSRowsSQL          = `SELECT COUNT(1) FROM memory_fts;`
+	backfillMemoryFTSAllSQL = `
+INSERT INTO memory_fts(content, tenant_id, memory_id)
+SELECT content, tenant_id, id
+FROM memories;
+`
+)
+
 var migrationStatements = []string{
 	`CREATE TABLE IF NOT EXISTS tenants (
 		id TEXT PRIMARY KEY,
@@ -50,20 +60,6 @@ var migrationStatements = []string{
 		tenant_id UNINDEXED,
 		memory_id UNINDEXED,
 		tokenize='porter unicode61'
-	);`,
-	`INSERT INTO memory_fts(content, tenant_id, memory_id)
-	SELECT m.content, m.tenant_id, m.id
-	FROM memories m
-	WHERE NOT EXISTS (
-		SELECT 1
-		FROM memory_fts f
-		WHERE f.memory_id = m.id AND f.tenant_id = m.tenant_id
-	);`,
-	`DELETE FROM memory_fts
-	WHERE NOT EXISTS (
-		SELECT 1
-		FROM memories m
-		WHERE m.id = memory_fts.memory_id AND m.tenant_id = memory_fts.tenant_id
 	);`,
 	`ALTER TABLE memories ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';`,
 	`ALTER TABLE memories ADD COLUMN source TEXT NOT NULL DEFAULT '';`,
@@ -150,6 +146,34 @@ func RunMigrations(ctx context.Context, db *sql.DB) error {
 			}
 			return fmt.Errorf("sqlite migration failed: %w", err)
 		}
+	}
+	if err := runFTSBackfillIfNeeded(ctx, db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runFTSBackfillIfNeeded avoids full-table FTS reconciliation on every startup.
+// It only backfills when memories exist and memory_fts is currently empty.
+func runFTSBackfillIfNeeded(ctx context.Context, db *sql.DB) error {
+	var memoryCount int64
+	if err := db.QueryRowContext(ctx, countMemoriesForFTSBackfillSQL).Scan(&memoryCount); err != nil {
+		return fmt.Errorf("sqlite migration failed: count memories for fts backfill: %w", err)
+	}
+	if memoryCount == 0 {
+		return nil
+	}
+
+	var ftsCount int64
+	if err := db.QueryRowContext(ctx, countMemoryFTSRowsSQL).Scan(&ftsCount); err != nil {
+		return fmt.Errorf("sqlite migration failed: count memory_fts rows: %w", err)
+	}
+	if ftsCount != 0 {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, backfillMemoryFTSAllSQL); err != nil {
+		return fmt.Errorf("sqlite migration failed: backfill memory_fts: %w", err)
 	}
 	return nil
 }

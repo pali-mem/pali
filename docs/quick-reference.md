@@ -10,6 +10,21 @@ make run
 curl http://127.0.0.1:8080/health
 ```
 
+## Run in Docker
+
+```bash
+docker build -t pali:local .
+docker run --rm -p 8080:8080 -v pali-data:/var/lib/pali pali:local
+curl http://127.0.0.1:8080/health
+```
+
+For one-command stacks with optional services, use:
+
+```bash
+docker compose -f deploy/docker/compose.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yaml up --build
+```
+
 ## Most-used docs
 
 - [Configuration](configuration.md)

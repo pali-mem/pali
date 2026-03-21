@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -31,8 +32,9 @@ type tagsResponse struct {
 }
 
 type embedRequest struct {
-	Model string `json:"model"`
-	Input any    `json:"input"`
+	Model    string `json:"model"`
+	Input    any    `json:"input"`
+	Truncate *bool  `json:"truncate,omitempty"`
 }
 
 type embedResponse struct {
@@ -89,9 +91,44 @@ func (e *Embedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32,
 		return [][]float32{}, nil
 	}
 
+	embeddings, err := e.batchEmbedRequest(ctx, texts)
+	if err == nil {
+		return embeddings, nil
+	}
+	if !isContextLengthErr(err) {
+		return nil, err
+	}
+
+	retryLimits := []int{4096, 3072, 2048, 1536, 1024, 768, 512, 384, 256, 192, 128, 96}
+	originalMaxRunes := maxTextRunes(texts)
+	lastErr := err
+	for _, maxRunes := range retryLimits {
+		if maxRunes >= originalMaxRunes {
+			continue
+		}
+		truncated, changed := truncateTextsToRunes(texts, maxRunes)
+		if !changed {
+			continue
+		}
+		embeddings, err = e.batchEmbedRequest(ctx, truncated)
+		if err == nil {
+			return embeddings, nil
+		}
+		lastErr = err
+		if !isContextLengthErr(err) {
+			return nil, err
+		}
+	}
+
+	return nil, fmt.Errorf("ollama batch embed failed after adaptive truncation retries: %w", lastErr)
+}
+
+func (e *Embedder) batchEmbedRequest(ctx context.Context, texts []string) ([][]float32, error) {
+	truncate := true
 	reqBody := embedRequest{
-		Model: e.model,
-		Input: texts,
+		Model:    e.model,
+		Input:    texts,
+		Truncate: &truncate,
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -119,6 +156,64 @@ func (e *Embedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32,
 		return nil, fmt.Errorf("ollama embed response did not include embeddings")
 	}
 	return parsed.Embeddings, nil
+}
+
+func isContextLengthErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "input length exceeds the context length") ||
+		strings.Contains(msg, "context length exceeded")
+}
+
+func maxTextRunes(texts []string) int {
+	maxRunes := 0
+	for _, text := range texts {
+		n := utf8.RuneCountInString(text)
+		if n > maxRunes {
+			maxRunes = n
+		}
+	}
+	return maxRunes
+}
+
+func truncateTextsToRunes(texts []string, maxRunes int) ([]string, bool) {
+	if maxRunes <= 0 {
+		out := make([]string, len(texts))
+		return out, true
+	}
+	out := make([]string, len(texts))
+	changed := false
+	for i, text := range texts {
+		if utf8.RuneCountInString(text) <= maxRunes {
+			out[i] = text
+			continue
+		}
+		changed = true
+		out[i] = truncateToRunes(text, maxRunes)
+	}
+	return out, changed
+}
+
+func truncateToRunes(text string, maxRunes int) string {
+	if maxRunes <= 0 || text == "" {
+		return ""
+	}
+	if utf8.RuneCountInString(text) <= maxRunes {
+		return text
+	}
+	var b strings.Builder
+	b.Grow(maxRunes)
+	count := 0
+	for _, r := range text {
+		if count >= maxRunes {
+			break
+		}
+		b.WriteRune(r)
+		count++
+	}
+	return b.String()
 }
 
 func (e *Embedder) preflight(ctx context.Context) error {

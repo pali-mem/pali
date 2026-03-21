@@ -8,6 +8,7 @@ Source of truth, in order:
 2. `internal/config/config.go`
 3. `internal/config/validation.go`
 4. `pali.yaml.example`
+5. `deploy/docker/pali.yaml` for the container runtime profile
 
 ## Config Files
 
@@ -23,6 +24,12 @@ The committed default config is intentionally zero-dependency:
 
 That makes first boot easy on any machine. It is not the highest-quality retrieval setup. For better semantic recall and ranking, move to `ollama`, `onnx`, or `openrouter` once the basic deployment is working.
 
+The container profile at `deploy/docker/pali.yaml` keeps the same zero-dependency defaults, but changes host and path assumptions to match containers:
+
+- `server.host: 0.0.0.0`
+- `database.sqlite_dsn: file:/var/lib/pali/pali.db?cache=shared`
+- service-name URLs for `qdrant`, `neo4j`, and `ollama`
+
 `cmd/setup` will create the target config file from `pali.yaml.example` when it is missing:
 
 ```bash
@@ -33,12 +40,31 @@ go run ./cmd/setup -config /etc/pali/pali.yaml
 
 1. code defaults
 2. YAML values
-3. limited environment fallbacks
+3. legacy environment fallbacks
+4. explicit `PALI_*` environment overrides
 
-Current environment fallbacks:
+Legacy environment fallbacks:
 
 - `OPENROUTER_API_KEY` -> `openrouter.api_key`
 - `NEO4J_PASSWORD` -> `neo4j.password`
+
+Common explicit overrides:
+
+- `PALI_SERVER_HOST`
+- `PALI_SERVER_PORT`
+- `PALI_DATABASE_SQLITE_DSN`
+- `PALI_VECTOR_BACKEND`
+- `PALI_ENTITY_FACT_BACKEND`
+- `PALI_QDRANT_BASE_URL`
+- `PALI_NEO4J_URI`
+- `PALI_NEO4J_PASSWORD`
+- `PALI_EMBEDDING_PROVIDER`
+- `PALI_EMBEDDING_OLLAMA_BASE_URL`
+- `PALI_OPENROUTER_API_KEY`
+- `PALI_AUTH_ENABLED`
+- `PALI_AUTH_JWT_SECRET`
+
+The config loader now supports `PALI_*` overrides across the main runtime sections so containerized deployments can inject settings without mutating the baked YAML file.
 
 ## Current Defaults
 

@@ -100,3 +100,18 @@ jobs:
           cache: true
       - name: Build
         run: go build ./cmd/pali
+
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: DOCKER_BUILDKIT=1 docker build -t pali:test .
+      - name: Validate Compose stacks
+        run: |
+          docker compose -f deploy/docker/compose.yaml config >/dev/null
+          docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yaml config >/dev/null
+          docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.neo4j.yaml config >/dev/null
+          docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.ollama.yaml config >/dev/null

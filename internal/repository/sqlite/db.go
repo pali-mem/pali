@@ -47,6 +47,7 @@ func applyPragmas(ctx context.Context, db *sql.DB, dsn string) error {
 		sql  string
 	}{
 		{name: "foreign_keys", sql: `PRAGMA foreign_keys = ON;`},
+		{name: "busy_timeout", sql: `PRAGMA busy_timeout = 10000;`},
 		{name: "cache_size", sql: `PRAGMA cache_size = -64000;`},
 		{name: "temp_store", sql: `PRAGMA temp_store = MEMORY;`},
 	}
