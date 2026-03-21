@@ -8,7 +8,7 @@ Source of truth, in order:
 2. `internal/config/config.go`
 3. `internal/config/validation.go`
 4. `pali.yaml.example`
-5. `deploy/docker/pali.yaml` for the container runtime profile
+5. `deploy/docker/pali.container.yaml` for the container runtime profile
 
 ## Config Files
 
@@ -24,16 +24,16 @@ The committed default config is intentionally zero-dependency:
 
 That makes first boot easy on any machine. It is not the highest-quality retrieval setup. For better semantic recall and ranking, move to `ollama`, `onnx`, or `openrouter` once the basic deployment is working.
 
-The container profile at `deploy/docker/pali.yaml` keeps the same zero-dependency defaults, but changes host and path assumptions to match containers:
+The container profile at `deploy/docker/pali.container.yaml` keeps the same zero-dependency defaults, but changes host and path assumptions to match containers:
 
 - `server.host: 0.0.0.0`
 - `database.sqlite_dsn: file:/var/lib/pali/pali.db?cache=shared`
 - service-name URLs for `qdrant`, `neo4j`, and `ollama`
 
-`cmd/setup` will create the target config file from `pali.yaml.example` when it is missing:
+`pali init` will create the target config file from `pali.yaml.example` when it is missing:
 
 ```bash
-go run ./cmd/setup -config /etc/pali/pali.yaml
+pali init -config /etc/pali/pali.yaml
 ```
 
 ## Resolution Order
@@ -270,7 +270,7 @@ go run ./cmd/configrender \
 Run it with:
 
 ```bash
-go run ./cmd/pali -config /tmp/pali.eval.yaml
+go run ./cmd/pali serve -config /tmp/pali.eval.yaml
 ```
 
 ## Setup Command
@@ -278,7 +278,7 @@ go run ./cmd/pali -config /tmp/pali.eval.yaml
 Safe local bootstrap:
 
 ```bash
-go run ./cmd/setup -config pali.yaml
+pali init -config pali.yaml
 ```
 
 Useful flags:
