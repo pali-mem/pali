@@ -7,19 +7,37 @@
     <link rel="stylesheet" href="/static/css/dashboard.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>Pali Dashboard</h1>
-      <nav>
-        <a href="/dashboard/memories" class="{{if eq .Page "memories"}}active{{end}}">Memories</a>
-        <a href="/dashboard/tenants" class="{{if eq .Page "tenants"}}active{{end}}">Tenants</a>
-        <a href="/dashboard/stats" class="{{if eq .Page "stats"}}active{{end}}">Stats</a>
-      </nav>
-    </header>
-    <main>
-      {{ if .Error }}<p class="alert alert-error">{{ .Error }}</p>{{ end }}
-      {{ if .Info }}<p class="alert alert-info">{{ .Info }}</p>{{ end }}
-      {{ template "content" . }}
-    </main>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <p class="brand-kicker">Open memory infrastructure</p>
+          <h1>Pali</h1>
+        </div>
+        <nav class="sidebar-nav" aria-label="Primary">
+          <a href="/dashboard/stats" class="nav-link {{if eq .Page "stats"}}active{{end}}">
+            <span class="nav-eyebrow">01</span>
+            <span>Dashboard</span>
+          </a>
+          <a href="/dashboard/memories" class="nav-link {{if eq .Page "memories"}}active{{end}}">
+            <span class="nav-eyebrow">02</span>
+            <span>Memories</span>
+          </a>
+          <a href="/dashboard/tenants" class="nav-link {{if eq .Page "tenants"}}active{{end}}">
+            <span class="nav-eyebrow">03</span>
+            <span>Tenants</span>
+          </a>
+          <a href="/dashboard/config" class="nav-link {{if eq .Page "config"}}active{{end}}">
+            <span class="nav-eyebrow">04</span>
+            <span>Config</span>
+          </a>
+        </nav>
+      </aside>
+      <main class="main-content">
+        {{ if .Error }}<p class="alert alert-error">{{ .Error }}</p>{{ end }}
+        {{ if .Info }}<p class="alert alert-info">{{ .Info }}</p>{{ end }}
+        {{ template "content" . }}
+      </main>
+    </div>
     <script src="/static/js/htmx.min.js"></script>
   </body>
 </html>

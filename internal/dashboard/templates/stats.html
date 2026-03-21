@@ -1,20 +1,53 @@
 {{ define "content" }}
-<section>
-  <h2>Stats</h2>
-  <div class="stats-grid">
-    <article>
-      <h3>Total Tenants</h3>
-      <p class="metric">{{ .TenantCount }}</p>
-    </article>
-    <article>
-      <h3>Total Memories</h3>
-      <p class="metric">{{ .MemoryCount }}</p>
-    </article>
-    <article>
-      <h3>Top Tenant</h3>
-      <p class="metric">{{ .TopTenantID }}</p>
-      <p>{{ .TopTenantMem }} memories</p>
-    </article>
+<section class="page-intro">
+  <p class="eyebrow">Dashboard</p>
+  <div class="page-heading">
+    <div>
+      <h2>System overview</h2>
+    </div>
   </div>
+</section>
+
+<section class="stats-grid">
+  <article class="metric-card">
+    <p class="card-label">Total Tenants</p>
+    <p class="metric">{{ .TenantCount }}</p>
+    <p class="card-note">Active workspaces configured in the system.</p>
+  </article>
+  <article class="metric-card">
+    <p class="card-label">Total Memories</p>
+    <p class="metric">{{ .MemoryCount }}</p>
+    <p class="card-note">Indexed records currently available to retrieval.</p>
+  </article>
+  <article class="metric-card">
+    <p class="card-label">Config File</p>
+    <p class="config-card-path"><span class="config-path-badge">{{ .ConfigPath }}</span></p>
+    <p class="card-note">Your config file is loaded from this path.</p>
+    <p class="card-action"><a href="/dashboard/config">Open config</a></p>
+  </article>
+</section>
+
+<section class="panel-grid panel-grid-dashboard">
+  <article class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Snapshot</p>
+        <h3>Tenant distribution</h3>
+      </div>
+    </div>
+    <div class="stack-list">
+      {{ range .Tenants }}
+      <div class="stack-row">
+        <div>
+          <p class="stack-title">{{ .Name }}</p>
+          <p class="stack-meta">{{ .ID }}</p>
+        </div>
+        <p class="stack-value">{{ .MemoryCount }}</p>
+      </div>
+      {{ else }}
+      <p class="empty-copy">No tenants yet. Create the first tenant to start storing memories.</p>
+      {{ end }}
+    </div>
+  </article>
 </section>
 {{ end }}

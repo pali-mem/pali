@@ -1,0 +1,28 @@
+{{ define "content" }}
+<section class="page-intro">
+  <p class="eyebrow">Config</p>
+  <div class="page-heading">
+    <div>
+      <h2>Current configuration</h2>
+      <p class="config-path"><span class="config-path-badge">{{ .ConfigPath }}</span></p>
+    </div>
+    <aside class="inline-callout">
+      <p class="eyebrow">Extensions</p>
+      <p class="inline-callout-copy">{{ .DocsBlurb }}</p>
+      <p class="docs-link-row"><a href="{{ .DocsURL }}" target="_blank" rel="noreferrer">{{ .DocsLinkLabel }}</a></p>
+    </aside>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Active file</p>
+      <h3>Config source</h3>
+    </div>
+  </div>
+  <div id="config-render" class="config-render">
+    <pre id="config-source" class="config-source">{{ .ConfigSource }}</pre>
+  </div>
+</section>
+{{ end }}
