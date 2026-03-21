@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 	api "github.com/pali-mem/pali/internal/api"
 	apiauth "github.com/pali-mem/pali/internal/auth"
 	"github.com/pali-mem/pali/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClientMemoryTenantFlow(t *testing.T) {
@@ -69,6 +69,38 @@ func TestClientMemoryTenantFlow(t *testing.T) {
 	require.NotEmpty(t, batchStored.Items[0].ID)
 	require.NotEmpty(t, batchStored.Items[1].ID)
 
+	ingested, err := c.IngestMemory(ctx, StoreMemoryRequest{
+		TenantID: "tenant_client_1",
+		Content:  "user runs every morning",
+		Tier:     "auto",
+		Source:   "client_test_ingest",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, ingested.IngestID)
+	require.Len(t, ingested.MemoryIDs, 1)
+	require.NotEmpty(t, ingested.JobIDs)
+	require.False(t, ingested.AcceptedAt.IsZero())
+
+	ingestedBatch, err := c.IngestMemoryBatch(ctx, StoreMemoryBatchRequest{
+		Items: []StoreMemoryRequest{
+			{
+				TenantID: "tenant_client_1",
+				Content:  "user has a running club",
+				Tier:     "semantic",
+			},
+			{
+				TenantID: "tenant_client_1",
+				Content:  "user prefers evening runs",
+				Tier:     "episodic",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, ingestedBatch.IngestID)
+	require.Len(t, ingestedBatch.MemoryIDs, 2)
+	require.NotEmpty(t, ingestedBatch.JobIDs)
+	require.False(t, ingestedBatch.AcceptedAt.IsZero())
+
 	search, err := c.SearchMemory(ctx, SearchMemoryRequest{
 		TenantID: "tenant_client_1",
 		Query:    "coffee",
@@ -84,6 +116,18 @@ func TestClientMemoryTenantFlow(t *testing.T) {
 		}
 	}
 	require.True(t, foundStored)
+
+	jobs, err := c.ListPostprocessJobs(ctx, ListPostprocessJobsRequest{
+		TenantID: "tenant_client_1",
+		Limit:    20,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, jobs.Items)
+
+	job, err := c.GetPostprocessJob(ctx, jobs.Items[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, jobs.Items[0].ID, job.ID)
+	require.Equal(t, "tenant_client_1", job.TenantID)
 
 	err = c.DeleteMemory(ctx, "tenant_client_1", stored.ID)
 	require.NoError(t, err)

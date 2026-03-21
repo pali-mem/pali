@@ -125,9 +125,11 @@ Request:
   "query": "tea preference",
   "top_k": 10,
   "min_score": 0.25,
+  "retrieval_kind": "auto",
   "tiers": ["semantic"],
   "kinds": ["observation", "event"],
-  "disable_touch": false
+  "disable_touch": false,
+  "debug": false
 }
 ```
 
@@ -195,9 +197,11 @@ Supported filters:
 Notes:
 - `top_k` defaults to `10` when `<= 0`
 - `min_score` must be within `[0,1]`
+- `retrieval_kind`: `auto | vector | entity` (default `auto`)
 - `tiers` may include `working`, `episodic`, `semantic`
 - `kinds` may include `raw_turn`, `observation`, `summary`, `event`
 - `disable_touch` skips recall metadata updates for this query (useful for eval/benchmark runs)
+- `debug=true` includes planner/ranking diagnostics under `debug`
 - returned `tier` values are persisted tiers (`working|episodic|semantic`); `auto` is not returned
 
 Response (`200`):

@@ -96,7 +96,11 @@ The message is parsed from server JSON errors (`{"error":"..."}`) when available
 - `TenantStats(ctx, tenantID)`
 - `StoreMemory(ctx, req)`
 - `StoreMemoryBatch(ctx, req)`
+- `IngestMemory(ctx, req)`
+- `IngestMemoryBatch(ctx, req)`
 - `SearchMemory(ctx, req)`
+- `ListPostprocessJobs(ctx, req)`
+- `GetPostprocessJob(ctx, jobID)`
 - `DeleteMemory(ctx, tenantID, memoryID)`
 
 ## Memory Payload Notes
