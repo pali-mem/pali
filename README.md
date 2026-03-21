@@ -2,7 +2,7 @@
 
 # Pali
 
-[![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-v0.1-blue)](README.md)
 
@@ -16,173 +16,116 @@
 
 > **Pre-release, close to usable** — Pali is functional and the v0.1 release work is now mostly docs, benchmarks, and repo hygiene. APIs and config may still tighten before tagging.
 
-## Read First
-
-Read these before you deploy Pali:
-
-1. [Why Pali](#why-pali)
-2. [Current Core Capabilities (v0.1)](#current-core-capabilities-v01)
-3. [Infrastructure-First Features](#infrastructure-first-features)
-4. [Quickstart](#quickstart)
-5. [Config](#config)
-6. [Auth (Optional JWT)](#auth-optional-jwt)
-7. [`docs/multitenancy.md`](docs/multitenancy.md)
-8. [`docs/configuration.md`](docs/configuration.md)
-9. [`docs/deployment.md`](docs/deployment.md)
-10. [`docs/operations.md`](docs/operations.md)
-11. [`docs/mcp.md`](docs/mcp.md)
-12. [`BENCHMARKS.MD`](BENCHMARKS.MD)
-
-## Infrastructure-First Features
-
-Pali is infrastructure-first:
-- Multi-tenant memory APIs with tenant-scoped isolation
-- Hybrid retrieval across lexical, dense, fusion, reranking, and optional multi-hop expansion
-- MCP server with memory-first tools and tenant-aware resolution
-- Dashboard for operators inspecting tenants, memories, and system state
-- Plug-and-play extension points for vector stores, embedders, entity-fact backends, and scoring/routing
-
-### What That Means In Practice
-
-- Multi-tenant memory APIs let one deployment serve many tenants while keeping request handling tenant-scoped.
-- Hybrid retrieval lets you combine SQLite lexical recall, vector search, rank fusion, reranking, and optional graph/decomposition-assisted expansion behind one search API.
-- MCP exposes the same memory core to agent hosts over stdio without inventing a separate memory stack.
-- The dashboard gives operators a direct view of tenant and memory state from the running service.
-- Extension points keep the app contract stable while letting you switch retrieval infrastructure through config.
-
-The core is fully open source — built to be embedded, self-hosted, and extended.
-
-## Why Pali
-
-Most projects treat memory as an app feature. Pali treats it as foundational infrastructure:
-- You can run it as a local service, in a container, or behind your own gateway.
-- You can swap retrieval components without changing your app contract.
-- You can use REST, MCP, or the Go client against the same memory core.
-- You keep control of storage, tenancy boundaries, and model/provider decisions.
-
-## Current Core Capabilities (v0.1)
-
-- Memory CRUD and batch ingest APIs
-- Async post-processing pipeline with job tracking
-- Two-phase retrieval:
-  - Lexical + dense candidate fusion via RRF
-  - WMR reranking
-- Tenant statistics and routing support
-- Tier auto-resolution (`episodic` vs `semantic`) from deterministic signals
-- Optional JWT tenant-scoped auth
-- Operator dashboard with full visibility into tenant and memory flows
-
-Operational notes:
-- the dashboard lists persisted memories from the repository-backed memory store
-- retrieval behavior shown through search can still use configured backends like Qdrant and Neo4j
-- the dashboard is an operator surface and is not protected by the `/v1` JWT middleware today
-
-## Plug-and-Play Extensions
-
-| Layer | Options | Notes |
-|---|---|---|
-| Vector backend | `sqlite`, `qdrant` | `pgvector` is under work for next version |
-| Graph backend (entity facts) | `sqlite`, `neo4j` | Batch-first entity fact writes; `sqlite` remains default |
-| Embeddings | `ollama`, `onnx`, `lexical`, `openrouter` | `mock` alias is supported for legacy config |
-| Importance scorer | `heuristic`, `ollama`, `openrouter` | Config-driven swap |
-| Retrieval scoring | `wal`, `match` | Runtime algorithm switch |
-| Parsing | `heuristic`, `ollama` | Optional extraction before persistence |
-| Structured memory | observation/event dual-write | Optional query routing boosts |
-
-## Architecture
-
-```mermaid
-flowchart TB
-    C["Clients"]
-    subgraph Ingress["Ingress"]
-        direction LR
-        REST["REST API"] & MCP["MCP Server"] & DASH["Dashboard"]
-    end
-    subgraph Auth["Auth"]
-        direction LR
-        A["Tenant Resolution"] & T["Tenant Service"]
-    end
-    subgraph Core["Core Services"]
-        direction LR
-        MS["Memory Service"] & PP["Postprocess Workers"]
-    end
-    subgraph Retrieval["Retrieval"]
-        direction LR
-        RET["Fusion RRF"] --> RERANK["WMR Reranker"]
-    end
-    subgraph Providers["Providers"]
-        direction LR
-        EMB["Embeddings"] & SCORE["Scorer"] & PARSER["Parser"]
-    end
-    subgraph Storage["Storage"]
-        direction LR
-        SQLITE["SQLite"] & QDRANT["Qdrant"] & NEO4J["Neo4j"]
-    end
-    C --> Ingress
-    Ingress --> Auth
-    Auth --> Core
-    Core --> Retrieval
-    Core --> Providers
-    Retrieval --> EMB
-    PP --> PARSER & EMB
-    Core --> Storage
-    Retrieval --> QDRANT
-```
+Pali is open memory infrastructure for LLM and agent systems. It gives you a local API server, MCP server, operator dashboard, and configurable retrieval stack behind one runtime.
 
 ## Quickstart
 
-### 1) Prerequisites
-
-- Go `1.24+`
-
-### 2) Bootstrap local config and checks
+### Install on macOS or Linux
 
 ```bash
-make setup
+curl -fsSL https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.sh | sh
 ```
 
-### 3) Run the API server
+### Install on Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.ps1 | iex
+```
+
+### Initialize and run
 
 ```bash
-make run
+pali init
+pali serve
 ```
-
-Default address: `http://127.0.0.1:8080`
 
 Health:
+
 ```bash
 curl http://127.0.0.1:8080/health
 ```
 
 Dashboard:
+
 ```bash
 open http://127.0.0.1:8080/dashboard
 ```
 
-## Docker Quickstart
+If you prefer a source checkout instead of a release binary:
 
-Build the image:
+```bash
+git clone https://github.com/pali-mem/pali.git
+cd pali
+make setup
+make run
+```
+
+## Docs Center
+
+Start here for the full guides:
+
+- Published docs: [https://pali-mem.github.io/pali/](https://pali-mem.github.io/pali/)
+- Local docs map: [`docs/README.md`](docs/README.md)
+- Getting started: [`docs/getting-started.md`](docs/getting-started.md)
+- Configuration: [`docs/configuration.md`](docs/configuration.md)
+- Deployment: [`docs/deployment.md`](docs/deployment.md)
+- Operations: [`docs/operations.md`](docs/operations.md)
+- MCP: [`docs/mcp.md`](docs/mcp.md)
+- API: [`docs/api.md`](docs/api.md)
+
+## What Pali Does
+
+- Multi-tenant memory APIs with tenant-scoped isolation
+- Hybrid retrieval across lexical, dense, reranking, and optional multi-hop expansion
+- MCP server with memory-first tools
+- Operator dashboard for tenants, memories, and system state
+- Configurable backends for vectors, entity facts, embeddings, and scoring
+
+Current v0.1 core capabilities:
+
+- Memory CRUD and batch ingest APIs
+- Async post-processing pipeline with job tracking
+- Lexical plus dense candidate fusion via RRF
+- WMR reranking
+- Tenant statistics and routing support
+- Tier auto-resolution (`episodic` vs `semantic`)
+- Optional JWT tenant-scoped auth
+
+## Install and Run Options
+
+### Release binary
+
+The install scripts download the latest GitHub Release asset for your platform, verify checksums, and place `pali` on your machine.
+
+Manual release downloads are also available from GitHub Releases:
+
+- Linux/macOS archives: `pali_<version>_<os>_<arch>.tar.gz`
+- Windows archives: `pali_<version>_windows_<arch>.zip`
+
+After install:
+
+```bash
+pali init
+pali serve
+```
+
+### Docker
+
+Build:
 
 ```bash
 docker build -t pali:local .
 ```
 
-Run the base zero-dependency container:
+Run:
 
 ```bash
-docker run --rm \
-  -p 8080:8080 \
-  -v pali-data:/var/lib/pali \
-  pali:local
+docker run --rm -p 8080:8080 -v pali-data:/var/lib/pali pali:local
 ```
 
-The image ships with a container-safe config at `deploy/docker/pali.yaml`:
+The image uses `deploy/docker/pali.container.yaml`, which binds to `0.0.0.0:8080` and stores SQLite data under `/var/lib/pali`.
 
-- `server.host: 0.0.0.0`
-- SQLite data under `/var/lib/pali`
-- service-name defaults for optional dependencies like `qdrant`, `neo4j`, and `ollama`
-
-Docker Compose stacks live under `deploy/docker/`:
+Compose files live under `deploy/docker/`:
 
 ```bash
 docker compose -f deploy/docker/compose.yaml up --build
@@ -191,48 +134,59 @@ docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.neo4j.yaml
 docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.ollama.yaml up --build
 ```
 
-Notes:
+### Source checkout
 
-- the base Compose stack keeps Pali on `sqlite + lexical`
-- the Qdrant and Neo4j override files switch Pali to those backends automatically
-- the Ollama override file starts the Ollama service and points Pali at it, but you still need to pull a model before setting `PALI_EMBEDDING_PROVIDER=ollama`
-- copy `deploy/docker/.env.example` to `.env` in your Compose working directory if you want a checked-in starting point for local overrides
-
-## Single-Binary Runtime (Optional)
-
-Pali can also be run as a single compiled binary (helpful for ops and local packaging):
+Prerequisite: Go `1.25+`
 
 ```bash
-make build
-./bin/pali -config pali.yaml
+git clone https://github.com/pali-mem/pali.git
+cd pali
+make setup
+make run
 ```
 
-MCP server mode:
+## CLI
 
 ```bash
-./bin/pali mcp run -config pali.yaml
+pali init
+pali serve
+pali mcp serve
 ```
 
-Install into your PATH:
+Useful init flags:
 
 ```bash
-make install
-pali -config /etc/pali/pali.yaml
+pali init -config /path/to/pali.yaml
+pali init -download-model
+pali init -skip-model-download
+pali init -skip-runtime-check
+pali init -skip-ollama-check
 ```
 
-User-local install (no sudo):
+The init flow creates `pali.yaml` from `pali.yaml.example` when missing, prepares runtime directories, and checks optional ONNX/Ollama prerequisites based on the current config.
 
-```bash
-make install PREFIX="$HOME/.local"
-export PATH="$HOME/.local/bin:$PATH"
-pali -config pali.yaml
+## Config and Auth
+
+- Config template: [`pali.yaml.example`](pali.yaml.example)
+- Config guide: [`docs/configuration.md`](docs/configuration.md)
+- Multitenancy and JWT auth: [`docs/multitenancy.md`](docs/multitenancy.md)
+- ONNX setup notes: [`docs/onnx.md`](docs/onnx.md)
+
+JWT example:
+
+```yaml
+auth:
+  enabled: true
+  jwt_secret: "change-me"
+  issuer: "pali"
 ```
 
-This is an installation/runtime convenience, not the project identity. The project is open memory infrastructure with fully extensible components.
+JWTs must include `tenant_id`, and `/v1` requests stay tenant-scoped.
 
-## MCP Tooling
+## MCP and Client
 
-Current MCP toolset:
+MCP tools include:
+
 - `memory_store`
 - `memory_store_preference`
 - `memory_search`
@@ -245,84 +199,7 @@ Current MCP toolset:
 - `health_check`
 - `pali_capabilities`
 
-Built-in MCP guidance:
-- `initialize.instructions` includes memory-first policy hints
-- `prompts/get` exposes `pali_memory_autopilot`
-
-Tenant-aware MCP tool resolution order:
-1. `tenant_id` in tool input
-2. JWT tenant claim (when auth is enabled)
-3. MCP session default tenant
-4. `default_tenant_id` in config
-5. otherwise, tool returns an error
-
-This is tenant resolution, not full operator auth delegation. REST auth is stricter; MCP behavior also depends on what the host forwards into session or tool metadata.
-
-## Config
-
-- Canonical guide: [`docs/configuration.md`](docs/configuration.md)
-- Canonical template: [`pali.yaml.example`](pali.yaml.example)
-- Local runtime file: `pali.yaml` (created by `make setup` if missing)
-- Custom runtime file: `go run ./cmd/setup -config /path/to/pali.yaml`
-
-## Embedding Setup Notes
-
-- `make setup` checks configured embedder readiness
-- `make setup` supports `-config` when you want to validate a non-default config path
-- the committed default config uses `embedding.provider: lexical`, so first boot does not require Ollama, ONNX, or OpenRouter
-- lexical is the easiest way to start, not the highest-quality retrieval setup
-- ONNX model files are downloaded only when `embedding.provider=onnx` (unless forced)
-- Ollama readiness checks run only when the current config enables an Ollama-backed component
-
-Useful setup flags:
-
-```bash
-go run ./cmd/setup -download-model
-go run ./cmd/setup -config /etc/pali/pali.yaml
-go run ./cmd/setup -skip-model-download
-go run ./cmd/setup -skip-runtime-check
-go run ./cmd/setup -skip-ollama-check
-```
-
-If you use ONNX, required files are:
-- `models/all-MiniLM-L6-v2/model.onnx`
-- `models/all-MiniLM-L6-v2/tokenizer.json`
-
-Ollama quick start:
-
-```bash
-ollama serve
-ollama pull mxbai-embed-large
-```
-
-## Auth (Optional JWT)
-
-```yaml
-auth:
-  enabled: true
-  jwt_secret: "change-me"
-  issuer: "pali"
-```
-
-JWT must include `tenant_id`, and request tenant must match token tenant.
-
-Important behavior:
-- one JWT maps to one tenant
-- `/v1` routes return `403` on tenant mismatch
-- MCP can also resolve tenant from session/default config when the host does not forward JWT metadata
-- the dashboard is not currently fronted by the same JWT middleware
-
-Full guide: [`docs/multitenancy.md`](docs/multitenancy.md)
-
-Mint dev JWT:
-
-```bash
-go run ./cmd/jwt -tenant tenant_1
-go run ./cmd/jwt -tenant tenant_1 -secret "change-me" -ttl 2h
-TENANT=tenant_1 JWT_SECRET=change-me make jwt
-```
-
-## Go Client
+Go client example:
 
 ```go
 import (
@@ -338,8 +215,7 @@ func main() {
     log.Fatal(err)
   }
 
-  ctx := context.Background()
-  if _, err := c.CreateTenant(ctx, client.CreateTenantRequest{
+  if _, err := c.CreateTenant(context.Background(), client.CreateTenantRequest{
     ID:   "tenant_1",
     Name: "Tenant One",
   }); err != nil {
@@ -348,129 +224,49 @@ func main() {
 }
 ```
 
-When auth is enabled:
+More:
 
-```go
-c.SetBearerToken("<jwt>")
-```
+- MCP docs: [`docs/mcp.md`](docs/mcp.md)
+- Go client docs: [`docs/client/README.md`](docs/client/README.md)
 
-Client docs: [`docs/client/README.md`](docs/client/README.md)
+## Build and Release
 
-## Repository Layout
-
-- `cmd/pali`: main API server binary entrypoint
-- `cmd/setup`: setup/bootstrap checks
-- `internal/domain`: entities and interfaces
-- `internal/core`: service and use-case layer
-- `internal/repository/sqlite`: SQLite repository implementation
-- `internal/vectorstore`: sqlite-vec and qdrant implementations
-- `internal/embeddings`: embedding providers
-- `internal/scorer`: importance scoring providers
-- `internal/api`: Gin router, middleware, handlers, DTOs
-- `internal/mcp`: MCP server and tool handlers
-- `internal/dashboard`: dashboard handlers and templates
-- `pkg/client`: Go API client SDK
-- `test`: integration and e2e suites
-- `docs`: architecture, API, MCP, deployment docs
-
-## Build, Test, and Benchmark
-
-Build:
+Build locally:
 
 ```bash
 make build
 ```
 
-Tests:
-
-| Command | Scope |
-|---|---|
-| `make test` | Unit tests (`internal/` and `pkg/`) |
-| `make test-integration` | Integration tests (`-tags integration`) |
-| `make test-e2e` | End-to-end tests (`-tags e2e`) |
-| `make test-all` | Everything |
-
-Release gate:
+Install locally from source:
 
 ```bash
-scripts/release_gate.sh
+make install PREFIX="$HOME/.local"
 ```
 
-Release assets (downloadable executables + checksums):
+Tests:
+
+- `make test`
+- `make test-integration`
+- `make test-e2e`
+- `make test-all`
+
+Release assets:
 
 ```bash
 VERSION=v0.1.0 make release-assets
 ```
 
-Outputs:
-- `dist/releases/<version>/artifacts/` (`.tar.gz` for Linux/macOS, `.zip` for Windows `.exe`)
-- `dist/releases/<version>/SHA256SUMS`
-- `dist/releases/<version>/manifest.json`
-- `dist/releases/LATEST`
+The release workflow at [`.github/workflows/release.yml`](.github/workflows/release.yml) publishes GitHub Release binaries and a multi-arch container image to `ghcr.io/pali-mem/pali`.
 
-GitHub release automation:
-- pushing a tag like `v0.1.0` triggers `.github/workflows/release.yml`
-- the workflow builds Linux/macOS/Windows artifacts and attaches them to the GitHub Release automatically
-- the same workflow also publishes a multi-arch Docker image to `ghcr.io/pali-mem/pali`
-- manual run is also supported via Actions `workflow_dispatch` (provide an existing tag)
+## Production Notes
 
-## Production Readiness Checklist
+- Keep `pali.yaml` outside the repo in non-dev environments.
+- Enable JWT auth before exposing `/v1` outside a trusted network.
+- Persist `database.sqlite_dsn` across restarts.
+- Put Pali behind TLS termination and a restart supervisor.
+- Monitor `/health` and validate config before deploy.
 
-- Keep `pali.yaml` outside the repo and inject sensitive values through your deployment platform.
-- Set `auth.enabled: true` and a long, random `jwt_secret` in non-dev environments.
-- Run with a process supervisor (systemd, Docker restart policy, Kubernetes) and explicit liveness/readiness checks.
-- Put TLS termination at a reverse proxy (for example Nginx/Caddy) and keep Pali on an internal network.
-- Use dedicated persistent storage for `database.sqlite_dsn`; `pali.db` must persist across restarts.
-- Schedule DB backups and restore drills from file snapshots.
-- Enable monitoring on `/health` and track startup logs for counts and migration status.
-- Gate promotion with config validation (`go run ./cmd/setup -config pali.yaml`) before rollout.
-- Pin runtime dependencies and avoid running unverified `model.onnx`/`tokenizer.json` artifacts from untrusted sources.
-- Run integration smoke checks against `/health`, `POST /v1/tenants`, and `POST /v1/memory/search` after deploy.
-
-Benchmarks:
-
-```bash
-make bench-setup
-make benchmark
-make retrieval-quality
-make bench-suite
-```
-
-Canonical release assets:
-
-- `testdata/benchmarks/fixtures/release_memories.json`
-- `testdata/benchmarks/evals/release_curated.json`
-- `test/benchmarks/profiles/`
-- `test/benchmarks/suites/`
-
-Result output: `test/benchmarks/results/<timestamp>/`
-Each run now includes `config.profile.yaml` and `config.rendered.yaml`.
-
-Suite output: `test/benchmarks/results/suites/<timestamp>-<suite>/`
-Each suite run includes a combined `suite.json` and `suite.summary.md` scorecard.
-
-## Docs
-
-- Published docs site: [https://pali-mem.github.io/pali/](https://pali-mem.github.io/pali/)
-- Local docs map: [`docs/README.md`](docs/README.md)
-- Local docs preview:
-
-  ```bash
-  pip install -r docs/requirements.txt
-  mkdocs serve
-  ```
-
-- Multi-tenant auth and isolation: [`docs/multitenancy.md`](docs/multitenancy.md)
-- Operations/runbook: [`docs/operations.md`](docs/operations.md)
-- Configuration guide: [`docs/configuration.md`](docs/configuration.md)
-- MCP notes: [`docs/mcp.md`](docs/mcp.md)
-- Deployment guide: [`docs/deployment.md`](docs/deployment.md)
-- API reference: [`docs/api.md`](docs/api.md)
-- Architecture: [`docs/architecture.md`](docs/architecture.md)
-- ONNX setup: [`docs/onnx.md`](docs/onnx.md)
-- Go client docs: [`docs/client/README.md`](docs/client/README.md)
-- Benchmark policy: [`BENCHMARKS.MD`](BENCHMARKS.MD)
-- Research/dependencies: [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md)
+Full runbook: [`docs/operations.md`](docs/operations.md)
 
 ## Module Path
 
