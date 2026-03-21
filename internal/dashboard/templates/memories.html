@@ -1,83 +1,118 @@
 {{ define "content" }}
-<section>
-  <h2>Memories</h2>
-  <form method="get" action="/dashboard/memories" class="form-grid">
-    <label>
-      Tenant
-      <select name="tenant_id" required>
-        <option value="">Select tenant</option>
-        {{ range .Tenants }}
-        <option value="{{ .ID }}" {{ if eq $.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
-        {{ end }}
-      </select>
-    </label>
-    <label>
-      Search
-      <input type="text" name="q" value="{{ .Query }}" placeholder="query text" />
-    </label>
-    <button type="submit">Load</button>
-  </form>
+<section class="page-intro">
+  <p class="eyebrow">Memories</p>
+  <div class="page-heading">
+    <div>
+      <h2>Search and store</h2>
+      <p>Inspect indexed memory, filter by tenant, and add new entries without leaving the dashboard.</p>
+    </div>
+  </div>
+</section>
 
-  <form method="post" action="/dashboard/memories" class="form-grid">
-    <label>
-      Tenant
-      <select name="tenant_id" required>
-        <option value="">Select tenant</option>
-        {{ range .Tenants }}
-        <option value="{{ .ID }}" {{ if eq $.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
-        {{ end }}
-      </select>
-    </label>
-    <label>
-      Tier
-      <select name="tier">
-        <option value="auto">auto</option>
-        <option value="semantic">semantic</option>
-        <option value="episodic">episodic</option>
-        <option value="working">working</option>
-      </select>
-    </label>
-    <label class="full">
-      Content
-      <textarea name="content" rows="3" required></textarea>
-    </label>
-    <label>
-      Tags (comma separated)
-      <input type="text" name="tags" placeholder="preferences, profile" />
-    </label>
-    <button type="submit">Store Memory</button>
-  </form>
+<section class="panel-grid panel-grid-forms">
+  <article class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Lookup</p>
+        <h3>Filter memories</h3>
+      </div>
+    </div>
+    <form method="get" action="/dashboard/memories" class="form-grid">
+      <label>
+        <span>Tenant</span>
+        <select name="tenant_id" required>
+          <option value="">Select tenant</option>
+          {{ range .Tenants }}
+          <option value="{{ .ID }}" {{ if eq $.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
+          {{ end }}
+        </select>
+      </label>
+      <label>
+        <span>Search</span>
+        <input type="text" name="q" value="{{ .Query }}" placeholder="Search memory content" />
+      </label>
+      <button type="submit">Load memories</button>
+    </form>
+  </article>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Content</th>
-        <th>Tier</th>
-        <th>Importance</th>
-        <th>Updated</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{ range .Memories }}
-      <tr>
-        <td><code>{{ .ID }}</code></td>
-        <td>{{ .Content }}</td>
-        <td>{{ .Tier }}</td>
-        <td>{{ .Importance }}</td>
-        <td>{{ .UpdatedAt }}</td>
-        <td>
-          <form method="post" action="/dashboard/memories/{{ .ID }}/delete">
-            <input type="hidden" name="tenant_id" value="{{ .TenantID }}" />
-            <button type="submit" class="danger">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {{ else }}
-      <tr><td colspan="6">No memories found.</td></tr>
-      {{ end }}
-    </tbody>
-  </table>
+  <article class="panel panel-accent">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Create</p>
+        <h3>Store memory</h3>
+      </div>
+    </div>
+    <form method="post" action="/dashboard/memories" class="form-grid">
+      <label>
+        <span>Tenant</span>
+        <select name="tenant_id" required>
+          <option value="">Select tenant</option>
+          {{ range .Tenants }}
+          <option value="{{ .ID }}" {{ if eq $.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
+          {{ end }}
+        </select>
+      </label>
+      <label>
+        <span>Tier</span>
+        <select name="tier">
+          <option value="auto">auto</option>
+          <option value="semantic">semantic</option>
+          <option value="episodic">episodic</option>
+          <option value="working">working</option>
+        </select>
+      </label>
+      <label class="full">
+        <span>Content</span>
+        <textarea name="content" rows="5" required></textarea>
+      </label>
+      <label class="full">
+        <span>Tags</span>
+        <input type="text" name="tags" placeholder="preferences, profile" />
+      </label>
+      <button type="submit">Store memory</button>
+    </form>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Results</p>
+      <h3>Memory records</h3>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Content</th>
+          <th>Tier</th>
+          <th>Importance</th>
+          <th>Updated</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Memories }}
+        <tr>
+          <td><code>{{ .ID }}</code></td>
+          <td class="cell-content">{{ .Content }}</td>
+          <td><span class="pill">{{ .Tier }}</span></td>
+          <td>{{ .Importance }}</td>
+          <td>{{ .UpdatedAt }}</td>
+          <td>
+            <form method="post" action="/dashboard/memories/{{ .ID }}/delete">
+              <input type="hidden" name="tenant_id" value="{{ .TenantID }}" />
+              <button type="submit" class="button-quiet danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{ else }}
+        <tr><td colspan="6" class="empty-cell">No memories found.</td></tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
 </section>
 {{ end }}
