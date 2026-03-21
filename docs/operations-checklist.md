@@ -5,7 +5,7 @@ This is a quick-read ops page. For full detail, use [Operations](operations.md).
 ## Pre-deploy
 
 1. Enable auth for non-dev environments.
-2. Validate config: `go run ./cmd/setup -config pali.yaml`.
+2. Validate config: `pali init -config pali.yaml`.
 3. Confirm persistent storage path for SQLite DB files.
 4. Verify health endpoint and startup logs in staging.
 
