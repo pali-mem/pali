@@ -14,19 +14,27 @@ import (
 	"time"
 
 	"github.com/pali-mem/pali/internal/api"
+	"github.com/pali-mem/pali/internal/bootstrap"
 	"github.com/pali-mem/pali/internal/config"
 	"github.com/pali-mem/pali/internal/startup"
 )
 
 const (
-	modeAPI = "api"
-	modeMCP = "mcp"
+	commandAPI  = "api"
+	commandMCP  = "mcp"
+	commandInit = "init"
 )
 
 var errHelp = errors.New("help requested")
 
+type cliCommand struct {
+	name    string
+	cfgPath string
+	init    bootstrap.Options
+}
+
 func main() {
-	mode, cfgPath, err := parseArgs(os.Args[1:])
+	cmd, err := parseArgs(os.Args[1:])
 	if err != nil {
 		if errors.Is(err, errHelp) {
 			usage(os.Stdout)
@@ -37,21 +45,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load(cfgPath)
+	if cmd.name == commandInit {
+		if err := bootstrap.Run(cmd.init, os.Stdout, os.Stderr); err != nil {
+			log.Fatalf("initialize pali: %v", err)
+		}
+		return
+	}
+
+	cfg, err := config.Load(cmd.cfgPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
-	switch mode {
-	case modeMCP:
+	switch cmd.name {
+	case commandMCP:
 		runMCP(cfg)
 	default:
-		runAPI(cfg)
+		runAPI(cfg, cmd.cfgPath)
 	}
 }
 
-func runAPI(cfg config.Config) {
-	router, cleanup, err := api.NewRouter(cfg)
+func runAPI(cfg config.Config, cfgPath string) {
+	router, cleanup, err := api.NewRouterWithConfigPath(cfg, cfgPath)
 	if err != nil {
 		log.Fatalf("create router: %v", err)
 	}
@@ -112,46 +127,60 @@ func runMCP(cfg config.Config) {
 	}
 }
 
-func parseArgs(args []string) (string, string, error) {
+func parseArgs(args []string) (cliCommand, error) {
 	if len(args) > 0 {
 		switch args[0] {
 		case "-h", "--help", "help":
-			return "", "", errHelp
+			return cliCommand{}, errHelp
 		}
 	}
 
-	if len(args) > 0 && args[0] == "mcp" {
-		return parseModeFlags(modeMCP, trimRunToken(args[1:]))
+	if len(args) > 0 && (args[0] == "init" || args[0] == "setup") {
+		return parseInitFlags(args[1:])
 	}
-	if len(args) > 0 && args[0] == "api" {
-		return parseModeFlags(modeAPI, trimRunToken(args[1:]))
+
+	if len(args) > 0 && args[0] == "mcp" {
+		return parseModeFlags(commandMCP, trimServeToken(args[1:]))
+	}
+	if len(args) > 0 && (args[0] == "api" || args[0] == "serve") {
+		return parseModeFlags(commandAPI, trimServeToken(args[1:]))
 	}
 	if len(args) > 0 && args[0] == "run" {
-		return parseModeFlags(modeAPI, args[1:])
+		return parseModeFlags(commandAPI, args[1:])
 	}
 
-	mode, cfgPath, err := parseModeFlags(modeAPI, args)
-	if err != nil {
-		return "", "", err
-	}
-	return mode, cfgPath, nil
+	return parseModeFlags(commandAPI, args)
 }
 
-func parseModeFlags(mode string, args []string) (string, string, error) {
-	fs := flag.NewFlagSet(mode, flag.ContinueOnError)
+func parseModeFlags(name string, args []string) (cliCommand, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cfgPath := fs.String("config", "pali.yaml", "Path to config file")
 	if err := fs.Parse(args); err != nil {
-		return "", "", err
+		return cliCommand{}, err
 	}
 	if fs.NArg() > 0 {
-		return "", "", fmt.Errorf("unexpected arguments: %v", fs.Args())
+		return cliCommand{}, fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
-	return mode, *cfgPath, nil
+	return cliCommand{name: name, cfgPath: *cfgPath}, nil
 }
 
-func trimRunToken(args []string) []string {
-	if len(args) > 0 && args[0] == "run" {
+func parseInitFlags(args []string) (cliCommand, error) {
+	opts := bootstrap.DefaultOptions()
+	fs := flag.NewFlagSet(commandInit, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	bootstrap.AddFlags(fs, &opts)
+	if err := fs.Parse(args); err != nil {
+		return cliCommand{}, err
+	}
+	if fs.NArg() > 0 {
+		return cliCommand{}, fmt.Errorf("unexpected arguments: %v", fs.Args())
+	}
+	return cliCommand{name: commandInit, init: opts}, nil
+}
+
+func trimServeToken(args []string) []string {
+	if len(args) > 0 && (args[0] == "run" || args[0] == "serve") {
 		return args[1:]
 	}
 	return args
@@ -159,7 +188,10 @@ func trimRunToken(args []string) []string {
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  pali init [flags]                   # create config and run setup checks")
+	fmt.Fprintln(w, "  pali serve [-config <path>]         # start API server")
 	fmt.Fprintln(w, "  pali [-config <path>]               # start API server (default)")
-	fmt.Fprintln(w, "  pali api run [-config <path>]       # start API server")
-	fmt.Fprintln(w, "  pali mcp run [-config <path>]       # start MCP server over stdio")
+	fmt.Fprintln(w, "  pali api serve [-config <path>]     # start API server")
+	fmt.Fprintln(w, "  pali mcp serve [-config <path>]     # start MCP server over stdio")
+	fmt.Fprintln(w, "  pali mcp run [-config <path>]       # alias for mcp serve")
 }
