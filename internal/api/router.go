@@ -23,6 +23,10 @@ import (
 )
 
 func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
+	return NewRouterWithConfigPath(cfg, "")
+}
+
+func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine, func() error, error) {
 	if gin.Mode() == "" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -119,7 +123,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	health := handlers.NewHealthHandler()
 	memory := handlers.NewMemoryHandler(memoryService, cfg.Postprocess.MaxAttempts)
 	tenant := handlers.NewTenantHandler(tenantService)
-	dashboardHandlers := dashboard.NewHandlers(memoryService, tenantService)
+	dashboardHandlers := dashboard.NewHandlers(memoryService, tenantService, cfg, configPath)
 
 	r.StaticFS("/static", http.FS(staticFS))
 
@@ -134,6 +138,7 @@ func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	r.GET("/dashboard/tenants", dashboardHandlers.Tenants)
 	r.POST("/dashboard/tenants", dashboardHandlers.CreateTenant)
 	r.GET("/dashboard/stats", dashboardHandlers.Stats)
+	r.GET("/dashboard/config", dashboardHandlers.Config)
 
 	v1 := r.Group("/v1")
 	if cfg.Auth.Enabled {

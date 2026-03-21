@@ -5,13 +5,16 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pali-mem/pali/internal/config"
 	corememory "github.com/pali-mem/pali/internal/core/memory"
 	coretenant "github.com/pali-mem/pali/internal/core/tenant"
 	"github.com/pali-mem/pali/internal/domain"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed templates/*.html
@@ -20,6 +23,7 @@ var templatesFS embed.FS
 type Handlers struct {
 	memoryService *corememory.Service
 	tenantService *coretenant.Service
+	configPage    ConfigPageData
 }
 
 type TenantView struct {
@@ -66,17 +70,31 @@ type StatsPageData struct {
 	MemoryCount  int64
 	TopTenantID  string
 	TopTenantMem int64
+	Tenants      []TenantView
+	ConfigPath   string
 }
 
-func NewHandlers(memoryService *corememory.Service, tenantService *coretenant.Service) *Handlers {
+type ConfigPageData struct {
+	Page          string
+	Error         string
+	Info          string
+	ConfigPath    string
+	ConfigSource  string
+	DocsURL       string
+	DocsBlurb     string
+	DocsLinkLabel string
+}
+
+func NewHandlers(memoryService *corememory.Service, tenantService *coretenant.Service, cfg config.Config, configPath string) *Handlers {
 	return &Handlers{
 		memoryService: memoryService,
 		tenantService: tenantService,
+		configPage:    buildConfigPageData(cfg, configPath),
 	}
 }
 
 func (h *Handlers) Index(c *gin.Context) {
-	c.Redirect(http.StatusFound, "/dashboard/memories")
+	c.Redirect(http.StatusFound, "/dashboard/stats")
 }
 
 func (h *Handlers) Memories(c *gin.Context) {
@@ -216,7 +234,15 @@ func (h *Handlers) Stats(c *gin.Context) {
 		MemoryCount:  totalMemories,
 		TopTenantID:  topID,
 		TopTenantMem: topCount,
+		Tenants:      tenants,
+		ConfigPath:   h.configPage.ConfigPath,
 	})
+}
+
+func (h *Handlers) Config(c *gin.Context) {
+	data := h.configPage
+	data.Page = "config"
+	h.render(c, "config.html", data)
 }
 
 func (h *Handlers) listTenantsWithCounts(c *gin.Context) ([]TenantView, error) {
@@ -279,6 +305,35 @@ func parseTier(tier string) (domain.MemoryTier, error) {
 		return domain.MemoryTierSemantic, nil
 	default:
 		return "", domain.ErrInvalidInput
+	}
+}
+
+func buildConfigPageData(cfg config.Config, configPath string) ConfigPageData {
+	const docsURL = "https://pali-mem.github.io/pali/"
+	displayPath := strings.TrimSpace(configPath)
+	raw := ""
+	if displayPath != "" {
+		b, err := os.ReadFile(displayPath)
+		if err == nil {
+			raw = string(b)
+		}
+	}
+	if raw == "" {
+		b, err := yaml.Marshal(cfg)
+		if err == nil {
+			raw = string(b)
+		}
+		if displayPath == "" {
+			displayPath = "Runtime config (defaults and environment)"
+		}
+	}
+	return ConfigPageData{
+		Page:          "config",
+		ConfigPath:    displayPath,
+		ConfigSource:  raw,
+		DocsURL:       docsURL,
+		DocsBlurb:     "Want to use Qdrant, Ollama, or any other of our extensions? Please go to our docs.",
+		DocsLinkLabel: "Read the docs",
 	}
 }
 
