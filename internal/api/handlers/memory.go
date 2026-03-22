@@ -4,42 +4,58 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pali-mem/pali/internal/api/dto"
 	corememory "github.com/pali-mem/pali/internal/core/memory"
 	"github.com/pali-mem/pali/internal/domain"
+	"github.com/pali-mem/pali/internal/telemetry"
 )
 
 type MemoryHandler struct {
 	service               *corememory.Service
+	telemetry             *telemetry.Service
 	maxPostprocessAttempt int
 }
 
-func NewMemoryHandler(service *corememory.Service, maxPostprocessAttempts ...int) *MemoryHandler {
+func NewMemoryHandler(service *corememory.Service, telemetryService *telemetry.Service, maxPostprocessAttempts ...int) *MemoryHandler {
 	maxAttempts := 5
 	if len(maxPostprocessAttempts) > 0 && maxPostprocessAttempts[0] > 0 {
 		maxAttempts = maxPostprocessAttempts[0]
 	}
 	return &MemoryHandler{
 		service:               service,
+		telemetry:             telemetryService,
 		maxPostprocessAttempt: maxAttempts,
 	}
 }
 
 func (h *MemoryHandler) Store(c *gin.Context) {
+	started := time.Now()
+	tenantID := ""
+	status := http.StatusInternalServerError
+	defer func() {
+		h.recordStoreTelemetry(tenantID, status, time.Since(started))
+	}()
+
 	storeInput, err := bindStoreInput(c)
 	if err != nil {
+		status = statusForBindError(err)
 		writeBindError(c, err)
 		return
 	}
+	tenantID = strings.TrimSpace(storeInput.TenantID)
+	h.setTelemetryTenant(c, tenantID)
 
 	stored, err := h.service.Store(c.Request.Context(), storeInput)
 	if err != nil {
+		status = statusForError(err)
 		writeError(c, err)
 		return
 	}
 
+	status = http.StatusCreated
 	c.JSON(http.StatusCreated, dto.StoreMemoryResponse{
 		ID:        stored.ID,
 		CreatedAt: stored.CreatedAt,
@@ -47,17 +63,33 @@ func (h *MemoryHandler) Store(c *gin.Context) {
 }
 
 func (h *MemoryHandler) StoreBatch(c *gin.Context) {
+	started := time.Now()
+	status := http.StatusInternalServerError
+	tenantWrites := map[string]int{}
+	defer func() {
+		h.recordBatchStoreTelemetry(tenantWrites, status, time.Since(started))
+	}()
+
 	inputs, err := bindStoreBatchInputs(c)
 	if err != nil {
+		status = statusForBindError(err)
 		writeBindError(c, err)
 		return
+	}
+	tenantWrites = countTenantWrites(inputs)
+	if len(tenantWrites) == 1 {
+		for tenantID := range tenantWrites {
+			h.setTelemetryTenant(c, tenantID)
+		}
 	}
 
 	stored, err := h.service.StoreBatch(c.Request.Context(), inputs)
 	if err != nil {
+		status = statusForError(err)
 		writeError(c, err)
 		return
 	}
+	status = http.StatusCreated
 	out := make([]dto.StoreMemoryResponse, 0, len(stored))
 	for _, memory := range stored {
 		out = append(out, dto.StoreMemoryResponse{
@@ -144,31 +176,46 @@ func bindStoreBatchInputs(c *gin.Context) ([]corememory.StoreInput, error) {
 }
 
 func (h *MemoryHandler) Search(c *gin.Context) {
+	started := time.Now()
+	tenantID := ""
+	status := http.StatusInternalServerError
+	defer func() {
+		h.recordSearchTelemetry(tenantID, status, time.Since(started))
+	}()
+
 	var req dto.SearchMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		status = http.StatusBadRequest
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
 		return
 	}
+	tenantID = strings.TrimSpace(req.TenantID)
+	h.setTelemetryTenant(c, tenantID)
 	if req.MinScore < 0 || req.MinScore > 1 {
+		status = http.StatusBadRequest
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid min_score"})
 		return
 	}
 	searchTiers, err := parseSearchTiers(req.Tiers)
 	if err != nil {
+		status = http.StatusBadRequest
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	searchKinds, err := parseSearchKinds(req.Kinds)
 	if err != nil {
+		status = http.StatusBadRequest
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	retrievalKind, err := parseSearchRetrievalKind(req.RetrievalKind)
 	if err != nil {
+		status = http.StatusBadRequest
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err := enforceTenantAccess(c, req.TenantID); err != nil {
+		status = statusForError(err)
 		writeError(c, err)
 		return
 	}
@@ -190,6 +237,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 		items, err = h.service.SearchWithFilters(c.Request.Context(), req.TenantID, req.Query, req.TopK, searchOpts)
 	}
 	if err != nil {
+		status = statusForError(err)
 		writeError(c, err)
 		return
 	}
@@ -242,6 +290,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 		}
 	}
 
+	status = http.StatusOK
 	c.JSON(http.StatusOK, response)
 }
 
@@ -332,6 +381,73 @@ func parseTier(t string) (domain.MemoryTier, error) {
 	default:
 		return "", domain.ErrInvalidInput
 	}
+}
+
+func countTenantWrites(inputs []corememory.StoreInput) map[string]int {
+	out := make(map[string]int)
+	for _, input := range inputs {
+		tenantID := strings.TrimSpace(input.TenantID)
+		if tenantID == "" {
+			continue
+		}
+		out[tenantID]++
+	}
+	return out
+}
+
+func (h *MemoryHandler) setTelemetryTenant(c *gin.Context, tenantID string) {
+	if h.telemetry == nil {
+		return
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return
+	}
+	c.Set(telemetry.TenantContextKey, tenantID)
+}
+
+func (h *MemoryHandler) recordStoreTelemetry(tenantID string, status int, latency time.Duration) {
+	if h.telemetry == nil {
+		return
+	}
+	h.telemetry.RecordStore(telemetry.StoreObservation{
+		At:       time.Now().UTC(),
+		TenantID: strings.TrimSpace(tenantID),
+		Status:   status,
+		Latency:  latency,
+	})
+}
+
+func (h *MemoryHandler) recordBatchStoreTelemetry(tenantWrites map[string]int, status int, latency time.Duration) {
+	if h.telemetry == nil {
+		return
+	}
+	copied := make(map[string]int, len(tenantWrites))
+	for tenantID, count := range tenantWrites {
+		trimmed := strings.TrimSpace(tenantID)
+		if trimmed == "" || count <= 0 {
+			continue
+		}
+		copied[trimmed] = count
+	}
+	h.telemetry.RecordBatchStore(telemetry.BatchStoreObservation{
+		At:           time.Now().UTC(),
+		TenantWrites: copied,
+		Status:       status,
+		Latency:      latency,
+	})
+}
+
+func (h *MemoryHandler) recordSearchTelemetry(tenantID string, status int, latency time.Duration) {
+	if h.telemetry == nil {
+		return
+	}
+	h.telemetry.RecordSearch(telemetry.SearchObservation{
+		At:       time.Now().UTC(),
+		TenantID: strings.TrimSpace(tenantID),
+		Status:   status,
+		Latency:  latency,
+	})
 }
 
 func parseSearchTiers(raw []string) ([]domain.MemoryTier, error) {
