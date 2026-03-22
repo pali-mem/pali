@@ -27,12 +27,68 @@
   </article>
 </section>
 
+<section class="panel analytics-strip" data-analytics-root>
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Live now</p>
+      <h3>In-memory analytics</h3>
+    </div>
+    <div class="analytics-head-actions">
+      <button type="button" class="button-quiet analytics-refresh-button" data-analytics-refresh>Refresh</button>
+    </div>
+  </div>
+  <div class="analytics-inline-metrics">
+    <article class="analytics-mini-card">
+      <p class="card-label">Active requests</p>
+      <p id="analytics-active-requests" class="metric-text">0</p>
+    </article>
+    <article class="analytics-mini-card">
+      <p class="card-label">Store calls</p>
+      <p id="analytics-store-count" class="metric-text">0</p>
+    </article>
+    <article class="analytics-mini-card">
+      <p class="card-label">Batch calls</p>
+      <p id="analytics-batch-store-count" class="metric-text">0</p>
+    </article>
+    <article class="analytics-mini-card">
+      <p class="card-label">Search calls</p>
+      <p id="analytics-search-count" class="metric-text">0</p>
+    </article>
+  </div>
+  <div class="analytics-inline-grid">
+    <article class="analytics-subpanel">
+      <div class="analytics-subhead">
+        <p class="card-label">Requests/min</p>
+        <p id="analytics-rpm-current" class="stack-meta">0 this minute</p>
+      </div>
+      <div id="analytics-rpm-chart" class="rpm-chart" aria-label="Requests per minute chart"></div>
+    </article>
+    <article class="analytics-subpanel">
+      <div class="analytics-subhead">
+        <p class="card-label">Top tenants by writes</p>
+      </div>
+      <div id="analytics-top-writes" class="stack-list">
+        <p class="empty-copy">No write activity yet.</p>
+      </div>
+    </article>
+  </div>
+  <article class="analytics-subpanel analytics-events">
+    <div class="analytics-subhead">
+      <p class="card-label">Recent events</p>
+      <p class="stack-meta">Last 20</p>
+    </div>
+    <div id="analytics-recent-events" class="stack-list">
+      <p class="empty-copy">No recent events.</p>
+    </div>
+  </article>
+</section>
+
 <section class="panel-grid panel-grid-dashboard">
   <article class="panel">
     <div class="panel-head">
       <div>
         <p class="eyebrow">Snapshot</p>
-        <h3>Tenant distribution</h3>
+        <h3>Tenant distribution (top 10)</h3>
       </div>
     </div>
     <div class="stack-list">
@@ -48,6 +104,9 @@
       <p class="empty-copy">No tenants yet. Create the first tenant to start storing memories.</p>
       {{ end }}
     </div>
+    {{ if .HasMoreTenants }}
+    <p class="card-action"><a class="action-link" href="/dashboard/tenants">Show all tenants</a></p>
+    {{ end }}
   </article>
 </section>
 {{ end }}

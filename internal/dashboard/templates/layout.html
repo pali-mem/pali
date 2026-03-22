@@ -26,18 +26,29 @@
             <span class="nav-eyebrow">03</span>
             <span>Tenants</span>
           </a>
-          <a href="/dashboard/config" class="nav-link {{if eq .Page "config"}}active{{end}}">
+          <a href="/dashboard/analytics" class="nav-link {{if eq .Page "analytics"}}active{{end}}">
             <span class="nav-eyebrow">04</span>
+            <span>Analytics</span>
+          </a>
+          <a href="/dashboard/config" class="nav-link {{if eq .Page "config"}}active{{end}}">
+            <span class="nav-eyebrow">05</span>
             <span>Config</span>
           </a>
         </nav>
       </aside>
       <main class="main-content">
+        <div class="dashboard-topbar">
+          <div class="dashboard-topbar-actions">
+            <a class="button-link dashboard-topbar-link" href="https://github.com/pali-mem/pali" target="_blank" rel="noreferrer">GitHub</a>
+            <a class="button-link dashboard-topbar-link" href="https://pali-mem.github.io/pali/" target="_blank" rel="noreferrer">Docs</a>
+          </div>
+        </div>
         {{ if .Error }}<p class="alert alert-error">{{ .Error }}</p>{{ end }}
         {{ if .Info }}<p class="alert alert-info">{{ .Info }}</p>{{ end }}
         {{ template "content" . }}
       </main>
     </div>
     <script src="/static/js/htmx.min.js"></script>
+    <script src="/static/js/dashboard_analytics.js"></script>
   </body>
 </html>
