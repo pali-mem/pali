@@ -155,7 +155,7 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintln(stdout, "Next:")
 	fmt.Fprintf(stdout, "1) run: pali serve -config %s\n", configPath)
-	fmt.Fprintln(stdout, "2) open: http://127.0.0.1:8080/dashboard")
+	fmt.Fprintln(stdout, "2) open: http://localhost:8080/dashboard")
 
 	return nil
 }

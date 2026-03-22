@@ -14,9 +14,13 @@
 
 </div>
 
-> **Pre-release, close to usable** — Pali is functional and the v0.1 release work is now mostly docs, benchmarks, and repo hygiene. APIs and config may still tighten before tagging.
+> **Pre-release, close to usable**
 
 Pali is open memory infrastructure for LLM and agent systems. It gives you a local API server, MCP server, operator dashboard, and configurable retrieval stack behind one runtime.
+
+## Demo
+
+![Pali dashboard demo](https://raw.githubusercontent.com/pali-mem/.github/main/dashboard.gif)
 
 ## Quickstart
 

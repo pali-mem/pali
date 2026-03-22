@@ -77,6 +77,7 @@ func runAPI(cfg config.Config, cfgPath string) {
 	}()
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	displayAddr := displayServerAddr(cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           router,
@@ -88,7 +89,7 @@ func runAPI(cfg config.Config, cfgPath string) {
 		serverErr <- server.ListenAndServe()
 	}()
 
-	log.Printf("[pali-startup] starting pali server on %s", addr)
+	log.Printf("[pali-startup] starting pali server on %s", displayAddr)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -112,6 +113,14 @@ func runAPI(cfg config.Config, cfgPath string) {
 			log.Fatalf("server exited: %v", err)
 		}
 	}
+}
+
+func displayServerAddr(host string, port int) string {
+	switch host {
+	case "", "0.0.0.0", "127.0.0.1", "::", "::1":
+		host = "localhost"
+	}
+	return fmt.Sprintf("%s:%d", host, port)
 }
 
 func runMCP(cfg config.Config) {
