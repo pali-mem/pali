@@ -16,30 +16,59 @@ var (
 )
 
 func writeError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, domain.ErrInvalidInput):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, domain.ErrNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, domain.ErrTenantMismatch):
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-	case strings.Contains(strings.ToLower(err.Error()), "constraint failed"):
-		c.JSON(http.StatusConflict, gin.H{"error": "conflict"})
-	default:
+	status := statusForError(err)
+	switch status {
+	case http.StatusConflict:
+		c.JSON(status, gin.H{"error": "conflict"})
+	case http.StatusInternalServerError:
 		log.Printf("[pali-api] internal error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.JSON(status, gin.H{"error": "internal server error"})
+	default:
+		c.JSON(status, gin.H{"error": err.Error()})
 	}
 }
 
 func writeBindError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, errInvalidJSONBody):
-		c.JSON(http.StatusBadRequest, gin.H{"error": errInvalidJSONBody.Error()})
-	case errors.Is(err, errEmptyBatchItems):
-		c.JSON(http.StatusBadRequest, gin.H{"error": errEmptyBatchItems.Error()})
-	case errors.Is(err, domain.ErrInvalidInput):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	status := statusForBindError(err)
+	switch status {
+	case http.StatusBadRequest:
+		switch {
+		case errors.Is(err, errInvalidJSONBody):
+			c.JSON(status, gin.H{"error": errInvalidJSONBody.Error()})
+		case errors.Is(err, errEmptyBatchItems):
+			c.JSON(status, gin.H{"error": errEmptyBatchItems.Error()})
+		default:
+			c.JSON(status, gin.H{"error": err.Error()})
+		}
 	default:
 		writeError(c, err)
+	}
+}
+
+func statusForError(err error) int {
+	switch {
+	case errors.Is(err, domain.ErrInvalidInput):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, domain.ErrTenantMismatch):
+		return http.StatusForbidden
+	case strings.Contains(strings.ToLower(err.Error()), "constraint failed"):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func statusForBindError(err error) int {
+	switch {
+	case errors.Is(err, errInvalidJSONBody):
+		return http.StatusBadRequest
+	case errors.Is(err, errEmptyBatchItems):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidInput):
+		return http.StatusBadRequest
+	default:
+		return statusForError(err)
 	}
 }
