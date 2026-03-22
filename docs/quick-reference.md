@@ -2,6 +2,20 @@
 
 Use this page when you need the fastest path to common tasks.
 
+## Install
+
+macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.ps1 | iex
+```
+
 ## Run locally
 
 ```bash
@@ -41,6 +55,19 @@ docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yam
 - [API](api.md)
 - [MCP Integration](mcp.md)
 
+## SDK packages
+
+```bash
+pip install pali-client
+npm install pali-client
+```
+
+- [Go Client SDK](client/README.md)
+- [Python SDK repo (`pali-py`)](https://github.com/pali-mem/pali-py)
+- [Python package (`pali-client` on PyPI)](https://pypi.org/project/pali-client/)
+- [JavaScript SDK repo (`pali-js`)](https://github.com/pali-mem/pali-js)
+- [JavaScript package (`pali-client` on npm)](https://www.npmjs.com/package/pali-client)
+
 ## Common checks
 
 ```bash
@@ -59,5 +86,3 @@ make docs-build
 - [README (GitHub)](https://github.com/pali-mem/pali/blob/main/README.md)
 - [Benchmark Policy (GitHub)](https://github.com/pali-mem/pali/blob/main/BENCHMARKS.MD)
 - [Contributing (GitHub)](https://github.com/pali-mem/pali/blob/main/CONTRIBUTING.md)
-- [Python SDK (`pali-py`)](https://github.com/pali-mem/pali-py)
-- [JavaScript SDK (`pali-js`)](https://github.com/pali-mem/pali-js)

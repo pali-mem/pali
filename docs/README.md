@@ -1,6 +1,57 @@
-# Docs Map
+# Pali Docs
 
-Pali is open memory infrastructure for LLM and agent systems. This page is the fastest way to navigate docs by role.
+Pali is open memory infrastructure for LLM and agent systems. This page is the fastest way to install it, run it, and find the right guide.
+
+## Install
+
+macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.ps1 | iex
+```
+
+## First run
+
+```bash
+pali init
+pali serve
+curl http://127.0.0.1:8080/health
+```
+
+Dashboard:
+
+```bash
+open http://127.0.0.1:8080/dashboard
+```
+
+If you are running from a source checkout instead of a release binary:
+
+```bash
+make setup
+make run
+curl http://127.0.0.1:8080/health
+```
+
+## SDKs
+
+- [Go Client SDK](client/README.md)
+- [Python SDK repo (`pali-py`)](https://github.com/pali-mem/pali-py)
+- [Python package (`pali-client` on PyPI)](https://pypi.org/project/pali-client/)
+- [JavaScript SDK repo (`pali-js`)](https://github.com/pali-mem/pali-js)
+- [JavaScript package (`pali-client` on npm)](https://www.npmjs.com/package/pali-client)
+
+Install Python or JavaScript SDKs directly:
+
+```bash
+pip install pali-client
+npm install pali-client
+```
 
 ## Choose your path
 
@@ -17,8 +68,10 @@ Pali is open memory infrastructure for LLM and agent systems. This page is the f
 - [API](api.md)
 - [MCP Integration](mcp.md)
 - [Go Client SDK](client/README.md)
-- [Python SDK (`pali-py`)](https://github.com/pali-mem/pali-py)
-- [JavaScript SDK (`pali-js`)](https://github.com/pali-mem/pali-js)
+- [Python SDK repo (`pali-py`)](https://github.com/pali-mem/pali-py)
+- [Python package (`pali-client` on PyPI)](https://pypi.org/project/pali-client/)
+- [JavaScript SDK repo (`pali-js`)](https://github.com/pali-mem/pali-js)
+- [JavaScript package (`pali-client` on npm)](https://www.npmjs.com/package/pali-client)
 
 ### Future maintainer
 
@@ -26,31 +79,15 @@ Pali is open memory infrastructure for LLM and agent systems. This page is the f
 - [Multi-Tenancy](multitenancy.md)
 - [Benchmark Policy (GitHub)](https://github.com/pali-mem/pali/blob/main/BENCHMARKS.MD)
 
-## Fast start
-
-```bash
-pali init
-pali serve
-curl http://127.0.0.1:8080/health
-```
-
-If you are running from a source checkout instead of a release binary:
-
-```bash
-make setup
-make run
-curl http://127.0.0.1:8080/health
-```
-
-Then continue with [Getting Started](getting-started.md) for tenant creation plus first store/search calls.
-
-Container-first quick path:
+## Container-first quick path
 
 ```bash
 docker build -t pali:local .
 docker run --rm -p 8080:8080 -v pali-data:/var/lib/pali pali:local
 curl http://127.0.0.1:8080/health
 ```
+
+Then continue with [Getting Started](getting-started.md) for tenant creation plus first store/search calls.
 
 ## Recommended reading order
 
@@ -70,7 +107,7 @@ curl http://127.0.0.1:8080/health
 | Area | Docs |
 |---|---|
 | Setup and operations | [Getting Started](getting-started.md), [Deployment](deployment.md), [Operations](operations.md) |
-| Integration | [API](api.md), [MCP Integration](mcp.md), [Go Client SDK](client/README.md), [Python SDK](https://github.com/pali-mem/pali-py), [JavaScript SDK](https://github.com/pali-mem/pali-js) |
+| Integration | [API](api.md), [MCP Integration](mcp.md), [Go Client SDK](client/README.md), [Python SDK repo](https://github.com/pali-mem/pali-py), [Python package](https://pypi.org/project/pali-client/), [JavaScript SDK repo](https://github.com/pali-mem/pali-js), [JavaScript package](https://www.npmjs.com/package/pali-client) |
 | Runtime behavior | [Configuration](configuration.md), [Multi-Tenancy](multitenancy.md), [ONNX Runtime](onnx.md) |
 | System design | [Architecture](architecture.md) |
 

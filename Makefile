@@ -1,6 +1,10 @@
 APP=pali
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
+PYTHON ?= $(shell command -v python >/dev/null 2>&1 && echo python || command -v python3 >/dev/null 2>&1 && echo python3)
+DOCS_VENV ?= .venv/docs
+DOCS_PYTHON := $(DOCS_VENV)/bin/python
+DOCS_STAMP := $(DOCS_VENV)/.requirements.stamp
 
 .PHONY: init serve run mcp mcp-serve setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
 
@@ -68,19 +72,24 @@ retrieval-trend:
 	bash ./scripts/retrieval_trend.sh --fixture $${FIXTURE:-testdata/benchmarks/fixtures/release_memories.json} --eval-set $${EVAL_SET:-testdata/benchmarks/evals/release_curated.json} --backend $${BACKEND:-sqlite}
 
 bench-suite:
-	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.local.json
+	@test -n "$(PYTHON)" || (echo "ERROR: python or python3 is required"; exit 1)
+	$(PYTHON) ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.local.json
 
 bench-suite-medium:
-	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.fast.json
+	@test -n "$(PYTHON)" || (echo "ERROR: python or python3 is required"; exit 1)
+	$(PYTHON) ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.fast.json
 
 bench-suite-qdrant:
-	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.qdrant_ollama.json
+	@test -n "$(PYTHON)" || (echo "ERROR: python or python3 is required"; exit 1)
+	$(PYTHON) ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.qdrant_ollama.json
 
 bench-suite-openrouter:
-	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter.json
+	@test -n "$(PYTHON)" || (echo "ERROR: python or python3 is required"; exit 1)
+	$(PYTHON) ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter.json
 
 bench-suite-openrouter-parser-graph:
-	python ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter-parser-graph.json
+	@test -n "$(PYTHON)" || (echo "ERROR: python or python3 is required"; exit 1)
+	$(PYTHON) ./test/benchmarks/benchmark_suite.py --config test/benchmarks/suites/speed.medium.qdrant-openrouter-parser-graph.json
 
 benchmark-clean:
 	rm -rf test/benchmarks/results/*
@@ -89,13 +98,21 @@ check-wiring:
 	go test ./internal/core/memory ./internal/repository/sqlite -run 'Test(SearchBuildsIterativeQueriesForMultiHopQuestion|SearchWithFiltersAppliesKindFilter|SearchAggregationRouteRespectsMinScore|StoreMarksIndexStateTransitions|StoreMarksIndexStateFailedOnVectorFailure|DeleteMarksIndexStateTombstoned|DeleteMarksIndexStateFailedOnVectorFailure|MemoryRepositoryIndexJobLifecycle)' -count=1
 
 docs-deps:
-	python -m pip install -r docs/requirements.txt
+	@$(MAKE) $(DOCS_STAMP)
+
+$(DOCS_PYTHON):
+	@test -n "$(PYTHON)" || (echo "ERROR: python or python3 is required"; exit 1)
+	$(PYTHON) -m venv "$(DOCS_VENV)"
+
+$(DOCS_STAMP): docs/requirements.txt | $(DOCS_PYTHON)
+	$(DOCS_PYTHON) -m pip install -r docs/requirements.txt
+	touch "$(DOCS_STAMP)"
 
 docs-run: docs-deps
-	mkdocs serve
+	$(DOCS_PYTHON) -m mkdocs serve
 
 docs-build: docs-deps
-	mkdocs build --strict
+	$(DOCS_PYTHON) -m mkdocs build --strict
 
 docs-freshness:
 	bash ./scripts/check_docs_freshness.sh

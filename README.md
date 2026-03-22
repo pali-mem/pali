@@ -187,7 +187,7 @@ auth:
 
 JWTs must include `tenant_id`, and `/v1` requests stay tenant-scoped.
 
-## MCP and Client
+## MCP and SDKs
 
 MCP tools include:
 
@@ -232,6 +232,17 @@ More:
 
 - MCP docs: [`docs/mcp.md`](docs/mcp.md)
 - Go client docs: [`docs/client/README.md`](docs/client/README.md)
+- Python SDK repo: [`pali-mem/pali-py`](https://github.com/pali-mem/pali-py)
+- Python package: [`pali-client` on PyPI](https://pypi.org/project/pali-client/)
+- JavaScript SDK repo: [`pali-mem/pali-js`](https://github.com/pali-mem/pali-js)
+- JavaScript package: [`pali-client` on npm](https://www.npmjs.com/package/pali-client)
+
+Install:
+
+```bash
+pip install pali-client
+npm install pali-client
+```
 
 ## Build and Release
 

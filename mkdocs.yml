@@ -67,6 +67,10 @@ nav:
       - MCP Integration: mcp.md
       - ONNX Runtime: onnx.md
       - Go Client SDK: client/README.md
+      - Python SDK Repo: https://github.com/pali-mem/pali-py
+      - Python Package (PyPI): https://pypi.org/project/pali-client/
+      - JavaScript SDK Repo: https://github.com/pali-mem/pali-js
+      - JavaScript Package (npm): https://www.npmjs.com/package/pali-client
   - Architecture:
       - Overview: architecture.md
   - Maintainers:
