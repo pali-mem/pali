@@ -7,7 +7,7 @@ This document captures the minimum runbook for running Pali in production-like e
 - Keep configuration and data paths outside the repository and mounted from deployment secrets/config maps.
 - Keep `jwt_secret`, provider API keys, and database credentials outside source control.
 - Validate startup before rollout:
-  - `go run ./cmd/setup -config /etc/pali/pali.yaml`
+  - `pali init -config /etc/pali/pali.yaml`
   - `scripts/verify_docs_examples.sh` for repo-level command drift
 - For non-dev environments:
   - `auth.enabled: true`
@@ -25,13 +25,13 @@ This document captures the minimum runbook for running Pali in production-like e
 ### API mode
 
 ```bash
-./bin/pali -config /etc/pali/pali.yaml
+./bin/pali serve -config /etc/pali/pali.yaml
 ```
 
 ### MCP mode
 
 ```bash
-./bin/pali mcp run -config /etc/pali/pali.yaml
+./bin/pali mcp serve -config /etc/pali/pali.yaml
 ```
 
 - Keep run-time supervisors enabled (systemd/Kubernetes/docker restart policy) and explicit health check loops.

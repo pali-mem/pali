@@ -2,21 +2,17 @@
 
 This quick path gets Pali running locally and verifies a full tenant memory flow.
 
-## Prerequisites
+If you already installed the release binary from the README, use:
 
-- Go `1.24+`
+```bash
+pali init
+pali serve
+```
 
-If you want the fastest pull-and-run path instead of a source checkout, skip to [Docker quick start](deployment.md#docker).
-
-## 1) Bootstrap config and checks
+If you prefer a source checkout, use:
 
 ```bash
 make setup
-```
-
-## 2) Run the API
-
-```bash
 make run
 ```
 
@@ -28,7 +24,7 @@ Health check:
 curl http://127.0.0.1:8080/health
 ```
 
-## 3) Create a tenant
+## 1) Create a tenant
 
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/tenants \
@@ -36,7 +32,7 @@ curl -X POST http://127.0.0.1:8080/v1/tenants \
   -d '{"id":"tenant_a","name":"Tenant A"}'
 ```
 
-## 4) Store memory
+## 2) Store memory
 
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/memory \
@@ -44,7 +40,7 @@ curl -X POST http://127.0.0.1:8080/v1/memory \
   -d '{"tenant_id":"tenant_a","content":"User likes jasmine tea."}'
 ```
 
-## 5) Search memory
+## 3) Search memory
 
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/memory/search \

@@ -1,0 +1,38 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+vector_backend: sqlite
+entity_fact_backend: sqlite
+importance_scorer: heuristic
+
+database:
+  sqlite_dsn: file:/var/lib/pali/pali.db?cache=shared
+
+embedding:
+  provider: lexical
+  fallback_provider: lexical
+  ollama_base_url: http://ollama:11434
+
+parser:
+  enabled: false
+  provider: heuristic
+  ollama_base_url: http://ollama:11434
+
+retrieval:
+  multi_hop:
+    decomposition_provider: openrouter
+    ollama_base_url: http://ollama:11434
+
+qdrant:
+  base_url: http://qdrant:6333
+
+neo4j:
+  uri: bolt://neo4j:7687
+  username: neo4j
+
+ollama:
+  base_url: http://ollama:11434
+
+auth:
+  enabled: false

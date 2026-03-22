@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRootRedirect(t *testing.T) {
@@ -44,11 +44,17 @@ func TestDashboardRoute(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusFound, w.Code)
-	require.Equal(t, "/dashboard/memories", w.Header().Get("Location"))
+	require.Equal(t, "/dashboard/stats", w.Header().Get("Location"))
 
-	req = httptest.NewRequest(http.MethodGet, "/dashboard/memories", nil)
+	req = httptest.NewRequest(http.MethodGet, "/dashboard/stats", nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.True(t, strings.Contains(w.Body.String(), "Pali Dashboard"), "dashboard body: %q", w.Body.String())
+
+	req = httptest.NewRequest(http.MethodGet, "/dashboard/config", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "Current configuration")
 }

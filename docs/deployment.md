@@ -6,8 +6,31 @@
 - Put Pali behind TLS-terminating reverse proxy (Nginx/Caddy/Envoy).
 - Run with a process supervisor and restart policy.
 - Persist the SQLite DB file and back it up on a schedule.
-- Validate startup using `cmd/setup` in release checks.
+- Validate startup using `pali init` in release checks.
 - Add readiness checks against `/health` and monitor startup logs.
+
+## Install
+
+Release binary install is the fastest native path:
+
+macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.ps1 | iex
+```
+
+Then initialize and run:
+
+```bash
+pali init
+pali serve
+```
 
 ## Build
 
@@ -20,7 +43,7 @@ Optional install to PATH:
 
 ```bash
 make install
-pali -config /etc/pali/pali.yaml
+pali serve -config /etc/pali/pali.yaml
 ```
 
 User-local PATH install (no sudo):
@@ -28,7 +51,7 @@ User-local PATH install (no sudo):
 ```bash
 make install PREFIX="$HOME/.local"
 export PATH="$HOME/.local/bin:$PATH"
-pali -config pali.yaml
+pali serve -config pali.yaml
 ```
 
 ## Configure
@@ -36,7 +59,7 @@ pali -config pali.yaml
 1. Bootstrap the config file you want to run:
 
 ```bash
-go run ./cmd/setup -config /etc/pali/pali.yaml -skip-model-download
+pali init -config /etc/pali/pali.yaml -skip-model-download
 ```
 
 2. Edit `/etc/pali/pali.yaml` for your environment.
@@ -72,25 +95,25 @@ curl -sf http://127.0.0.1:8080/health || exit 1
 ## Run API
 
 ```bash
-./bin/pali -config /etc/pali/pali.yaml
+./bin/pali serve -config /etc/pali/pali.yaml
 ```
 
 For local/dev:
 
 ```bash
-./bin/pali -config pali.yaml
+./bin/pali serve -config pali.yaml
 ```
 
 ## Run MCP
 
 ```bash
-./bin/pali mcp run -config /etc/pali/pali.yaml
+./bin/pali mcp serve -config /etc/pali/pali.yaml
 ```
 
 For local/dev:
 
 ```bash
-./bin/pali mcp run -config pali.yaml
+./bin/pali mcp serve -config pali.yaml
 ```
 
 ## Deployment Patterns
@@ -157,7 +180,7 @@ For Compose secrets and port overrides, start from `deploy/docker/.env.example`.
 Before starting the service, run:
 
 ```bash
-go run ./cmd/setup -config /etc/pali/pali.yaml
+pali init -config /etc/pali/pali.yaml
 ```
 
 to validate provider prerequisites and ensure the target config file exists.

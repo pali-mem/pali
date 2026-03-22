@@ -1,6 +1,6 @@
 # setup command
 
-`go run ./cmd/setup` prepares local project bootstrap state:
+Prefer `pali init` for installed binaries. `go run ./cmd/setup` remains the source-checkout equivalent and prepares local project bootstrap state:
 
 - creates required scaffold directories
 - creates the target config file from `pali.yaml.example` when missing

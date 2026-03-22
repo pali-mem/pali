@@ -1,39 +1,88 @@
 {{ define "content" }}
-<section>
-  <h2>Tenants</h2>
-  <form method="post" action="/dashboard/tenants" class="form-grid">
-    <label>
-      Tenant ID
-      <input type="text" name="id" placeholder="tenant_1" required />
-    </label>
-    <label>
-      Name
-      <input type="text" name="name" placeholder="Tenant One" required />
-    </label>
-    <button type="submit">Create Tenant</button>
-  </form>
+<section class="page-intro">
+  <p class="eyebrow">Tenants</p>
+  <div class="page-heading">
+    <div>
+      <h2>Tenant directory</h2>
+      <p>Create and monitor tenant workspaces with the same card, table, and form language used across the dashboard.</p>
+    </div>
+  </div>
+</section>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Name</th>
-        <th>Memories</th>
-        <th>Created</th>
-      </tr>
-    </thead>
-    <tbody>
+<section class="panel-grid panel-grid-forms">
+  <article class="panel panel-accent">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Provision</p>
+        <h3>Create tenant</h3>
+      </div>
+    </div>
+    <form method="post" action="/dashboard/tenants" class="form-grid">
+      <label>
+        <span>Tenant ID</span>
+        <input type="text" name="id" placeholder="tenant_1" required />
+      </label>
+      <label>
+        <span>Name</span>
+        <input type="text" name="name" placeholder="Tenant One" required />
+      </label>
+      <button type="submit">Create tenant</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Summary</p>
+        <h3>Current footprint</h3>
+      </div>
+    </div>
+    <div class="stack-list">
       {{ range .Tenants }}
-      <tr>
-        <td><code>{{ .ID }}</code></td>
-        <td>{{ .Name }}</td>
-        <td>{{ .MemoryCount }}</td>
-        <td>{{ .CreatedAt }}</td>
-      </tr>
+      <div class="stack-row">
+        <div>
+          <p class="stack-title">{{ .Name }}</p>
+          <p class="stack-meta">{{ .ID }}</p>
+        </div>
+        <p class="stack-value">{{ .MemoryCount }}</p>
+      </div>
       {{ else }}
-      <tr><td colspan="4">No tenants yet.</td></tr>
+      <p class="empty-copy">No tenants yet. Create the first workspace to begin organizing memory.</p>
       {{ end }}
-    </tbody>
-  </table>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Directory</p>
+      <h3>All tenants</h3>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Memories</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Tenants }}
+        <tr>
+          <td><code>{{ .ID }}</code></td>
+          <td>{{ .Name }}</td>
+          <td>{{ .MemoryCount }}</td>
+          <td>{{ .CreatedAt }}</td>
+        </tr>
+        {{ else }}
+        <tr><td colspan="4" class="empty-cell">No tenants yet.</td></tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
 </section>
 {{ end }}

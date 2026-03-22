@@ -1,6 +1,6 @@
 # MCP Integration
 
-Pali ships an MCP server over `stdio`, launched from the unified CLI at [`cmd/pali/main.go`](https://github.com/pali-mem/pali/blob/main/cmd/pali/main.go) using `pali mcp run`.
+Pali ships an MCP server over `stdio`, launched from the unified CLI at [`cmd/pali/main.go`](https://github.com/pali-mem/pali/blob/main/cmd/pali/main.go) using `pali mcp serve`.
 
 ## Runtime Wiring
 
@@ -8,7 +8,7 @@ Server implementation:
 - [`internal/mcp/server.go`](https://github.com/pali-mem/pali/blob/main/internal/mcp/server.go)
 - [`internal/mcp/tools/registry.go`](https://github.com/pali-mem/pali/blob/main/internal/mcp/tools/registry.go)
 
-Startup path (`pali mcp run`):
+Startup path (`pali mcp serve`):
 1. Load config (`pali.yaml`)
 2. Open SQLite and run migrations
 3. Build services:
@@ -18,7 +18,7 @@ Startup path (`pali mcp run`):
 5. Run via `stdio` transport
 
 Production command pattern:
-- `pali mcp run -config /etc/pali/pali.yaml`
+- `pali mcp serve -config /etc/pali/pali.yaml`
 - This is the stable command to reference from MCP hosts (Claude Desktop/Cursor/etc.).
 - Config reference: [`docs/configuration.md`](configuration.md)
 
@@ -89,8 +89,8 @@ go test ./internal/mcp -v
 
 
 1. Start MCP server:
-   - `go run ./cmd/pali mcp run -config pali.yaml`
-2. Connect an MCP client (Claude Desktop / Cursor / another MCP host) to the `pali mcp run` stdio command.
+   - `go run ./cmd/pali mcp serve -config pali.yaml`
+2. Connect an MCP client (Claude Desktop / Cursor / another MCP host) to the `pali mcp serve` stdio command.
 3. Verify `tools/list` returns the 11 tools above.
 4. Call:
    - `pali_capabilities`
