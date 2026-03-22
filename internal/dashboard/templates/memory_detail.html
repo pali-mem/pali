@@ -1,0 +1,99 @@
+{{ define "content" }}
+<section class="page-intro">
+  <p class="eyebrow">Memory detail</p>
+  <div class="page-heading">
+    <div>
+      <h2>Inspect memory</h2>
+      <p>Review the stored content, retrieval signals, and internal metadata for a single memory record.</p>
+    </div>
+    <p class="page-actions">
+      <a href="{{ .BackURL }}" class="button-link">Back to memories</a>
+    </p>
+  </div>
+</section>
+
+<section class="detail-layout">
+  <article class="panel panel-accent">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Content</p>
+        <h3>{{ .Memory.ID }}</h3>
+      </div>
+    </div>
+    <div class="memory-header-meta">
+      <span class="pill">{{ .Memory.Tier }}</span>
+      {{ if .Memory.Kind }}<span class="pill">{{ .Memory.Kind }}</span>{{ end }}
+      {{ if .Memory.CreatedBy }}<span class="pill">{{ .Memory.CreatedBy }}</span>{{ end }}
+      <span class="metric-inline">Importance {{ .Memory.Importance }}</span>
+      <span class="metric-inline">Recalls {{ .Memory.RecallCount }}</span>
+    </div>
+    <div class="memory-body">{{ .Memory.Content }}</div>
+    {{ if .Memory.Tags }}
+    <div class="tag-list">
+      {{ range .Memory.Tags }}
+      <span class="tag-chip">{{ . }}</span>
+      {{ end }}
+    </div>
+    {{ end }}
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Metadata</p>
+        <h3>Record fields</h3>
+      </div>
+    </div>
+    <dl class="detail-grid">
+      <div class="detail-card">
+        <dt>Tenant</dt>
+        <dd><code>{{ .Memory.TenantID }}</code></dd>
+      </div>
+      <div class="detail-card">
+        <dt>Created</dt>
+        <dd>{{ .Memory.CreatedAt }}</dd>
+      </div>
+      <div class="detail-card">
+        <dt>Updated</dt>
+        <dd>{{ .Memory.UpdatedAt }}</dd>
+      </div>
+      <div class="detail-card">
+        <dt>Last accessed</dt>
+        <dd>{{ .Memory.AccessedAt }}</dd>
+      </div>
+      <div class="detail-card">
+        <dt>Last recalled</dt>
+        <dd>{{ .Memory.LastRecalledAt }}</dd>
+      </div>
+      <div class="detail-card">
+        <dt>Source</dt>
+        <dd>{{ if .Memory.Source }}{{ .Memory.Source }}{{ else }}Unavailable{{ end }}</dd>
+      </div>
+      {{ if .Memory.CanonicalKey }}
+      <div class="detail-card detail-card-wide">
+        <dt>Canonical key</dt>
+        <dd><code>{{ .Memory.CanonicalKey }}</code></dd>
+      </div>
+      {{ end }}
+      {{ if .Memory.SourceTurnHash }}
+      <div class="detail-card detail-card-wide">
+        <dt>Source turn hash</dt>
+        <dd><code>{{ .Memory.SourceTurnHash }}</code></dd>
+      </div>
+      {{ end }}
+      {{ if .Memory.Extractor }}
+      <div class="detail-card">
+        <dt>Extractor</dt>
+        <dd>{{ .Memory.Extractor }}</dd>
+      </div>
+      {{ end }}
+      {{ if .Memory.ExtractorVer }}
+      <div class="detail-card">
+        <dt>Extractor version</dt>
+        <dd>{{ .Memory.ExtractorVer }}</dd>
+      </div>
+      {{ end }}
+    </dl>
+  </article>
+</section>
+{{ end }}
