@@ -1,0 +1,80 @@
+{{ define "content" }}
+<section class="page-intro">
+  <p class="eyebrow">Analytics</p>
+  <div class="page-heading">
+    <div>
+      <h2>Live telemetry</h2>
+    </div>
+  </div>
+</section>
+
+<section class="panel analytics-panel" data-analytics-root>
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Real-time analytics</p>
+      <h3>In-memory operations view</h3>
+    </div>
+    <div class="analytics-head-actions">
+      <button type="button" class="button-quiet analytics-refresh-button" data-analytics-refresh>Refresh</button>
+      <p id="analytics-updated-at" class="stack-meta">Updating...</p>
+    </div>
+  </div>
+
+  <section class="stats-grid analytics-stats-grid">
+    <article class="metric-card">
+      <p class="card-label">Active requests</p>
+      <p id="analytics-active-requests" class="metric">0</p>
+    </article>
+    <article class="metric-card">
+      <p class="card-label">Store calls</p>
+      <p id="analytics-store-count" class="metric">0</p>
+    </article>
+    <article class="metric-card">
+      <p class="card-label">Batch calls</p>
+      <p id="analytics-batch-store-count" class="metric">0</p>
+    </article>
+    <article class="metric-card">
+      <p class="card-label">Search calls</p>
+      <p id="analytics-search-count" class="metric">0</p>
+    </article>
+  </section>
+
+  <section class="analytics-inline-grid">
+    <article class="analytics-subpanel">
+      <div class="analytics-subhead">
+        <p class="card-label">Requests/min</p>
+        <p id="analytics-rpm-current" class="stack-meta">0 this minute</p>
+      </div>
+      <div id="analytics-rpm-chart" class="rpm-chart" aria-label="Requests per minute chart"></div>
+    </article>
+    <article class="analytics-subpanel">
+      <div class="analytics-subhead">
+        <p class="card-label">Top tenants by writes</p>
+      </div>
+      <div id="analytics-top-writes" class="stack-list">
+        <p class="empty-copy">No write activity yet.</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="analytics-inline-grid">
+    <article class="analytics-subpanel">
+      <div class="analytics-subhead">
+        <p class="card-label">Top tenants by searches</p>
+      </div>
+      <div id="analytics-top-searches" class="stack-list">
+        <p class="empty-copy">No search activity yet.</p>
+      </div>
+    </article>
+    <article class="analytics-subpanel analytics-events">
+      <div class="analytics-subhead">
+        <p class="card-label">Recent events</p>
+        <p class="stack-meta">Last 20</p>
+      </div>
+      <div id="analytics-recent-events" class="stack-list">
+        <p class="empty-copy">No recent events.</p>
+      </div>
+    </article>
+  </section>
+</section>
+{{ end }}
