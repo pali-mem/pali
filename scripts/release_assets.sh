@@ -143,10 +143,7 @@ for target in "${target_list[@]}"; do
   archive_name="${APP_NAME}_${VERSION}_${goos}_${goarch}"
   if [[ "$goos" == "windows" ]]; then
     archive_path="${artifacts_dir}/${archive_name}.zip"
-    (
-      cd "$stage_dir"
-      zip -q -9 "$archive_path" "$bin_name"
-    )
+    zip -q -9 -j "$archive_path" "$out_bin"
   else
     chmod +x "$out_bin"
     archive_path="${artifacts_dir}/${archive_name}.tar.gz"
