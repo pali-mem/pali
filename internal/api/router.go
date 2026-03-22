@@ -18,6 +18,7 @@ import (
 	"github.com/pali-mem/pali/internal/embeddings"
 	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
 	"github.com/pali-mem/pali/internal/startup"
+	"github.com/pali-mem/pali/internal/telemetry"
 	"github.com/pali-mem/pali/internal/wiring"
 	webassets "github.com/pali-mem/pali/web"
 )
@@ -106,9 +107,11 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 		stopPostprocess = stop
 	}
 	tenantService := coretenant.NewService(tenantRepo)
+	telemetryService := telemetry.NewService(telemetry.Options{})
 	startup.Log(cfg, tenantRepo, memoryRepo, embedMeta)
 
 	r := gin.New()
+	r.Use(apimiddleware.Telemetry(telemetryService))
 	r.Use(apimiddleware.Logging())
 	r.Use(apimiddleware.Recovery())
 	r.Use(apimiddleware.CORS())
@@ -121,9 +124,9 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 	}
 
 	health := handlers.NewHealthHandler()
-	memory := handlers.NewMemoryHandler(memoryService, cfg.Postprocess.MaxAttempts)
+	memory := handlers.NewMemoryHandler(memoryService, telemetryService, cfg.Postprocess.MaxAttempts)
 	tenant := handlers.NewTenantHandler(tenantService)
-	dashboardHandlers := dashboard.NewHandlers(memoryService, tenantService, cfg, configPath)
+	dashboardHandlers := dashboard.NewHandlers(memoryService, tenantService, telemetryService, cfg, configPath)
 
 	r.StaticFS("/static", http.FS(staticFS))
 
@@ -133,11 +136,14 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 	r.GET("/health", health.Get)
 	r.GET("/dashboard", dashboardHandlers.Index)
 	r.GET("/dashboard/memories", dashboardHandlers.Memories)
+	r.GET("/dashboard/memories/view/:id", dashboardHandlers.ViewMemory)
 	r.POST("/dashboard/memories", dashboardHandlers.CreateMemory)
 	r.POST("/dashboard/memories/:id/delete", dashboardHandlers.DeleteMemory)
 	r.GET("/dashboard/tenants", dashboardHandlers.Tenants)
 	r.POST("/dashboard/tenants", dashboardHandlers.CreateTenant)
 	r.GET("/dashboard/stats", dashboardHandlers.Stats)
+	r.GET("/dashboard/analytics", dashboardHandlers.Analytics)
+	r.GET("/dashboard/analytics/data", dashboardHandlers.AnalyticsData)
 	r.GET("/dashboard/config", dashboardHandlers.Config)
 
 	v1 := r.Group("/v1")

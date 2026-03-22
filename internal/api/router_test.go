@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -57,4 +58,19 @@ func TestDashboardRoute(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "Current configuration")
+
+	req = httptest.NewRequest(http.MethodGet, "/dashboard/analytics", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "Live telemetry")
+
+	req = httptest.NewRequest(http.MethodGet, "/dashboard/analytics/data", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.Contains(t, payload, "active_requests")
+	require.Contains(t, payload, "requests_per_minute")
 }

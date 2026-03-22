@@ -62,6 +62,18 @@ func TestDashboardTenantAndMemoryFlow(t *testing.T) {
 	w = performRequest(r, http.MethodGet, "/dashboard/stats", "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "Total Tenants")
+
+	w = performRequest(r, http.MethodGet, "/dashboard/analytics", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "In-memory operations view")
+
+	w = performRequest(r, http.MethodGet, "/dashboard/analytics/data", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	var analytics struct {
+		SearchCount int64 `json:"search_count"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &analytics))
+	require.GreaterOrEqual(t, analytics.SearchCount, int64(1))
 }
 
 func postDashboardForm(r *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
