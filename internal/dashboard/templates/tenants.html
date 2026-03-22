@@ -4,52 +4,62 @@
   <div class="page-heading">
     <div>
       <h2>Tenant directory</h2>
-      <p>Create and monitor tenant workspaces with the same card, table, and form language used across the dashboard.</p>
+      <p>Keep the workspace directory scan-friendly, then expand the create form only when you need to provision a new tenant.</p>
     </div>
   </div>
 </section>
 
-<section class="panel-grid panel-grid-forms">
-  <article class="panel panel-accent">
-    <div class="panel-head">
-      <div>
-        <p class="eyebrow">Provision</p>
-        <h3>Create tenant</h3>
-      </div>
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Search</p>
+      <h3>Find tenants</h3>
     </div>
-    <form method="post" action="/dashboard/tenants" class="form-grid">
-      <label>
-        <span>Tenant ID</span>
-        <input type="text" name="id" placeholder="tenant_1" required />
-      </label>
-      <label>
-        <span>Name</span>
-        <input type="text" name="name" placeholder="Tenant One" required />
-      </label>
-      <button type="submit">Create tenant</button>
-    </form>
-  </article>
+  </div>
+  <form method="get" action="/dashboard/tenants" class="toolbar-form toolbar-form-tenants">
+    <label class="search-shell search-shell-wide">
+      <span>Search</span>
+      <input type="text" name="q" value="{{ .Filters.Query }}" placeholder="Search by tenant id or name" autocomplete="off" />
+    </label>
+    <div class="toolbar-actions">
+      <button type="submit">Apply filters</button>
+      <a href="/dashboard/tenants" class="button-link">Reset</a>
+    </div>
+  </form>
+</section>
 
-  <article class="panel">
-    <div class="panel-head">
-      <div>
-        <p class="eyebrow">Summary</p>
-        <h3>Current footprint</h3>
-      </div>
+<details class="composer-shell panel panel-accent" {{ if .ComposerOpen }}open{{ end }}>
+  <summary class="composer-summary">
+    <div>
+      <p class="eyebrow">Provision</p>
+      <h3>Add tenant</h3>
     </div>
-    <div class="stack-list">
-      {{ range .Tenants }}
-      <div class="stack-row">
-        <div>
-          <p class="stack-title">{{ .Name }}</p>
-          <p class="stack-meta">{{ .ID }}</p>
-        </div>
-        <p class="stack-value">{{ .MemoryCount }}</p>
-      </div>
-      {{ else }}
-      <p class="empty-copy">No tenants yet. Create the first workspace to begin organizing memory.</p>
-      {{ end }}
-    </div>
+    <span class="button-quiet composer-toggle">New tenant</span>
+  </summary>
+  <form method="post" action="/dashboard/tenants" class="form-grid composer-form">
+    <input type="hidden" name="q" value="{{ .Filters.Query }}" />
+    <label>
+      <span>Tenant ID</span>
+      <input type="text" name="id" placeholder="tenant_1" required />
+    </label>
+    <label>
+      <span>Name</span>
+      <input type="text" name="name" placeholder="Tenant One" required />
+    </label>
+    <button type="submit">Create tenant</button>
+  </form>
+</details>
+
+<section class="stats-grid tenant-stats-grid">
+  <article class="metric-card">
+    <p class="card-label">Visible Tenants</p>
+    <p class="metric">{{ .ResultCount }}</p>
+    <p class="card-note">Directory rows matching the current search.</p>
+  </article>
+  <article class="metric-card">
+    <p class="card-label">Visible Memories</p>
+    <p class="metric">{{ .TotalMemories }}</p>
+    <p class="card-note">Total memories attached to the tenants in view.</p>
   </article>
 </section>
 
@@ -57,15 +67,16 @@
   <div class="panel-head">
     <div>
       <p class="eyebrow">Directory</p>
-      <h3>All tenants</h3>
+      <h3>Tenant table</h3>
     </div>
+    <p class="results-summary">{{ .ResultCount }} tenant{{ if ne .ResultCount 1 }}s{{ end }}</p>
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Name</th>
+          <th>Tenant</th>
+          <th>Signals</th>
           <th>Memories</th>
           <th>Created</th>
         </tr>
@@ -73,13 +84,22 @@
       <tbody>
         {{ range .Tenants }}
         <tr>
-          <td><code>{{ .ID }}</code></td>
-          <td>{{ .Name }}</td>
-          <td>{{ .MemoryCount }}</td>
+          <td class="memory-primary-cell">
+            <strong>{{ .Name }}</strong>
+            <div class="table-meta">
+              <code>{{ .ID }}</code>
+            </div>
+          </td>
+          <td>
+            <div class="signal-list">
+              <span class="metric-inline">Workspace active</span>
+            </div>
+          </td>
+          <td><strong>{{ .MemoryCount }}</strong></td>
           <td>{{ .CreatedAt }}</td>
         </tr>
         {{ else }}
-        <tr><td colspan="4" class="empty-cell">No tenants yet.</td></tr>
+        <tr><td colspan="4" class="empty-cell">No tenants found for the current search.</td></tr>
         {{ end }}
       </tbody>
     </table>
