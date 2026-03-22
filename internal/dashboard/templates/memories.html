@@ -3,92 +3,117 @@
   <p class="eyebrow">Memories</p>
   <div class="page-heading">
     <div>
-      <h2>Search and store</h2>
-      <p>Inspect indexed memory, filter by tenant, and add new entries without leaving the dashboard.</p>
+      <h2>Memory records</h2>
+      <p>Search, filter, and inspect memory with the table front and center, then open a full record view when you need more detail.</p>
     </div>
   </div>
-</section>
-
-<section class="panel-grid panel-grid-forms">
-  <article class="panel">
-    <div class="panel-head">
-      <div>
-        <p class="eyebrow">Lookup</p>
-        <h3>Filter memories</h3>
-      </div>
-    </div>
-    <form method="get" action="/dashboard/memories" class="form-grid">
-      <label>
-        <span>Tenant</span>
-        <select name="tenant_id" required>
-          <option value="">Select tenant</option>
-          {{ range .Tenants }}
-          <option value="{{ .ID }}" {{ if eq $.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
-          {{ end }}
-        </select>
-      </label>
-      <label>
-        <span>Search</span>
-        <input type="text" name="q" value="{{ .Query }}" placeholder="Search memory content" />
-      </label>
-      <button type="submit">Load memories</button>
-    </form>
-  </article>
-
-  <article class="panel panel-accent">
-    <div class="panel-head">
-      <div>
-        <p class="eyebrow">Create</p>
-        <h3>Store memory</h3>
-      </div>
-    </div>
-    <form method="post" action="/dashboard/memories" class="form-grid">
-      <label>
-        <span>Tenant</span>
-        <select name="tenant_id" required>
-          <option value="">Select tenant</option>
-          {{ range .Tenants }}
-          <option value="{{ .ID }}" {{ if eq $.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
-          {{ end }}
-        </select>
-      </label>
-      <label>
-        <span>Tier</span>
-        <select name="tier">
-          <option value="auto">auto</option>
-          <option value="semantic">semantic</option>
-          <option value="episodic">episodic</option>
-          <option value="working">working</option>
-        </select>
-      </label>
-      <label class="full">
-        <span>Content</span>
-        <textarea name="content" rows="5" required></textarea>
-      </label>
-      <label class="full">
-        <span>Tags</span>
-        <input type="text" name="tags" placeholder="preferences, profile" />
-      </label>
-      <button type="submit">Store memory</button>
-    </form>
-  </article>
 </section>
 
 <section class="panel">
   <div class="panel-head">
     <div>
-      <p class="eyebrow">Results</p>
-      <h3>Memory records</h3>
+      <p class="eyebrow">Search</p>
+      <h3>Find the right memory</h3>
     </div>
+  </div>
+  <form method="get" action="/dashboard/memories" class="toolbar-form">
+    <label class="search-shell">
+      <span>Search</span>
+      <input type="text" name="q" value="{{ .Filters.Query }}" placeholder="Search content, facts, or entities" autocomplete="off" />
+    </label>
+    <label>
+      <span>Tenant</span>
+      <select name="tenant_id" required>
+        <option value="">Select tenant</option>
+        {{ range .Tenants }}
+        <option value="{{ .ID }}" {{ if eq $.Filters.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
+        {{ end }}
+      </select>
+    </label>
+    <label>
+      <span>Tier</span>
+      <select name="tier">
+        <option value="" {{ if eq .Filters.SelectedTier "" }}selected{{ end }}>all tiers</option>
+        <option value="auto" {{ if eq .Filters.SelectedTier "auto" }}selected{{ end }}>auto</option>
+        <option value="semantic" {{ if eq .Filters.SelectedTier "semantic" }}selected{{ end }}>semantic</option>
+        <option value="episodic" {{ if eq .Filters.SelectedTier "episodic" }}selected{{ end }}>episodic</option>
+        <option value="working" {{ if eq .Filters.SelectedTier "working" }}selected{{ end }}>working</option>
+      </select>
+    </label>
+    <label>
+      <span>Kind</span>
+      <select name="kind">
+        <option value="" {{ if eq .Filters.SelectedKind "" }}selected{{ end }}>all kinds</option>
+        <option value="observation" {{ if eq .Filters.SelectedKind "observation" }}selected{{ end }}>observation</option>
+        <option value="event" {{ if eq .Filters.SelectedKind "event" }}selected{{ end }}>event</option>
+        <option value="summary" {{ if eq .Filters.SelectedKind "summary" }}selected{{ end }}>summary</option>
+        <option value="raw_turn" {{ if eq .Filters.SelectedKind "raw_turn" }}selected{{ end }}>raw_turn</option>
+      </select>
+    </label>
+    <div class="toolbar-actions">
+      <button type="submit">Apply filters</button>
+      <a href="/dashboard/memories" class="button-link">Reset</a>
+    </div>
+  </form>
+</section>
+
+<details class="composer-shell panel panel-accent" {{ if .ComposerOpen }}open{{ end }}>
+  <summary class="composer-summary">
+    <div>
+      <p class="eyebrow">Create</p>
+      <h3>Add memory</h3>
+    </div>
+    <span class="button-quiet composer-toggle">New memory</span>
+  </summary>
+  <form method="post" action="/dashboard/memories" class="form-grid composer-form">
+    <input type="hidden" name="q" value="{{ .Filters.Query }}" />
+    <input type="hidden" name="kind" value="{{ .Filters.SelectedKind }}" />
+    <input type="hidden" name="tier" value="{{ .Filters.SelectedTier }}" />
+    <label>
+      <span>Tenant</span>
+      <select name="tenant_id" required>
+        <option value="">Select tenant</option>
+        {{ range .Tenants }}
+        <option value="{{ .ID }}" {{ if eq $.Filters.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
+        {{ end }}
+      </select>
+    </label>
+    <label>
+      <span>Stored tier</span>
+      <select name="tier">
+        <option value="auto">auto</option>
+        <option value="semantic">semantic</option>
+        <option value="episodic">episodic</option>
+        <option value="working">working</option>
+      </select>
+    </label>
+    <label class="full">
+      <span>Content</span>
+      <textarea name="content" rows="5" required></textarea>
+    </label>
+    <label class="full">
+      <span>Tags</span>
+      <input type="text" name="tags" placeholder="preferences, project, profile" />
+    </label>
+    <button type="submit">Store memory</button>
+  </form>
+</details>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Results</p>
+      <h3>Memory table</h3>
+    </div>
+    <p class="results-summary">{{ .ResultCount }} record{{ if ne .ResultCount 1 }}s{{ end }}</p>
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Content</th>
-          <th>Tier</th>
-          <th>Importance</th>
+          <th>Memory</th>
+          <th>Type</th>
+          <th>Signals</th>
           <th>Updated</th>
           <th>Action</th>
         </tr>
@@ -96,20 +121,55 @@
       <tbody>
         {{ range .Memories }}
         <tr>
-          <td><code>{{ .ID }}</code></td>
-          <td class="cell-content">{{ .Content }}</td>
-          <td><span class="pill">{{ .Tier }}</span></td>
-          <td>{{ .Importance }}</td>
-          <td>{{ .UpdatedAt }}</td>
+          <td class="memory-primary-cell">
+            <a href="/dashboard/memories/view/{{ .ID }}?tenant_id={{ .TenantID }}&q={{ $.Filters.Query }}&tier={{ $.Filters.SelectedTier }}&kind={{ $.Filters.SelectedKind }}" class="memory-title-link">{{ .Content }}</a>
+            <div class="table-meta">
+              <code>{{ .ID }}</code>
+              {{ if .Source }}<span class="meta-inline">{{ .Source }}</span>{{ end }}
+              {{ if .CreatedBy }}<span class="meta-inline">{{ .CreatedBy }}</span>{{ end }}
+            </div>
+            {{ if .Tags }}
+            <div class="tag-list">
+              {{ range .Tags }}
+              <span class="tag-chip">{{ . }}</span>
+              {{ end }}
+            </div>
+            {{ end }}
+          </td>
           <td>
-            <form method="post" action="/dashboard/memories/{{ .ID }}/delete">
-              <input type="hidden" name="tenant_id" value="{{ .TenantID }}" />
-              <button type="submit" class="button-quiet danger">Delete</button>
-            </form>
+            <div class="pill-group">
+              <span class="pill">{{ .Tier }}</span>
+              {{ if .Kind }}<span class="pill">{{ .Kind }}</span>{{ end }}
+            </div>
+          </td>
+          <td>
+            <div class="signal-list">
+              <span class="metric-inline">Importance {{ .Importance }}</span>
+              <span class="metric-inline">Recalls {{ .RecallCount }}</span>
+            </div>
+          </td>
+          <td>
+            <div class="date-stack">
+              <strong>{{ .UpdatedAt }}</strong>
+              <span class="date-meta-label">Created</span>
+              <span class="date-meta-value">{{ .CreatedAt }}</span>
+            </div>
+          </td>
+          <td>
+            <div class="action-row">
+              <a href="/dashboard/memories/view/{{ .ID }}?tenant_id={{ .TenantID }}&q={{ $.Filters.Query }}&tier={{ $.Filters.SelectedTier }}&kind={{ $.Filters.SelectedKind }}" class="button-quiet action-link">View</a>
+              <form method="post" action="/dashboard/memories/{{ .ID }}/delete">
+                <input type="hidden" name="tenant_id" value="{{ .TenantID }}" />
+                <input type="hidden" name="q" value="{{ $.Filters.Query }}" />
+                <input type="hidden" name="tier" value="{{ $.Filters.SelectedTier }}" />
+                <input type="hidden" name="kind" value="{{ $.Filters.SelectedKind }}" />
+                <button type="submit" class="button-quiet danger">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
         {{ else }}
-        <tr><td colspan="6" class="empty-cell">No memories found.</td></tr>
+        <tr><td colspan="5" class="empty-cell">No memories found for the current tenant and filters.</td></tr>
         {{ end }}
       </tbody>
     </table>
