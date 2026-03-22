@@ -1,7 +1,15 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
 
 func Logging() gin.HandlerFunc {
-	return gin.Logger()
+	return gin.LoggerWithConfig(gin.LoggerConfig{
+		Skip: func(c *gin.Context) bool {
+			return strings.HasPrefix(c.Request.URL.Path, "/dashboard/analytics")
+		},
+	})
 }
