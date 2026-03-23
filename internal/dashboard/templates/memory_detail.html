@@ -96,4 +96,71 @@
     </dl>
   </article>
 </section>
+
+{{ if or .Memory.AnswerKind .Memory.SourceSentence .Memory.SurfaceSpan .Memory.TemporalAnchor .Memory.TimeRange .Memory.SupportLines .Memory.SupportMemoryIDs }}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Structured metadata</p>
+      <h3>Derived fields</h3>
+    </div>
+  </div>
+  <dl class="detail-grid">
+    {{ if .Memory.AnswerKind }}
+    <div class="detail-card">
+      <dt>Answer kind</dt>
+      <dd>{{ .Memory.AnswerKind }}</dd>
+    </div>
+    {{ end }}
+    {{ if .Memory.TemporalAnchor }}
+    <div class="detail-card">
+      <dt>Temporal anchor</dt>
+      <dd>{{ .Memory.TemporalAnchor }}</dd>
+    </div>
+    {{ end }}
+    {{ if .Memory.TimeRange }}
+    <div class="detail-card">
+      <dt>Resolved time</dt>
+      <dd>{{ .Memory.TimeRange }}</dd>
+    </div>
+    {{ end }}
+    {{ if .Memory.SurfaceSpan }}
+    <div class="detail-card detail-card-wide">
+      <dt>Surface span</dt>
+      <dd>{{ .Memory.SurfaceSpan }}</dd>
+    </div>
+    {{ end }}
+    {{ if .Memory.SourceSentence }}
+    <div class="detail-card detail-card-wide">
+      <dt>Source sentence</dt>
+      <dd>{{ .Memory.SourceSentence }}</dd>
+    </div>
+    {{ end }}
+    {{ if .Memory.SupportLines }}
+    <div class="detail-card detail-card-wide">
+      <dt>Support lines</dt>
+      <dd>
+        <div class="stack-list">
+          {{ range .Memory.SupportLines }}
+          <div class="stack-row"><p class="stack-title">{{ . }}</p></div>
+          {{ end }}
+        </div>
+      </dd>
+    </div>
+    {{ end }}
+    {{ if .Memory.SupportMemoryIDs }}
+    <div class="detail-card detail-card-wide">
+      <dt>Support memory IDs</dt>
+      <dd>
+        <div class="tag-list">
+          {{ range .Memory.SupportMemoryIDs }}
+          <code>{{ . }}</code>
+          {{ end }}
+        </div>
+      </dd>
+    </div>
+    {{ end }}
+  </dl>
+</section>
+{{ end }}
 {{ end }}

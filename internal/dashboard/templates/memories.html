@@ -6,6 +6,9 @@
       <h2>Memory records</h2>
       <p>Search, filter, and inspect memory with the table front and center, then open a full record view when you need more detail.</p>
     </div>
+    <p class="page-actions">
+      <a href="{{ .CreateURL }}" class="action-link action-link-strong">New memory</a>
+    </p>
   </div>
 </section>
 
@@ -28,6 +31,14 @@
         {{ range .Tenants }}
         <option value="{{ .ID }}" {{ if eq $.Filters.SelectedTenantID .ID }}selected{{ end }}>{{ .ID }} ({{ .Name }})</option>
         {{ end }}
+      </select>
+    </label>
+    <label>
+      <span>Mode</span>
+      <select name="retrieval_kind">
+        <option value="" {{ if eq .Filters.SelectedRetrievalKind "" }}selected{{ end }}>auto</option>
+        <option value="vector" {{ if eq .Filters.SelectedRetrievalKind "vector" }}selected{{ end }}>vector</option>
+        <option value="entity" {{ if eq .Filters.SelectedRetrievalKind "entity" }}selected{{ end }}>entity</option>
       </select>
     </label>
     <label>
@@ -57,18 +68,103 @@
   </form>
 </section>
 
+{{ if .SearchDebug }}
+<section class="panel panel-accent">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Search debug</p>
+      <h3>Query plan</h3>
+    </div>
+  </div>
+    <div class="detail-grid">
+    <div class="detail-card">
+      <dt>Search mode</dt>
+      <dd>{{ .SearchDebug.RetrievalMode }}</dd>
+    </div>
+    <div class="detail-card">
+      <dt>Intent</dt>
+      <dd>{{ .SearchDebug.Intent }}</dd>
+    </div>
+    <div class="detail-card">
+      <dt>Confidence</dt>
+      <dd>{{ .SearchDebug.Confidence }}</dd>
+    </div>
+    <div class="detail-card">
+      <dt>Answer type</dt>
+      <dd>{{ if .SearchDebug.AnswerType }}{{ .SearchDebug.AnswerType }}{{ else }}auto{{ end }}</dd>
+    </div>
+    {{ if .SearchDebug.RequiredEvidence }}
+    <div class="detail-card detail-card-wide">
+      <dt>Required evidence</dt>
+      <dd>{{ .SearchDebug.RequiredEvidence }}</dd>
+    </div>
+    {{ end }}
+    {{ if .SearchDebug.Entities }}
+    <div class="detail-card detail-card-wide">
+      <dt>Entities</dt>
+      <dd>
+        <div class="tag-list">
+          {{ range .SearchDebug.Entities }}
+          <span class="tag-chip">{{ . }}</span>
+          {{ end }}
+        </div>
+      </dd>
+    </div>
+    {{ end }}
+    {{ if .SearchDebug.Relations }}
+    <div class="detail-card detail-card-wide">
+      <dt>Relations</dt>
+      <dd>
+        <div class="tag-list">
+          {{ range .SearchDebug.Relations }}
+          <span class="tag-chip">{{ . }}</span>
+          {{ end }}
+        </div>
+      </dd>
+    </div>
+    {{ end }}
+    {{ if .SearchDebug.TimeConstraints }}
+    <div class="detail-card detail-card-wide">
+      <dt>Time constraints</dt>
+      <dd>
+        <div class="tag-list">
+          {{ range .SearchDebug.TimeConstraints }}
+          <span class="tag-chip">{{ . }}</span>
+          {{ end }}
+        </div>
+      </dd>
+    </div>
+    {{ end }}
+    {{ if .SearchDebug.FallbackPath }}
+    <div class="detail-card detail-card-wide">
+      <dt>Fallback path</dt>
+      <dd>
+        <div class="tag-list">
+          {{ range .SearchDebug.FallbackPath }}
+          <span class="tag-chip">{{ . }}</span>
+          {{ end }}
+        </div>
+      </dd>
+    </div>
+    {{ end }}
+  </div>
+</section>
+{{ end }}
+
 <details class="composer-shell panel panel-accent" {{ if .ComposerOpen }}open{{ end }}>
   <summary class="composer-summary">
     <div>
       <p class="eyebrow">Create</p>
       <h3>Add memory</h3>
+      <p class="composer-copy">Store a new memory, then jump straight into its detail view.</p>
     </div>
     <span class="button-quiet composer-toggle">New memory</span>
   </summary>
   <form method="post" action="/dashboard/memories" class="form-grid composer-form">
-    <input type="hidden" name="q" value="{{ .Filters.Query }}" />
-    <input type="hidden" name="kind" value="{{ .Filters.SelectedKind }}" />
-    <input type="hidden" name="tier" value="{{ .Filters.SelectedTier }}" />
+    <input type="hidden" name="filter_q" value="{{ .Filters.Query }}" />
+    <input type="hidden" name="filter_kind" value="{{ .Filters.SelectedKind }}" />
+    <input type="hidden" name="filter_tier" value="{{ .Filters.SelectedTier }}" />
+    <input type="hidden" name="filter_retrieval_kind" value="{{ .Filters.SelectedRetrievalKind }}" />
     <label>
       <span>Tenant</span>
       <select name="tenant_id" required>
@@ -122,7 +218,7 @@
         {{ range .Memories }}
         <tr>
           <td class="memory-primary-cell">
-            <a href="/dashboard/memories/view/{{ .ID }}?tenant_id={{ .TenantID }}&q={{ $.Filters.Query }}&tier={{ $.Filters.SelectedTier }}&kind={{ $.Filters.SelectedKind }}" class="memory-title-link">{{ .Content }}</a>
+            <a href="/dashboard/memories/view/{{ .ID }}?tenant_id={{ .TenantID }}&q={{ $.Filters.Query }}&tier={{ $.Filters.SelectedTier }}&kind={{ $.Filters.SelectedKind }}&retrieval_kind={{ $.Filters.SelectedRetrievalKind }}" class="memory-title-link">{{ .Content }}</a>
             <div class="table-meta">
               <code>{{ .ID }}</code>
               {{ if .Source }}<span class="meta-inline">{{ .Source }}</span>{{ end }}
@@ -146,6 +242,12 @@
             <div class="signal-list">
               <span class="metric-inline">Importance {{ .Importance }}</span>
               <span class="metric-inline">Recalls {{ .RecallCount }}</span>
+              {{ if .HasSearchDebug }}
+              <span class="metric-inline">Rank #{{ .Rank }}</span>
+              <span class="metric-inline">Lexical {{ .LexicalScore }}</span>
+              <span class="metric-inline">Overlap {{ .QueryOverlap }}</span>
+              <span class="metric-inline">Route fit {{ .RouteFit }}</span>
+              {{ end }}
             </div>
           </td>
           <td>
@@ -157,12 +259,13 @@
           </td>
           <td>
             <div class="action-row">
-              <a href="/dashboard/memories/view/{{ .ID }}?tenant_id={{ .TenantID }}&q={{ $.Filters.Query }}&tier={{ $.Filters.SelectedTier }}&kind={{ $.Filters.SelectedKind }}" class="button-quiet action-link">View</a>
+              <a href="/dashboard/memories/view/{{ .ID }}?tenant_id={{ .TenantID }}&q={{ $.Filters.Query }}&tier={{ $.Filters.SelectedTier }}&kind={{ $.Filters.SelectedKind }}&retrieval_kind={{ $.Filters.SelectedRetrievalKind }}" class="button-quiet action-link">View</a>
               <form method="post" action="/dashboard/memories/{{ .ID }}/delete">
                 <input type="hidden" name="tenant_id" value="{{ .TenantID }}" />
                 <input type="hidden" name="q" value="{{ $.Filters.Query }}" />
                 <input type="hidden" name="tier" value="{{ $.Filters.SelectedTier }}" />
                 <input type="hidden" name="kind" value="{{ $.Filters.SelectedKind }}" />
+                <input type="hidden" name="retrieval_kind" value="{{ $.Filters.SelectedRetrievalKind }}" />
                 <button type="submit" class="button-quiet danger">Delete</button>
               </form>
             </div>

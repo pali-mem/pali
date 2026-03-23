@@ -40,6 +40,12 @@ func TestDashboardTenantAndMemoryFlow(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "dashboard memory content")
 
+	w = performRequest(r, http.MethodGet, "/dashboard/memories?tenant_id=tenant_dash&q=dashboard", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "Search debug")
+	require.Contains(t, w.Body.String(), "Rank #1")
+	require.Contains(t, w.Body.String(), "Lexical")
+
 	searchBody := `{"tenant_id":"tenant_dash","query":"dashboard","top_k":5}`
 	w = performRequest(r, http.MethodPost, "/v1/memory/search", searchBody, map[string]string{
 		"Content-Type": "application/json",

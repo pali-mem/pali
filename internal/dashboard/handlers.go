@@ -41,32 +41,45 @@ type TenantView struct {
 }
 
 type MemoryView struct {
-	ID              string
-	TenantID        string
-	Content         string
-	Tier            string
-	Kind            string
-	Tags            []string
-	Source          string
-	CreatedBy       string
-	CanonicalKey    string
-	SourceTurnHash  string
-	Extractor       string
-	ExtractorVer    string
-	Importance      string
-	RecallCount     int
-	UpdatedAt       string
-	CreatedAt       string
-	AccessedAt      string
-	LastRecalledAt  string
-	HasDetailFields bool
+	ID               string
+	TenantID         string
+	Content          string
+	Tier             string
+	Kind             string
+	Tags             []string
+	Source           string
+	CreatedBy        string
+	CanonicalKey     string
+	SourceTurnHash   string
+	Extractor        string
+	ExtractorVer     string
+	AnswerKind       string
+	SourceSentence   string
+	SurfaceSpan      string
+	TemporalAnchor   string
+	TimeRange        string
+	SupportLines     []string
+	SupportMemoryIDs []string
+	Importance       string
+	RecallCount      int
+	Rank             int
+	LexicalScore     string
+	QueryOverlap     string
+	RouteFit         string
+	HasSearchDebug   bool
+	UpdatedAt        string
+	CreatedAt        string
+	AccessedAt       string
+	LastRecalledAt   string
+	HasDetailFields  bool
 }
 
 type MemoryFilterState struct {
-	SelectedTenantID string
-	Query            string
-	SelectedTier     string
-	SelectedKind     string
+	SelectedTenantID      string
+	Query                 string
+	SelectedTier          string
+	SelectedKind          string
+	SelectedRetrievalKind string
 }
 
 type MemoriesPageData struct {
@@ -74,10 +87,24 @@ type MemoriesPageData struct {
 	Error        string
 	Info         string
 	Filters      MemoryFilterState
+	CreateURL    string
 	Tenants      []TenantView
 	Memories     []MemoryView
 	ResultCount  int
+	SearchDebug  *SearchDebugView
 	ComposerOpen bool
+}
+
+type SearchDebugView struct {
+	RetrievalMode    string
+	Intent           string
+	Confidence       string
+	AnswerType       string
+	Entities         []string
+	Relations        []string
+	TimeConstraints  []string
+	RequiredEvidence string
+	FallbackPath     []string
 }
 
 type MemoryDetailPageData struct {
@@ -160,29 +187,33 @@ func (h *Handlers) Memories(c *gin.Context) {
 	}
 
 	memories := []MemoryView{}
+	var debugView *SearchDebugView
 	loadErr := filterErr
 	if filters.SelectedTenantID != "" && loadErr == "" {
 		var (
-			items []domain.Memory
-			err   error
+			items      []domain.Memory
+			searchInfo *corememory.SearchDebugInfo
+			err        error
 		)
 		if filters.Query != "" {
 			searchOptions := corememory.SearchOptions{
-				MinScore: dashboardSearchMinScore,
-				Tiers:    filterTierSelection(filters.SelectedTier),
-				Kinds:    filterKindSelection(filters.SelectedKind),
+				MinScore:      dashboardSearchMinScore,
+				Tiers:         filterTierSelection(filters.SelectedTier),
+				Kinds:         filterKindSelection(filters.SelectedKind),
+				RetrievalKind: filterRetrievalKindSelection(filters.SelectedRetrievalKind),
 			}
-			items, err = h.memoryService.SearchWithFilters(c.Request.Context(), filters.SelectedTenantID, filters.Query, 50, searchOptions)
+			items, searchInfo, err = h.memoryService.SearchWithFiltersDebug(c.Request.Context(), filters.SelectedTenantID, filters.Query, 50, searchOptions)
 			if err == nil && len(items) == 0 {
 				// Fallback: preserve exact/literal query expectations when semantic score
 				// is below threshold (for example, short keyword lookups).
 				fallbackOptions := searchOptions
 				fallbackOptions.MinScore = 0
-				fallbackItems, fallbackErr := h.memoryService.SearchWithFilters(c.Request.Context(), filters.SelectedTenantID, filters.Query, 50, fallbackOptions)
+				fallbackItems, fallbackDebug, fallbackErr := h.memoryService.SearchWithFiltersDebug(c.Request.Context(), filters.SelectedTenantID, filters.Query, 50, fallbackOptions)
 				if fallbackErr != nil {
 					err = fallbackErr
 				} else {
 					items = filterMemoriesByLiteralQuery(fallbackItems, filters.Query)
+					searchInfo = fallbackDebug
 				}
 			}
 		} else {
@@ -195,6 +226,10 @@ func (h *Handlers) Memories(c *gin.Context) {
 			loadErr = err.Error()
 		} else {
 			memories = mapMemoryViews(items)
+			if searchInfo != nil {
+				debugView = buildSearchDebugView(searchInfo, filters)
+				applySearchDebug(memories, searchInfo)
+			}
 		}
 	}
 
@@ -203,15 +238,17 @@ func (h *Handlers) Memories(c *gin.Context) {
 		Error:        firstNonEmpty(c.Query("error"), loadErr),
 		Info:         c.Query("info"),
 		Filters:      filters,
+		CreateURL:    buildMemoriesComposeURL(filters),
 		Tenants:      tenants,
 		Memories:     memories,
 		ResultCount:  len(memories),
+		SearchDebug:  debugView,
 		ComposerOpen: c.Query("compose") == "1",
 	})
 }
 
 func (h *Handlers) CreateMemory(c *gin.Context) {
-	filters, _ := readMemoryFiltersFromValues(c.PostForm)
+	filters, _ := readMemoryFiltersFromPrefixedValues(c.PostForm, "filter_")
 	tenantID := strings.TrimSpace(c.PostForm("tenant_id"))
 	content := strings.TrimSpace(c.PostForm("content"))
 	tier := strings.TrimSpace(c.PostForm("tier"))
@@ -224,7 +261,7 @@ func (h *Handlers) CreateMemory(c *gin.Context) {
 		return
 	}
 
-	_, err = h.memoryService.Store(c.Request.Context(), corememory.StoreInput{
+	stored, err := h.memoryService.Store(c.Request.Context(), corememory.StoreInput{
 		TenantID: tenantID,
 		Content:  content,
 		Tier:     memoryTier,
@@ -235,7 +272,7 @@ func (h *Handlers) CreateMemory(c *gin.Context) {
 		return
 	}
 
-	h.redirectMemories(c, filters, "memory stored", "", false)
+	c.Redirect(http.StatusSeeOther, buildMemoryDetailURL(stored.ID, filters, "memory stored"))
 }
 
 func (h *Handlers) DeleteMemory(c *gin.Context) {
@@ -407,25 +444,77 @@ func mapMemoryViews(items []domain.Memory) []MemoryView {
 
 func mapMemoryView(m domain.Memory) MemoryView {
 	return MemoryView{
-		ID:              m.ID,
-		TenantID:        m.TenantID,
-		Content:         m.Content,
-		Tier:            string(m.Tier),
-		Kind:            string(m.Kind),
-		Tags:            append([]string{}, m.Tags...),
-		Source:          strings.TrimSpace(m.Source),
-		CreatedBy:       string(m.CreatedBy),
-		CanonicalKey:    strings.TrimSpace(m.CanonicalKey),
-		SourceTurnHash:  strings.TrimSpace(m.SourceTurnHash),
-		Extractor:       strings.TrimSpace(m.Extractor),
-		ExtractorVer:    strings.TrimSpace(m.ExtractorVersion),
-		Importance:      strconv.FormatFloat(m.Importance, 'f', 2, 64),
-		RecallCount:     m.RecallCount,
-		UpdatedAt:       formatDashboardTime(m.UpdatedAt),
-		CreatedAt:       formatDashboardTime(m.CreatedAt),
-		AccessedAt:      formatOptionalDashboardTime(m.LastAccessedAt),
-		LastRecalledAt:  formatOptionalDashboardTime(m.LastRecalledAt),
-		HasDetailFields: strings.TrimSpace(m.CanonicalKey) != "" || strings.TrimSpace(m.SourceTurnHash) != "" || strings.TrimSpace(m.Extractor) != "" || strings.TrimSpace(m.Source) != "",
+		ID:               m.ID,
+		TenantID:         m.TenantID,
+		Content:          m.Content,
+		Tier:             string(m.Tier),
+		Kind:             string(m.Kind),
+		Tags:             append([]string{}, m.Tags...),
+		Source:           strings.TrimSpace(m.Source),
+		CreatedBy:        string(m.CreatedBy),
+		CanonicalKey:     strings.TrimSpace(m.CanonicalKey),
+		SourceTurnHash:   strings.TrimSpace(m.SourceTurnHash),
+		Extractor:        strings.TrimSpace(m.Extractor),
+		ExtractorVer:     strings.TrimSpace(m.ExtractorVersion),
+		AnswerKind:       strings.TrimSpace(m.AnswerMetadata.AnswerKind),
+		SourceSentence:   strings.TrimSpace(m.AnswerMetadata.SourceSentence),
+		SurfaceSpan:      strings.TrimSpace(m.AnswerMetadata.SurfaceSpan),
+		TemporalAnchor:   strings.TrimSpace(m.AnswerMetadata.TemporalAnchor),
+		TimeRange:        buildTimeRangeLabel(m.AnswerMetadata),
+		SupportLines:     append([]string{}, m.AnswerMetadata.SupportLines...),
+		SupportMemoryIDs: append([]string{}, m.AnswerMetadata.SupportMemoryIDs...),
+		Importance:       strconv.FormatFloat(m.Importance, 'f', 2, 64),
+		RecallCount:      m.RecallCount,
+		LexicalScore:     "0.00",
+		QueryOverlap:     "0.00",
+		RouteFit:         "0.00",
+		UpdatedAt:        formatDashboardTime(m.UpdatedAt),
+		CreatedAt:        formatDashboardTime(m.CreatedAt),
+		AccessedAt:       formatOptionalDashboardTime(m.LastAccessedAt),
+		LastRecalledAt:   formatOptionalDashboardTime(m.LastRecalledAt),
+		HasDetailFields:  strings.TrimSpace(m.CanonicalKey) != "" || strings.TrimSpace(m.SourceTurnHash) != "" || strings.TrimSpace(m.Extractor) != "" || strings.TrimSpace(m.Source) != "",
+	}
+}
+
+func applySearchDebug(memories []MemoryView, debug *corememory.SearchDebugInfo) {
+	if debug == nil {
+		return
+	}
+	byID := make(map[string]corememory.SearchRankingDebug, len(debug.Ranking))
+	for _, item := range debug.Ranking {
+		byID[item.MemoryID] = item
+	}
+	for i := range memories {
+		ranking, ok := byID[memories[i].ID]
+		if !ok {
+			continue
+		}
+		memories[i].Rank = ranking.Rank
+		memories[i].LexicalScore = strconv.FormatFloat(ranking.LexicalScore, 'f', 2, 64)
+		memories[i].QueryOverlap = strconv.FormatFloat(ranking.QueryOverlap, 'f', 2, 64)
+		memories[i].RouteFit = strconv.FormatFloat(ranking.RouteFit, 'f', 2, 64)
+		memories[i].HasSearchDebug = true
+	}
+}
+
+func buildSearchDebugView(debug *corememory.SearchDebugInfo, filters MemoryFilterState) *SearchDebugView {
+	if debug == nil {
+		return nil
+	}
+	retrievalMode := filters.SelectedRetrievalKind
+	if retrievalMode == "" {
+		retrievalMode = "auto"
+	}
+	return &SearchDebugView{
+		RetrievalMode:    retrievalMode,
+		Intent:           strings.TrimSpace(debug.Plan.Intent),
+		Confidence:       strconv.FormatFloat(debug.Plan.Confidence, 'f', 2, 64),
+		AnswerType:       strings.TrimSpace(debug.Plan.AnswerType),
+		Entities:         append([]string{}, debug.Plan.Entities...),
+		Relations:        append([]string{}, debug.Plan.Relations...),
+		TimeConstraints:  append([]string{}, debug.Plan.TimeConstraints...),
+		RequiredEvidence: strings.TrimSpace(debug.Plan.RequiredEvidence),
+		FallbackPath:     append([]string{}, debug.Plan.FallbackPath...),
 	}
 }
 
@@ -469,6 +558,19 @@ func parseTierFilter(tier string) (string, error) {
 	}
 }
 
+func parseRetrievalKindFilter(kind string) (string, error) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" || kind == "all" || kind == "auto" {
+		return "", nil
+	}
+	switch kind {
+	case string(corememory.SearchRetrievalKindVector), string(corememory.SearchRetrievalKindEntity):
+		return kind, nil
+	default:
+		return "", domain.ErrInvalidInput
+	}
+}
+
 func parseKindFilter(kind string) (string, error) {
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	if kind == "" || kind == "all" {
@@ -487,21 +589,30 @@ func readMemoryFilters(c *gin.Context) (MemoryFilterState, string) {
 }
 
 func readMemoryFiltersFromValues(get func(string) string) (MemoryFilterState, string) {
+	return readMemoryFiltersFromPrefixedValues(get, "")
+}
+
+func readMemoryFiltersFromPrefixedValues(get func(string) string, prefix string) (MemoryFilterState, string) {
 	filters := MemoryFilterState{
-		SelectedTenantID: strings.TrimSpace(get("tenant_id")),
-		Query:            strings.TrimSpace(get("q")),
+		SelectedTenantID: strings.TrimSpace(get(prefix + "tenant_id")),
+		Query:            strings.TrimSpace(get(prefix + "q")),
 	}
 
 	var errs []string
-	if tier, err := parseTierFilter(get("tier")); err == nil {
+	if tier, err := parseTierFilter(get(prefix + "tier")); err == nil {
 		filters.SelectedTier = tier
 	} else {
 		errs = append(errs, "invalid tier filter")
 	}
-	if kind, err := parseKindFilter(get("kind")); err == nil {
+	if kind, err := parseKindFilter(get(prefix + "kind")); err == nil {
 		filters.SelectedKind = kind
 	} else {
 		errs = append(errs, "invalid kind filter")
+	}
+	if retrievalKind, err := parseRetrievalKindFilter(get(prefix + "retrieval_kind")); err == nil {
+		filters.SelectedRetrievalKind = retrievalKind
+	} else {
+		errs = append(errs, "invalid retrieval kind filter")
 	}
 
 	return filters, strings.Join(errs, "; ")
@@ -519,6 +630,13 @@ func filterKindSelection(selected string) []domain.MemoryKind {
 		return nil
 	}
 	return []domain.MemoryKind{domain.MemoryKind(selected)}
+}
+
+func filterRetrievalKindSelection(selected string) corememory.SearchRetrievalKind {
+	if selected == "" {
+		return corememory.SearchRetrievalKindAuto
+	}
+	return corememory.SearchRetrievalKind(selected)
 }
 
 func filterMemoryItems(items []domain.Memory, tier, kind string) []domain.Memory {
@@ -632,6 +750,14 @@ func topTenantsByMemory(items []TenantView, limit int) []TenantView {
 }
 
 func buildMemoriesURL(filters MemoryFilterState) string {
+	return buildMemoriesURLWithCompose(filters, false)
+}
+
+func buildMemoriesComposeURL(filters MemoryFilterState) string {
+	return buildMemoriesURLWithCompose(filters, true)
+}
+
+func buildMemoriesURLWithCompose(filters MemoryFilterState, composeOpen bool) string {
 	values := url.Values{}
 	if filters.SelectedTenantID != "" {
 		values.Set("tenant_id", filters.SelectedTenantID)
@@ -645,7 +771,40 @@ func buildMemoriesURL(filters MemoryFilterState) string {
 	if filters.SelectedKind != "" {
 		values.Set("kind", filters.SelectedKind)
 	}
+	if filters.SelectedRetrievalKind != "" {
+		values.Set("retrieval_kind", filters.SelectedRetrievalKind)
+	}
+	if composeOpen {
+		values.Set("compose", "1")
+	}
 	location := "/dashboard/memories"
+	if len(values) > 0 {
+		location += "?" + values.Encode()
+	}
+	return location
+}
+
+func buildMemoryDetailURL(memoryID string, filters MemoryFilterState, info string) string {
+	values := url.Values{}
+	if filters.SelectedTenantID != "" {
+		values.Set("tenant_id", filters.SelectedTenantID)
+	}
+	if filters.Query != "" {
+		values.Set("q", filters.Query)
+	}
+	if filters.SelectedTier != "" {
+		values.Set("tier", filters.SelectedTier)
+	}
+	if filters.SelectedKind != "" {
+		values.Set("kind", filters.SelectedKind)
+	}
+	if filters.SelectedRetrievalKind != "" {
+		values.Set("retrieval_kind", filters.SelectedRetrievalKind)
+	}
+	if info != "" {
+		values.Set("info", info)
+	}
+	location := "/dashboard/memories/view/" + url.PathEscape(strings.TrimSpace(memoryID))
 	if len(values) > 0 {
 		location += "?" + values.Encode()
 	}
@@ -739,6 +898,9 @@ func (h *Handlers) redirectMemories(c *gin.Context, filters MemoryFilterState, i
 	if filters.SelectedKind != "" {
 		values.Set("kind", filters.SelectedKind)
 	}
+	if filters.SelectedRetrievalKind != "" {
+		values.Set("retrieval_kind", filters.SelectedRetrievalKind)
+	}
 	if info != "" {
 		values.Set("info", info)
 	}
@@ -753,6 +915,21 @@ func (h *Handlers) redirectMemories(c *gin.Context, filters MemoryFilterState, i
 		location += "?" + values.Encode()
 	}
 	c.Redirect(http.StatusSeeOther, location)
+}
+
+func buildTimeRangeLabel(meta domain.MemoryAnswerMetadata) string {
+	start := strings.TrimSpace(meta.ResolvedTimeStart)
+	end := strings.TrimSpace(meta.ResolvedTimeEnd)
+	switch {
+	case start != "" && end != "":
+		return start + " -> " + end
+	case start != "":
+		return start
+	case end != "":
+		return end
+	default:
+		return ""
+	}
 }
 
 func (h *Handlers) render(c *gin.Context, page string, data any) {

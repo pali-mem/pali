@@ -120,7 +120,7 @@ func displayServerAddr(host string, port int) string {
 	case "", "0.0.0.0", "127.0.0.1", "::", "::1":
 		host = "localhost"
 	}
-	return fmt.Sprintf("%s:%d", host, port)
+	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
 func runMCP(cfg config.Config) {
