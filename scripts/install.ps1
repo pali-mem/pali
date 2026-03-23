@@ -90,7 +90,14 @@ try {
     Invoke-WebRequest -Uri $archiveAsset.browser_download_url -OutFile $archivePath -Headers @{ "User-Agent" = "pali-installer" }
     Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksumPath -Headers @{ "User-Agent" = "pali-installer" }
 
-    $expectedSha = (Select-String -Path $checksumPath -Pattern [regex]::Escape($archiveName) | Select-Object -First 1).Line.Split()[0]
+    $expectedSha = Get-Content $checksumPath |
+        ForEach-Object {
+            $parts = $_ -split '\s+', 2
+            if ($parts.Count -eq 2 -and $parts[1].Trim() -eq $archiveName) {
+                $parts[0].Trim()
+            }
+        } |
+        Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace($expectedSha)) {
         throw "Checksum for $archiveName not found."
     }

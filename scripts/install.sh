@@ -12,12 +12,29 @@ need_cmd() {
   fi
 }
 
-need_cmd curl
 need_cmd tar
 need_cmd awk
 need_cmd uname
 need_cmd mktemp
 need_cmd install
+
+fetch() {
+  url="$1"
+  out="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$out"
+    return
+  fi
+
+  if command -v wget >/dev/null 2>&1; then
+    wget -qO "$out" "$url"
+    return
+  fi
+
+  echo "ERROR: missing required downloader: curl or wget" >&2
+  exit 1
+}
 
 os="$(uname -s)"
 arch="$(uname -m)"
@@ -52,7 +69,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 release_json="$tmpdir/release.json"
-curl -fsSL "$api_url" -o "$release_json"
+fetch "$api_url" "$release_json"
 
 version="$(awk -F'"' '/"tag_name":/ {print $4; exit}' "$release_json")"
 if [ -z "$version" ]; then
@@ -62,12 +79,13 @@ fi
 
 archive_name="pali_${version}_${goos}_${goarch}.tar.gz"
 archive_url="$(awk -F'"' -v name="$archive_name" '
-  $2 == "browser_download_url" {url=$4}
-  $0 ~ name {print url; exit}
+  $2 == "name" {asset_name=$4}
+  $2 == "browser_download_url" && asset_name == name {print $4; exit}
 ' "$release_json")"
 
 checksums_url="$(awk -F'"' '
-  $2 == "browser_download_url" && $4 ~ /SHA256SUMS$/ {print $4; exit}
+  $2 == "name" {asset_name=$4}
+  $2 == "browser_download_url" && asset_name == "SHA256SUMS" {print $4; exit}
 ' "$release_json")"
 
 if [ -z "$archive_url" ] || [ -z "$checksums_url" ]; then
@@ -78,8 +96,8 @@ fi
 archive_path="$tmpdir/$archive_name"
 checksums_path="$tmpdir/SHA256SUMS"
 
-curl -fsSL "$archive_url" -o "$archive_path"
-curl -fsSL "$checksums_url" -o "$checksums_path"
+fetch "$archive_url" "$archive_path"
+fetch "$checksums_url" "$checksums_path"
 
 expected_sha="$(awk -v name="$archive_name" '$2 == name {print $1; exit}' "$checksums_path")"
 if [ -z "$expected_sha" ]; then
