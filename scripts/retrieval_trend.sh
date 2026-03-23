@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# retrieval_trend.sh — run retrieval quality and append a trend record.
+# retrieval_trend.sh â€” run retrieval quality and append a trend record.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

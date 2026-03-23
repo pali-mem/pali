@@ -22,8 +22,8 @@ Flags:
   --help          Show help
 
 Examples:
-  scripts/release_assets.sh --version v0.1.0
-  scripts/release_assets.sh --version v0.1.0 --targets linux/amd64,darwin/arm64,windows/amd64
+  scripts/release_assets.sh --version v0.2.0
+  scripts/release_assets.sh --version v0.2.0 --targets linux/amd64,darwin/arm64,windows/amd64
 EOF
 }
 

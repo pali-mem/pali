@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bench_setup.sh — pull models required for current Pali benchmark workflows
+# bench_setup.sh â€” pull models required for current Pali benchmark workflows
 set -euo pipefail
 
 REQUIRED_MODELS=(

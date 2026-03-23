@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# benchmark.sh — run reproducible API benchmarks and write results to disk.
+# benchmark.sh â€” run reproducible API benchmarks and write results to disk.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

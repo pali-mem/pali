@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# retrieval_quality.sh — offline retrieval quality evaluation using /v1/memory/search.
+# retrieval_quality.sh â€” offline retrieval quality evaluation using /v1/memory/search.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -773,7 +773,7 @@ flush_store_chunk() {
     jq -sc '.' < "$chunk_tmp" > "$tmp_chunk_entries_json"
     printf '%s\n' "$body" > "$tmp_chunk_response_json"
 
-    # Write idx→id TSV (one tab-separated line per successfully stored entry).
+    # Write idxâ†’id TSV (one tab-separated line per successfully stored entry).
     n_ok=0
     while IFS= read -r idx_line; do
       printf '%s\n' "$idx_line" >> "$tmp_idx_to_id_tsv"

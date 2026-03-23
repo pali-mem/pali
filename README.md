@@ -4,7 +4,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-v0.1-blue)](README.md)
+[![Status](https://img.shields.io/badge/Status-v0.2.0-blue)](README.md)
 
 <a href="https://github.com/user-attachments/assets/704a5235-4782-4d50-bdc0-8e929ba1c8c3">
   <img src="pali_banner.png" alt="Pali" width="830" />
@@ -14,7 +14,7 @@
 
 </div>
 
-> **Pre-release, close to usable**
+> **v0.2.0, early release and looking for testers**
 
 Pali is open memory infrastructure for LLM and agent systems. It gives you a local API server, MCP server, operator dashboard, and configurable retrieval stack behind one runtime.
 
@@ -28,6 +28,12 @@ Pali is open memory infrastructure for LLM and agent systems. It gives you a loc
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.sh | sh
+```
+
+If `curl` is missing:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/pali-mem/pali/main/scripts/install.sh | sh
 ```
 
 ### Install on Windows PowerShell
@@ -52,7 +58,7 @@ curl http://127.0.0.1:8080/health
 Dashboard:
 
 ```bash
-open http://127.0.0.1:8080/dashboard
+http://127.0.0.1:8080/dashboard
 ```
 
 If you prefer a source checkout instead of a release binary:
@@ -85,7 +91,7 @@ Start here for the full guides:
 - Operator dashboard for tenants, memories, and system state
 - Configurable backends for vectors, entity facts, embeddings, and scoring
 
-Current v0.1 core capabilities:
+Current v0.2.0 core capabilities:
 
 - Memory CRUD and batch ingest APIs
 - Async post-processing pipeline with job tracking
@@ -268,7 +274,7 @@ Tests:
 Release assets:
 
 ```bash
-VERSION=v0.1.0 make release-assets
+VERSION=v0.2.0 make release-assets
 ```
 
 The release workflow at [`.github/workflows/release.yml`](.github/workflows/release.yml) publishes GitHub Release binaries and a multi-arch container image to `ghcr.io/pali-mem/pali`.
