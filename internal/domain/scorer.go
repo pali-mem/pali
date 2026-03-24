@@ -2,6 +2,7 @@ package domain
 
 import "context"
 
+// ImportanceScorer scores a single memory for long-term importance.
 type ImportanceScorer interface {
 	Score(ctx context.Context, text string) (float64, error)
 }
