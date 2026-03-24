@@ -1,3 +1,4 @@
+// Command setup prepares local assets and config for development.
 package main
 
 import (

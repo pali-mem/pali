@@ -66,7 +66,7 @@ test/benchmarks/generated/
 TODO.md
 
 # Built binaries (root-level)
-genfix
+/genfix
 /pali
 
 .vscode/

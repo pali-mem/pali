@@ -1,3 +1,4 @@
+// Command evalidmap builds fixture-to-memory ID catalogs from SQLite data.
 package main
 
 import (
@@ -110,7 +111,9 @@ func enrichFromSQLite(
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	if err := enrichFromSourceIndex(db, sourcePrefix, allSet, rawSet, canonicalSet); err != nil {
 		return err
@@ -131,7 +134,9 @@ func enrichFromSourceIndex(
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	for rows.Next() {
 		var (
@@ -225,9 +230,7 @@ func enrichFromSourceTurnHash(
 	hashes := map[string]struct{}{}
 	for rawID, ref := range rawRefByID {
 		key := ref.tenantID + "\x00" + ref.hash
-		for _, idx := range rawIDToIndexes[rawID] {
-			indexKeyToIndexes[key] = append(indexKeyToIndexes[key], idx)
-		}
+		indexKeyToIndexes[key] = append(indexKeyToIndexes[key], rawIDToIndexes[rawID]...)
 		hashes[ref.hash] = struct{}{}
 	}
 	if len(indexKeyToIndexes) == 0 {
@@ -312,7 +315,7 @@ func queryInBatches(
 			return err
 		}
 		if err := scanFn(rows); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		if err := rows.Close(); err != nil {
@@ -364,7 +367,9 @@ func writeCatalog(catalog indexCatalog, outPath string) error {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+		}()
 	}
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)

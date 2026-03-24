@@ -1,6 +1,5 @@
+// Command genfix generates Ollama-backed fixture data for benchmarks.
 package main
-
-// cmd/genfix/main.go — Ollama-backed fixture generator for Pali benchmarks.
 
 import (
 	"bytes"
@@ -317,7 +316,9 @@ func pingOllama(baseURL string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	return nil
 }
 
@@ -336,7 +337,9 @@ func generate(baseURL, model, prompt string, seed *int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
