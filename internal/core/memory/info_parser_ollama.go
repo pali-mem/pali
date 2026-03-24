@@ -12,7 +12,6 @@ import (
 	"time"
 
 	coreprompts "github.com/pali-mem/pali/internal/core/prompts"
-	"github.com/pali-mem/pali/internal/domain"
 )
 
 const (
@@ -29,6 +28,7 @@ type ollamaInfoParser struct {
 	verbose bool
 }
 
+// NewOllamaInfoParser constructs an Ollama-backed info parser.
 func NewOllamaInfoParser(baseURL, model string, timeout time.Duration, logger *log.Logger, verbose bool) (InfoParser, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -72,60 +72,13 @@ func (p *ollamaInfoParser) Parse(ctx context.Context, content string, maxFacts i
 		p.debugf("[pali-parser] model=%s status=error ms=%d err=%v", p.model, time.Since(start).Milliseconds(), err)
 		return nil, err
 	}
-	parsed, err := decodeParserJSON(raw)
+	parsed, err := parseParserFacts(raw, maxFacts)
 	if err != nil {
 		p.debugf("[pali-parser] model=%s PARSE_ERROR raw_response=%q err=%v", p.model, sanitizeLogSnippet(raw, 260), err)
 		return nil, err
 	}
-
-	out := make([]ParsedFact, 0, maxFacts)
-	seen := make(map[string]struct{}, maxFacts*2)
-	for _, f := range parsed.Facts {
-		text := strings.Join(strings.Fields(strings.TrimSpace(f.Content)), " ")
-		if !isInformativeFact(text) {
-			continue
-		}
-		kind := normalizeFactKind(f.Kind)
-		entity := strings.Join(strings.Fields(strings.TrimSpace(f.Entity)), " ")
-		relation := strings.Join(strings.Fields(strings.TrimSpace(f.Relation)), " ")
-		value := strings.Join(strings.Fields(strings.TrimSpace(f.Value)), " ")
-		if entity == "" || relation == "" || value == "" {
-			inferredEntity, inferredRelation, inferredValue := inferEntityRelationValue(text, kind)
-			if entity == "" {
-				entity = inferredEntity
-			}
-			if relation == "" {
-				relation = inferredRelation
-			}
-			if value == "" {
-				value = inferredValue
-			}
-		}
-		if entity == "" && (relation != "" || value != "") {
-			entity = inferEntityFromFact(text)
-			if entity == "" {
-				entity = "user"
-			}
-		}
-		key := strings.ToLower(text)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, ParsedFact{
-			Content:  text,
-			Kind:     kind,
-			Tags:     normalizeFactTags(f.Tags, kind),
-			Entity:   entity,
-			Relation: relation,
-			Value:    value,
-		})
-		if len(out) >= maxFacts {
-			break
-		}
-	}
-	p.debugf("[pali-parser] model=%s status=ok ms=%d facts=%d", p.model, time.Since(start).Milliseconds(), len(out))
-	return out, nil
+	p.debugf("[pali-parser] model=%s status=ok ms=%d facts=%d", p.model, time.Since(start).Milliseconds(), len(parsed))
+	return parsed, nil
 }
 
 func (p *ollamaInfoParser) debugf(format string, args ...any) {
@@ -133,56 +86,6 @@ func (p *ollamaInfoParser) debugf(format string, args ...any) {
 		return
 	}
 	p.logger.Printf(format, args...)
-}
-
-func normalizeFactKind(kind string) domain.MemoryKind {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case string(domain.MemoryKindEvent):
-		return domain.MemoryKindEvent
-	default:
-		return domain.MemoryKindObservation
-	}
-}
-
-func normalizeFactTags(tags []string, kind domain.MemoryKind) []string {
-	base := append([]string{}, tags...)
-	if kind == domain.MemoryKindEvent {
-		base = append(base, "event", "parser")
-	} else {
-		base = append(base, "observation", "parser")
-	}
-	return mergeTags(nil, base...)
-}
-
-type parserResponse struct {
-	Facts []struct {
-		Content  string   `json:"content"`
-		Kind     string   `json:"kind"`
-		Tags     []string `json:"tags"`
-		Entity   string   `json:"entity,omitempty"`
-		Relation string   `json:"relation,omitempty"`
-		Value    string   `json:"value,omitempty"`
-	} `json:"facts"`
-}
-
-func decodeParserJSON(raw string) (parserResponse, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return parserResponse{}, fmt.Errorf("empty parser response")
-	}
-	var parsed parserResponse
-	if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
-		return parsed, nil
-	}
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start < 0 || end < start {
-		return parserResponse{}, fmt.Errorf("parser returned non-JSON response")
-	}
-	if err := json.Unmarshal([]byte(raw[start:end+1]), &parsed); err != nil {
-		return parserResponse{}, fmt.Errorf("decode parser JSON: %w", err)
-	}
-	return parsed, nil
 }
 
 func (p *ollamaInfoParser) preflight(ctx context.Context) error {
@@ -265,7 +168,9 @@ func (p *ollamaInfoParser) do(ctx context.Context, method, path string, body []b
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read parser response %s %s: %w", method, path, err)

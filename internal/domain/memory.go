@@ -2,8 +2,10 @@ package domain
 
 import "time"
 
+// MemoryTier identifies how a memory should be retained.
 type MemoryTier string
 
+// Memory tier values.
 const (
 	MemoryTierWorking  MemoryTier = "working"
 	MemoryTierEpisodic MemoryTier = "episodic"
@@ -11,16 +13,20 @@ const (
 	MemoryTierAuto     MemoryTier = "auto"
 )
 
+// MemoryCreatedBy identifies which actor created a memory.
 type MemoryCreatedBy string
 
+// Memory creator values.
 const (
 	MemoryCreatedByAuto   MemoryCreatedBy = "auto"
 	MemoryCreatedByUser   MemoryCreatedBy = "user"
 	MemoryCreatedBySystem MemoryCreatedBy = "system"
 )
 
+// MemoryKind classifies the shape of a memory record.
 type MemoryKind string
 
+// Memory kind values.
 const (
 	MemoryKindRawTurn     MemoryKind = "raw_turn"
 	MemoryKindObservation MemoryKind = "observation"
@@ -28,6 +34,7 @@ const (
 	MemoryKindEvent       MemoryKind = "event"
 )
 
+// MemoryAnswerMetadata carries answer-specific metadata.
 type MemoryAnswerMetadata struct {
 	AnswerKind         string
 	SourceSentence     string
@@ -41,6 +48,7 @@ type MemoryAnswerMetadata struct {
 	SupportLines       []string
 }
 
+// Memory is the core persisted memory record.
 type Memory struct {
 	ID               string
 	TenantID         string
@@ -65,6 +73,7 @@ type Memory struct {
 	LastRecalledAt   time.Time
 }
 
+// EntityFact is a normalized fact anchored to a memory.
 type EntityFact struct {
 	ID                  string
 	TenantID            string
@@ -81,6 +90,7 @@ type EntityFact struct {
 	Confidence          float64
 }
 
+// EntityFactPathQuery requests graph traversal candidates.
 type EntityFactPathQuery struct {
 	SeedEntities     []string
 	RelationHints    []string
@@ -89,6 +99,7 @@ type EntityFactPathQuery struct {
 	TemporalValidity bool
 }
 
+// EntityFactPathCandidate is a candidate returned by a path search.
 type EntityFactPathCandidate struct {
 	MemoryID       string
 	FactIDs        []string

@@ -1,5 +1,6 @@
 package sqlite
 
+// SQL statements for SQLite tenant, memory, and FTS operations.
 const (
 	InsertTenantSQL = `
 INSERT INTO tenants(id, name, created_at)

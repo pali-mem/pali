@@ -10,6 +10,7 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// PostprocessWorkerOptions configures the async postprocess workers.
 type PostprocessWorkerOptions struct {
 	Enabled      bool
 	PollInterval time.Duration
@@ -21,6 +22,7 @@ type PostprocessWorkerOptions struct {
 	RetryMax     time.Duration
 }
 
+// DefaultPostprocessWorkerOptions returns the worker defaults.
 func DefaultPostprocessWorkerOptions() PostprocessWorkerOptions {
 	return PostprocessWorkerOptions{
 		Enabled:      true,
@@ -64,6 +66,7 @@ func normalizePostprocessWorkerOptions(in PostprocessWorkerOptions) PostprocessW
 	return out
 }
 
+// StartPostprocessWorkers launches the async postprocess worker pool.
 func (s *Service) StartPostprocessWorkers(
 	parent context.Context,
 	opts PostprocessWorkerOptions,

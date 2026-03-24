@@ -1,3 +1,4 @@
+// Package mock provides a deterministic lexical embedder for tests.
 package mock
 
 import (
@@ -17,12 +18,14 @@ type Embedder struct {
 	dim int
 }
 
+// NewEmbedder returns the deterministic lexical embedder.
 func NewEmbedder() *Embedder {
 	return &Embedder{
 		dim: defaultDimension,
 	}
 }
 
+// Embed returns a lexical embedding for a single text.
 func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	_ = ctx
 	tokens := tokenize(text)
@@ -43,6 +46,7 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	return float64To32(vec), nil
 }
 
+// BatchEmbed returns lexical embeddings for each input text.
 func (e *Embedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	out := make([][]float32, 0, len(texts))
 	for _, text := range texts {

@@ -1,3 +1,4 @@
+// Command pali runs the main API or MCP server entrypoint.
 package main
 
 import (
@@ -196,11 +197,11 @@ func trimServeToken(args []string) []string {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  pali init [flags]                   # create config and run setup checks")
-	fmt.Fprintln(w, "  pali serve [-config <path>]         # start API server")
-	fmt.Fprintln(w, "  pali [-config <path>]               # start API server (default)")
-	fmt.Fprintln(w, "  pali api serve [-config <path>]     # start API server")
-	fmt.Fprintln(w, "  pali mcp serve [-config <path>]     # start MCP server over stdio")
-	fmt.Fprintln(w, "  pali mcp run [-config <path>]       # alias for mcp serve")
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  pali init [flags]                   # create config and run setup checks")
+	_, _ = fmt.Fprintln(w, "  pali serve [-config <path>]         # start API server")
+	_, _ = fmt.Fprintln(w, "  pali [-config <path>]               # start API server (default)")
+	_, _ = fmt.Fprintln(w, "  pali api serve [-config <path>]     # start API server")
+	_, _ = fmt.Fprintln(w, "  pali mcp serve [-config <path>]     # start MCP server over stdio")
+	_, _ = fmt.Fprintln(w, "  pali mcp run [-config <path>]       # alias for mcp serve")
 }

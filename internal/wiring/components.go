@@ -1,3 +1,4 @@
+// Package wiring assembles concrete implementations from configuration.
 package wiring
 
 import (
@@ -19,6 +20,7 @@ import (
 	sqlitevec "github.com/pali-mem/pali/internal/vectorstore/sqlitevec"
 )
 
+// BuildVectorStore constructs the configured vector-store implementation.
 func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, error) {
 	backend := strings.ToLower(strings.TrimSpace(cfg.VectorBackend))
 	if backend == "" {
@@ -42,6 +44,7 @@ func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, error)
 	}
 }
 
+// BuildEntityFactRepository constructs the configured entity-fact repository.
 func BuildEntityFactRepository(cfg config.Config, db *sql.DB) (domain.EntityFactRepository, func() error, error) {
 	backend := strings.ToLower(strings.TrimSpace(cfg.EntityFactBackend))
 	if backend == "" {
@@ -70,6 +73,7 @@ func BuildEntityFactRepository(cfg config.Config, db *sql.DB) (domain.EntityFact
 	}
 }
 
+// BuildImportanceScorer constructs the configured importance scorer.
 func BuildImportanceScorer(cfg config.Config) (domain.ImportanceScorer, error) {
 	scorer := strings.ToLower(strings.TrimSpace(cfg.ImportanceScorer))
 	if scorer == "" {
@@ -103,6 +107,7 @@ func BuildImportanceScorer(cfg config.Config) (domain.ImportanceScorer, error) {
 	}
 }
 
+// BuildInfoParser constructs the configured structured-memory parser.
 func BuildInfoParser(cfg config.Config) (corememory.InfoParser, error) {
 	if !cfg.Parser.Enabled {
 		return nil, nil
@@ -148,6 +153,7 @@ func BuildInfoParser(cfg config.Config) (corememory.InfoParser, error) {
 	}
 }
 
+// BuildMultiHopQueryDecomposer constructs the configured query decomposer.
 func BuildMultiHopQueryDecomposer(cfg config.Config) (corememory.MultiHopQueryDecomposer, error) {
 	if !cfg.Retrieval.MultiHop.LLMDecompositionEnabled {
 		return nil, nil

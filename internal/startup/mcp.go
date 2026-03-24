@@ -1,3 +1,4 @@
+// Package startup wires the full runtime for local and server entrypoints.
 package startup
 
 import (
@@ -15,11 +16,13 @@ import (
 	"github.com/pali-mem/pali/internal/wiring"
 )
 
+// MCPRuntime owns the server and its shutdown cleanup.
 type MCPRuntime struct {
 	Server  *palimcp.Server
 	Cleanup func()
 }
 
+// NewMCPRuntime constructs a runnable MCP runtime from config.
 func NewMCPRuntime(cfg config.Config) (*MCPRuntime, error) {
 	db, err := sqliterepo.Open(context.Background(), cfg.Database.SQLiteDSN)
 	if err != nil {

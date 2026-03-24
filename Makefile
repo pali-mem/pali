@@ -6,7 +6,7 @@ DOCS_VENV ?= .venv/docs
 DOCS_PYTHON := $(DOCS_VENV)/bin/python
 DOCS_STAMP := $(DOCS_VENV)/.requirements.stamp
 
-.PHONY: init serve run mcp mcp-serve setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
+.PHONY: init serve run mcp mcp-serve setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy lint benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
 
 init:
 	go run ./cmd/pali init -skip-model-download
@@ -58,6 +58,9 @@ fmt:
 
 tidy:
 	go mod tidy
+
+lint:
+	bash ./scripts/lint.sh
 
 bench-setup:
 	bash ./scripts/bench_setup.sh

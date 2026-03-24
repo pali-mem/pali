@@ -1,3 +1,4 @@
+// Package openrouter provides OpenRouter-backed importance scoring.
 package openrouter
 
 import (
@@ -16,6 +17,7 @@ const (
 	defaultTimeout = 10 * time.Second
 )
 
+// Client wraps the OpenRouter chat-completions API.
 type Client struct {
 	baseURL string
 	apiKey  string
@@ -30,6 +32,7 @@ type apiErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// NewClient constructs an OpenRouter client.
 func NewClient(baseURL, apiKey, model string, timeout time.Duration) (*Client, error) {
 	baseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -58,8 +61,10 @@ func NewClient(baseURL, apiKey, model string, timeout time.Duration) (*Client, e
 	}, nil
 }
 
+// Model returns the configured model name.
 func (c *Client) Model() string { return c.model }
 
+// Generate submits a prompt and returns the generated text.
 func (c *Client) Generate(ctx context.Context, prompt string) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("openrouter scorer client is nil")
@@ -147,7 +152,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

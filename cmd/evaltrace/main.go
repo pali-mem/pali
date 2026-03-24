@@ -1,3 +1,4 @@
+// Command evaltrace generates a trace report for evaluation and runtime data.
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	neo4jconfig "github.com/neo4j/neo4j-go-driver/v5/neo4j/config"
 	"github.com/pali-mem/pali/internal/config"
 	_ "modernc.org/sqlite"
 )
@@ -158,7 +160,9 @@ func buildSQLiteTrace(dbPath string) (sqliteTrace, error) {
 	if err != nil {
 		return sqliteTrace{}, err
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	trace := sqliteTrace{
 		ByKind:             map[string]int64{},
@@ -179,7 +183,7 @@ func buildSQLiteTrace(dbPath string) (sqliteTrace, error) {
 			count int64
 		)
 		if err := kindRows.Scan(&kind, &count); err != nil {
-			kindRows.Close()
+			_ = kindRows.Close()
 			return sqliteTrace{}, err
 		}
 		kind = strings.TrimSpace(kind)
@@ -217,7 +221,7 @@ func buildSQLiteTrace(dbPath string) (sqliteTrace, error) {
 			count     int64
 		)
 		if err := extractorRows.Scan(&extractor, &version, &count); err != nil {
-			extractorRows.Close()
+			_ = extractorRows.Close()
 			return sqliteTrace{}, err
 		}
 		key := strings.TrimSpace(extractor) + "@" + strings.TrimSpace(version)
@@ -234,7 +238,7 @@ func buildSQLiteTrace(dbPath string) (sqliteTrace, error) {
 	for sourceRows.Next() {
 		var source string
 		if err := sourceRows.Scan(&source); err != nil {
-			sourceRows.Close()
+			_ = sourceRows.Close()
 			return sqliteTrace{}, err
 		}
 		source = strings.TrimSpace(source)
@@ -361,7 +365,7 @@ func probeNeo4j(cfg config.Config) neo4jTrace {
 	driver, err := neo4j.NewDriverWithContext(
 		cfg.Neo4j.URI,
 		neo4j.BasicAuth(cfg.Neo4j.Username, cfg.Neo4j.Password, ""),
-		func(c *neo4j.Config) {
+		func(c *neo4jconfig.Config) {
 			c.SocketConnectTimeout = timeout
 		},
 	)
@@ -369,7 +373,9 @@ func probeNeo4j(cfg config.Config) neo4jTrace {
 		trace.Error = err.Error()
 		return trace
 	}
-	defer driver.Close(context.Background())
+	defer func() {
+		_ = driver.Close(context.Background())
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*2)
 	defer cancel()
@@ -377,7 +383,9 @@ func probeNeo4j(cfg config.Config) neo4jTrace {
 		DatabaseName: cfg.Neo4j.Database,
 		AccessMode:   neo4j.AccessModeRead,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	runCount := func(query string) (int64, error) {
 		val, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -476,7 +484,9 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")

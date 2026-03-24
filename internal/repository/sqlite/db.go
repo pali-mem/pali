@@ -1,3 +1,4 @@
+// Package sqlite provides the SQLite persistence implementation.
 package sqlite
 
 import (
@@ -13,6 +14,7 @@ import (
 
 const defaultDSN = "file:pali.db?cache=shared"
 
+// Open opens a SQLite database and applies the required pragmas and migrations.
 func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		dsn = defaultDSN

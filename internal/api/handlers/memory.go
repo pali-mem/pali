@@ -13,12 +13,14 @@ import (
 	"github.com/pali-mem/pali/internal/telemetry"
 )
 
+// MemoryHandler serves memory CRUD, ingest, and search endpoints.
 type MemoryHandler struct {
 	service               *corememory.Service
 	telemetry             *telemetry.Service
 	maxPostprocessAttempt int
 }
 
+// NewMemoryHandler constructs a memory handler.
 func NewMemoryHandler(service *corememory.Service, telemetryService *telemetry.Service, maxPostprocessAttempts ...int) *MemoryHandler {
 	maxAttempts := 5
 	if len(maxPostprocessAttempts) > 0 && maxPostprocessAttempts[0] > 0 {
@@ -31,6 +33,7 @@ func NewMemoryHandler(service *corememory.Service, telemetryService *telemetry.S
 	}
 }
 
+// Store creates a memory from a single request body.
 func (h *MemoryHandler) Store(c *gin.Context) {
 	started := time.Now()
 	tenantID := ""
@@ -62,6 +65,7 @@ func (h *MemoryHandler) Store(c *gin.Context) {
 	})
 }
 
+// StoreBatch creates memories from a batch request body.
 func (h *MemoryHandler) StoreBatch(c *gin.Context) {
 	started := time.Now()
 	status := http.StatusInternalServerError
@@ -100,6 +104,7 @@ func (h *MemoryHandler) StoreBatch(c *gin.Context) {
 	c.JSON(http.StatusCreated, dto.StoreMemoryBatchResponse{Items: out})
 }
 
+// Ingest creates a memory and enqueues postprocess work.
 func (h *MemoryHandler) Ingest(c *gin.Context) {
 	storeInput, err := bindStoreInput(c)
 	if err != nil {
@@ -120,6 +125,7 @@ func (h *MemoryHandler) Ingest(c *gin.Context) {
 	})
 }
 
+// IngestBatch accepts a batch ingest request and queues postprocess work.
 func (h *MemoryHandler) IngestBatch(c *gin.Context) {
 	inputs, err := bindStoreBatchInputs(c)
 	if err != nil {
@@ -175,6 +181,7 @@ func bindStoreBatchInputs(c *gin.Context) ([]corememory.StoreInput, error) {
 	return inputs, nil
 }
 
+// Search executes a memory search and returns matching memories.
 func (h *MemoryHandler) Search(c *gin.Context) {
 	started := time.Now()
 	tenantID := ""
@@ -294,6 +301,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// Delete removes a memory by ID for the requested tenant.
 func (h *MemoryHandler) Delete(c *gin.Context) {
 	memoryID := c.Param("id")
 	tenantID := c.Query("tenant_id")
@@ -310,6 +318,7 @@ func (h *MemoryHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// GetPostprocessJob returns the status of a postprocess job.
 func (h *MemoryHandler) GetPostprocessJob(c *gin.Context) {
 	jobID := c.Param("id")
 	job, err := h.service.GetPostprocessJob(c.Request.Context(), jobID)
@@ -324,6 +333,7 @@ func (h *MemoryHandler) GetPostprocessJob(c *gin.Context) {
 	c.JSON(http.StatusOK, toPostprocessJobResponse(*job))
 }
 
+// ListPostprocessJobs lists postprocess jobs for the requested tenant.
 func (h *MemoryHandler) ListPostprocessJobs(c *gin.Context) {
 	tenantID := strings.TrimSpace(c.Query("tenant_id"))
 	if err := enforceTenantAccess(c, tenantID); err != nil {

@@ -1,3 +1,4 @@
+// Command mcp runs the MCP server over stdio.
 package main
 
 import (

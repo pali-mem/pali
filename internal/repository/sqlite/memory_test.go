@@ -14,7 +14,7 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memRepo := NewMemoryRepository(db)
@@ -120,7 +120,7 @@ func TestMemoryRepositoryStoreBatch(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memRepo := NewMemoryRepository(db)
@@ -167,7 +167,7 @@ func TestMemoryRepositoryStoreBatchRollsBackOnError(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memRepo := NewMemoryRepository(db)
@@ -229,7 +229,7 @@ func TestMemoryRepositoryIndexJobLifecycle(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memRepo := NewMemoryRepository(db)
@@ -315,7 +315,7 @@ func TestMemoryRepositoryStoreBatchAsyncIngestQueuesPostprocessJobs(t *testing.T
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memRepo := NewMemoryRepository(db)
@@ -361,7 +361,7 @@ func TestMemoryRepositoryPostprocessClaimAndFailureLifecycle(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memRepo := NewMemoryRepository(db)

@@ -1,3 +1,4 @@
+// Package ollama provides Ollama-backed importance scoring.
 package ollama
 
 import (
@@ -17,6 +18,7 @@ const (
 	defaultTimeout = 2 * time.Second
 )
 
+// Client wraps the Ollama scoring API.
 type Client struct {
 	baseURL string
 	model   string
@@ -33,6 +35,7 @@ type ollamaError struct {
 	Error string `json:"error"`
 }
 
+// NewClient constructs an Ollama client and verifies the configured model.
 func NewClient(baseURL, model string, timeout time.Duration) (*Client, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -60,8 +63,10 @@ func NewClient(baseURL, model string, timeout time.Duration) (*Client, error) {
 	return c, nil
 }
 
+// Model returns the configured model name.
 func (c *Client) Model() string { return c.model }
 
+// Generate submits a prompt and returns the generated text.
 func (c *Client) Generate(ctx context.Context, prompt string) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("ollama scorer client is nil")
@@ -139,7 +144,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

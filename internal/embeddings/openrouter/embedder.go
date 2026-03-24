@@ -1,3 +1,4 @@
+// Package openrouter provides OpenRouter-backed embeddings.
 package openrouter
 
 import (
@@ -22,6 +23,7 @@ var (
 	openRouterMaxParallelBatches = 8
 )
 
+// Embedder wraps the OpenRouter embeddings API.
 type Embedder struct {
 	baseURL string
 	apiKey  string
@@ -48,6 +50,7 @@ type apiErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// NewEmbedder constructs an OpenRouter embedder.
 func NewEmbedder(baseURL, apiKey, model string, timeout time.Duration) (*Embedder, error) {
 	baseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -72,6 +75,7 @@ func NewEmbedder(baseURL, apiKey, model string, timeout time.Duration) (*Embedde
 	}, nil
 }
 
+// Embed returns an embedding for a single text.
 func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	embeddings, err := e.BatchEmbed(ctx, []string{text})
 	if err != nil {
@@ -80,6 +84,7 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	return embeddings[0], nil
 }
 
+// BatchEmbed returns embeddings for a batch of texts.
 func (e *Embedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	if e == nil {
 		return nil, fmt.Errorf("openrouter embedder is nil")
@@ -239,7 +244,9 @@ func (e *Embedder) do(ctx context.Context, method, path string, body []byte) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

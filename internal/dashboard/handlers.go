@@ -1,3 +1,4 @@
+// Package dashboard serves the HTML dashboard for browsing tenants and memories.
 package dashboard
 
 import (
@@ -26,6 +27,7 @@ var templatesFS embed.FS
 
 const dashboardSearchMinScore = 0.25
 
+// Handlers wires dashboard pages to the underlying services.
 type Handlers struct {
 	memoryService *corememory.Service
 	tenantService *coretenant.Service
@@ -33,6 +35,7 @@ type Handlers struct {
 	configPage    ConfigPageData
 }
 
+// TenantView is the dashboard projection for a tenant row.
 type TenantView struct {
 	ID          string
 	Name        string
@@ -40,6 +43,7 @@ type TenantView struct {
 	MemoryCount int64
 }
 
+// MemoryView is the dashboard projection for a memory row.
 type MemoryView struct {
 	ID               string
 	TenantID         string
@@ -74,6 +78,7 @@ type MemoryView struct {
 	HasDetailFields  bool
 }
 
+// MemoryFilterState captures the active memory list filters.
 type MemoryFilterState struct {
 	SelectedTenantID      string
 	Query                 string
@@ -82,6 +87,7 @@ type MemoryFilterState struct {
 	SelectedRetrievalKind string
 }
 
+// MemoriesPageData is the template data for the memories page.
 type MemoriesPageData struct {
 	Page         string
 	Error        string
@@ -95,6 +101,7 @@ type MemoriesPageData struct {
 	ComposerOpen bool
 }
 
+// SearchDebugView renders search debug information in the dashboard.
 type SearchDebugView struct {
 	RetrievalMode    string
 	Intent           string
@@ -107,6 +114,7 @@ type SearchDebugView struct {
 	FallbackPath     []string
 }
 
+// MemoryDetailPageData is the template data for a memory detail page.
 type MemoryDetailPageData struct {
 	Page    string
 	Error   string
@@ -116,10 +124,12 @@ type MemoryDetailPageData struct {
 	Memory  MemoryView
 }
 
+// TenantFilterState captures the active tenant list filters.
 type TenantFilterState struct {
 	Query string
 }
 
+// TenantsPageData is the template data for the tenants page.
 type TenantsPageData struct {
 	Page          string
 	Error         string
@@ -131,6 +141,7 @@ type TenantsPageData struct {
 	ComposerOpen  bool
 }
 
+// StatsPageData is the template data for the stats page.
 type StatsPageData struct {
 	Page           string
 	Error          string
@@ -144,6 +155,7 @@ type StatsPageData struct {
 	ConfigPath     string
 }
 
+// ConfigPageData is the template data for the config page.
 type ConfigPageData struct {
 	Page          string
 	Error         string
@@ -155,12 +167,14 @@ type ConfigPageData struct {
 	DocsLinkLabel string
 }
 
+// AnalyticsPageData is the template data for the analytics page.
 type AnalyticsPageData struct {
 	Page  string
 	Error string
 	Info  string
 }
 
+// NewHandlers constructs dashboard handlers for the configured services.
 func NewHandlers(memoryService *corememory.Service, tenantService *coretenant.Service, telemetryService *telemetry.Service, cfg config.Config, configPath string) *Handlers {
 	return &Handlers{
 		memoryService: memoryService,
@@ -170,10 +184,12 @@ func NewHandlers(memoryService *corememory.Service, tenantService *coretenant.Se
 	}
 }
 
+// Index redirects to the stats page.
 func (h *Handlers) Index(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/stats")
 }
 
+// Memories renders the memories listing page.
 func (h *Handlers) Memories(c *gin.Context) {
 	tenants, err := h.listTenantsWithCounts(c)
 	if err != nil {
@@ -247,6 +263,7 @@ func (h *Handlers) Memories(c *gin.Context) {
 	})
 }
 
+// CreateMemory handles dashboard memory creation.
 func (h *Handlers) CreateMemory(c *gin.Context) {
 	filters, _ := readMemoryFiltersFromPrefixedValues(c.PostForm, "filter_")
 	tenantID := strings.TrimSpace(c.PostForm("tenant_id"))
@@ -275,6 +292,7 @@ func (h *Handlers) CreateMemory(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, buildMemoryDetailURL(stored.ID, filters, "memory stored"))
 }
 
+// DeleteMemory handles dashboard memory deletion.
 func (h *Handlers) DeleteMemory(c *gin.Context) {
 	filters, _ := readMemoryFiltersFromValues(c.PostForm)
 	memoryID := strings.TrimSpace(c.Param("id"))
@@ -292,6 +310,7 @@ func (h *Handlers) DeleteMemory(c *gin.Context) {
 	h.redirectMemories(c, filters, "memory deleted", "", false)
 }
 
+// ViewMemory renders a single memory detail page.
 func (h *Handlers) ViewMemory(c *gin.Context) {
 	filters, filterErr := readMemoryFilters(c)
 	memoryID := strings.TrimSpace(c.Param("id"))
@@ -320,6 +339,7 @@ func (h *Handlers) ViewMemory(c *gin.Context) {
 	})
 }
 
+// Tenants renders the tenants listing page.
 func (h *Handlers) Tenants(c *gin.Context) {
 	tenants, err := h.listTenantsWithCounts(c)
 	if err != nil {
@@ -346,6 +366,7 @@ func (h *Handlers) Tenants(c *gin.Context) {
 	})
 }
 
+// CreateTenant handles dashboard tenant creation.
 func (h *Handlers) CreateTenant(c *gin.Context) {
 	filters := TenantFilterState{Query: strings.TrimSpace(c.PostForm("q"))}
 	id := strings.TrimSpace(c.PostForm("id"))
@@ -361,6 +382,7 @@ func (h *Handlers) CreateTenant(c *gin.Context) {
 	h.redirectTenants(c, filters, "tenant created", "", false)
 }
 
+// Stats renders the dashboard stats page.
 func (h *Handlers) Stats(c *gin.Context) {
 	tenants, err := h.listTenantsWithCounts(c)
 	if err != nil {
@@ -394,12 +416,14 @@ func (h *Handlers) Stats(c *gin.Context) {
 	})
 }
 
+// Config renders the configuration page.
 func (h *Handlers) Config(c *gin.Context) {
 	data := h.configPage
 	data.Page = "config"
 	h.render(c, "config.html", data)
 }
 
+// Analytics renders the analytics page.
 func (h *Handlers) Analytics(c *gin.Context) {
 	h.render(c, "analytics.html", AnalyticsPageData{
 		Page:  "analytics",
@@ -408,6 +432,7 @@ func (h *Handlers) Analytics(c *gin.Context) {
 	})
 }
 
+// AnalyticsData returns analytics data as JSON.
 func (h *Handlers) AnalyticsData(c *gin.Context) {
 	snapshot := h.telemetry.Snapshot(telemetry.SnapshotOptions{
 		Events:     20,
