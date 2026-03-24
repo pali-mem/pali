@@ -13,14 +13,17 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// Store persists embeddings in SQLite and performs in-process cosine search.
 type Store struct {
 	db *sql.DB
 }
 
+// NewStore builds a SQLite-backed vector store.
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
+// Upsert stores a single embedding for a memory.
 func (s *Store) Upsert(ctx context.Context, tenantID, memoryID string, embedding []float32) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" || len(embedding) == 0 {
 		return domain.ErrInvalidInput
@@ -45,6 +48,7 @@ func (s *Store) Upsert(ctx context.Context, tenantID, memoryID string, embedding
 	return nil
 }
 
+// UpsertBatch stores embeddings for multiple memories in one transaction.
 func (s *Store) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) error {
 	if len(upserts) == 0 {
 		return nil
@@ -53,7 +57,9 @@ func (s *Store) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) 
 	if err != nil {
 		return fmt.Errorf("begin embedding upsert batch transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for i := range upserts {
@@ -83,6 +89,7 @@ func (s *Store) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) 
 	return nil
 }
 
+// Delete removes an embedding for the given tenant and memory.
 func (s *Store) Delete(ctx context.Context, tenantID, memoryID string) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" {
 		return domain.ErrInvalidInput
@@ -93,6 +100,7 @@ func (s *Store) Delete(ctx context.Context, tenantID, memoryID string) error {
 	return nil
 }
 
+// Search returns the most similar embeddings for a tenant.
 func (s *Store) Search(ctx context.Context, tenantID string, embedding []float32, topK int) ([]domain.VectorstoreCandidate, error) {
 	if strings.TrimSpace(tenantID) == "" || len(embedding) == 0 {
 		return nil, domain.ErrInvalidInput
@@ -105,7 +113,9 @@ func (s *Store) Search(ctx context.Context, tenantID string, embedding []float32
 	if err != nil {
 		return nil, fmt.Errorf("query embeddings: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	candidates := make([]domain.VectorstoreCandidate, 0, topK)
 	for rows.Next() {

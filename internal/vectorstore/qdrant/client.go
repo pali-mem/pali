@@ -1,3 +1,4 @@
+// Package qdrant provides a Qdrant-backed vector store implementation.
 package qdrant
 
 import (
@@ -24,6 +25,7 @@ const (
 	defaultTimeout    = 2 * time.Second
 )
 
+// Client talks to the Qdrant HTTP API.
 type Client struct {
 	baseURL    string
 	apiKey     string
@@ -34,6 +36,7 @@ type Client struct {
 	collectionSize int
 }
 
+// NewClient constructs a Qdrant client.
 func NewClient(baseURL, apiKey, collection string, timeout time.Duration) (*Client, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -60,6 +63,7 @@ func NewClient(baseURL, apiKey, collection string, timeout time.Duration) (*Clie
 	}, nil
 }
 
+// Upsert stores a single embedding in Qdrant.
 func (c *Client) Upsert(ctx context.Context, tenantID, memoryID string, embedding []float32) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" || len(embedding) == 0 {
 		return domain.ErrInvalidInput
@@ -87,6 +91,7 @@ func (c *Client) Upsert(ctx context.Context, tenantID, memoryID string, embeddin
 	return nil
 }
 
+// UpsertBatch stores a batch of embeddings in Qdrant.
 func (c *Client) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) error {
 	if len(upserts) == 0 {
 		return nil
@@ -124,6 +129,7 @@ func (c *Client) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert)
 	return nil
 }
 
+// Delete removes a single embedding from Qdrant.
 func (c *Client) Delete(ctx context.Context, tenantID, memoryID string) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" {
 		return domain.ErrInvalidInput
@@ -143,6 +149,7 @@ func (c *Client) Delete(ctx context.Context, tenantID, memoryID string) error {
 	return nil
 }
 
+// Search returns the nearest embeddings for a tenant.
 func (c *Client) Search(ctx context.Context, tenantID string, embedding []float32, topK int) ([]domain.VectorstoreCandidate, error) {
 	if strings.TrimSpace(tenantID) == "" || len(embedding) == 0 {
 		return nil, domain.ErrInvalidInput
@@ -387,7 +394,9 @@ func (c *Client) request(ctx context.Context, method, path string, payload any, 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

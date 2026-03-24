@@ -4,17 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/domain"
 	sqliterepo "github.com/pali-mem/pali/internal/repository/sqlite"
 	"github.com/pali-mem/pali/test/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStoreUpsertSearchDelete(t *testing.T) {
 	ctx := context.Background()
 	db, err := sqliterepo.Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
@@ -45,7 +47,9 @@ func TestStoreUpsertBatch(t *testing.T) {
 	ctx := context.Background()
 	db, err := sqliterepo.Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)

@@ -1,5 +1,6 @@
 package sqlitevec
 
+// UpsertEmbeddingSQL inserts or updates a stored embedding row.
 const (
 	UpsertEmbeddingSQL = `
 INSERT INTO memory_embeddings (tenant_id, memory_id, embedding_json, updated_at)

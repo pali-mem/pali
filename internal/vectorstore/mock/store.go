@@ -1,5 +1,7 @@
+// Package mock provides a minimal vector-store implementation for tests.
 package mock
 
-type Store struct{}
+type store struct{}
 
-func NewStore() *Store { return &Store{} }
+// NewStore returns a no-op vector store used in tests.
+func NewStore() *store { return &store{} }
