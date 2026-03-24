@@ -51,10 +51,15 @@ func NewMCPRuntime(cfg config.Config) (*MCPRuntime, error) {
 		}
 	})
 
-	vectorStore, err := wiring.BuildVectorStore(cfg, db)
+	vectorStore, vectorCleanup, err := wiring.BuildVectorStore(cfg, db)
 	if err != nil {
 		return fail(fmt.Errorf("build vector store: %w", err))
 	}
+	cleanup = chainCleanup(cleanup, func() {
+		if err := vectorCleanup(); err != nil {
+			log.Printf("vector store close error: %v", err)
+		}
+	})
 	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
 	if err != nil {
 		return fail(fmt.Errorf("build embedder: %w", err))

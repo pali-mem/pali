@@ -21,9 +21,11 @@ func TestBuildVectorStore_SQLite(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.VectorBackend = "sqlite"
 
-	store, err := BuildVectorStore(cfg, db)
+	store, cleanup, err := BuildVectorStore(cfg, db)
 	require.NoError(t, err)
 	require.NotNil(t, store)
+	require.NotNil(t, cleanup)
+	require.NoError(t, cleanup())
 }
 
 func TestBuildVectorStore_Qdrant(t *testing.T) {
@@ -33,22 +35,27 @@ func TestBuildVectorStore_Qdrant(t *testing.T) {
 
 	cfg := config.Defaults()
 	cfg.VectorBackend = "qdrant"
-	store, err := BuildVectorStore(cfg, db)
+	store, cleanup, err := BuildVectorStore(cfg, db)
 	require.NoError(t, err)
 	require.NotNil(t, store)
+	require.NotNil(t, cleanup)
+	require.NoError(t, cleanup())
 }
 
-func TestBuildVectorStore_NotImplementedPgvector(t *testing.T) {
+func TestBuildVectorStore_PGVector(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
 	defer db.Close()
 
 	cfg := config.Defaults()
 	cfg.VectorBackend = "pgvector"
-	store, buildErr := BuildVectorStore(cfg, db)
-	require.Nil(t, store)
-	require.Error(t, buildErr)
-	require.Contains(t, buildErr.Error(), "not implemented")
+	cfg.PGVector.DSN = "postgres://user:pass@localhost:5432/pali"
+
+	store, cleanup, buildErr := BuildVectorStore(cfg, db)
+	require.NoError(t, buildErr)
+	require.NotNil(t, store)
+	require.NotNil(t, cleanup)
+	require.NoError(t, cleanup())
 }
 
 func TestBuildEntityFactRepository_SQLite(t *testing.T) {

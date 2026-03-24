@@ -27,6 +27,11 @@ QDRANT_API_KEY=""
 QDRANT_COLLECTION="pali_memories"
 QDRANT_TIMEOUT_MS=2000
 QDRANT_ISOLATE_RUN="auto"
+PGVECTOR_DSN=""
+PGVECTOR_TABLE="pali_memories"
+PGVECTOR_AUTO_MIGRATE="true"
+PGVECTOR_MAX_OPEN_CONNS=10
+PGVECTOR_MAX_IDLE_CONNS=5
 PARSER_ENABLED=""
 PARSER_PROVIDER=""
 PARSER_OPENROUTER_MODEL=""
@@ -39,7 +44,7 @@ Usage:
 Flags:
   --fixture <path>         Fixture JSON file (default: testdata/benchmarks/fixtures/release_memories.json)
   --eval-set <path>        Optional labeled eval set used for realistic search queries (default: testdata/benchmarks/evals/release_curated.json)
-  --backend <name>         sqlite | qdrant (default: sqlite)
+  --backend <name>         sqlite | qdrant | pgvector (default: sqlite)
   --out-dir <path>         Output directory for JSON + summary results
   --search-ops <n>         Number of search operations (default: 200)
   --top-k <n>              top_k used in search requests (default: 5)
@@ -58,6 +63,11 @@ Flags:
   --qdrant-collection <n>  Qdrant collection name (default: pali_memories)
   --qdrant-timeout-ms <n>  Qdrant request timeout (default: 2000)
   --qdrant-isolate-run <m> auto | true | false (default: auto; auto isolates when script starts server)
+  --pgvector-dsn <dsn>     Postgres DSN for pgvector backend
+  --pgvector-table <name>  pgvector table name (default: pali_memories)
+  --pgvector-auto-migrate <bool>  pgvector auto_migrate (default: true)
+  --pgvector-max-open-conns <n>   pgvector max_open_conns (default: 10)
+  --pgvector-max-idle-conns <n>   pgvector max_idle_conns (default: 5)
   --parser-enabled <bool>  Force parser on/off (true|false). Overrides neo4j auto-mode.
   --parser-provider <name> heuristic | ollama | openrouter (default: auto/heuristic for neo4j)
   --parser-openrouter-model <name> Override parser.openrouter_model for parser provider openrouter
@@ -159,6 +169,26 @@ while [[ $# -gt 0 ]]; do
       QDRANT_ISOLATE_RUN="$2"
       shift 2
       ;;
+    --pgvector-dsn)
+      PGVECTOR_DSN="$2"
+      shift 2
+      ;;
+    --pgvector-table)
+      PGVECTOR_TABLE="$2"
+      shift 2
+      ;;
+    --pgvector-auto-migrate)
+      PGVECTOR_AUTO_MIGRATE="$2"
+      shift 2
+      ;;
+    --pgvector-max-open-conns)
+      PGVECTOR_MAX_OPEN_CONNS="$2"
+      shift 2
+      ;;
+    --pgvector-max-idle-conns)
+      PGVECTOR_MAX_IDLE_CONNS="$2"
+      shift 2
+      ;;
     --parser-enabled)
       PARSER_ENABLED="$2"
       shift 2
@@ -216,10 +246,10 @@ if ! [[ "$TOP_K" =~ ^[0-9]+$ ]] || [[ "$TOP_K" -le 0 ]]; then
 fi
 
 case "$BACKEND" in
-  sqlite|qdrant)
+  sqlite|qdrant|pgvector)
     ;;
   *)
-    echo "ERROR: --backend must be one of: sqlite, qdrant"
+    echo "ERROR: --backend must be one of: sqlite, qdrant, pgvector"
     exit 1
     ;;
 esac
@@ -245,6 +275,11 @@ esac
 # Avoid cross-run vector-size collisions in shared Qdrant collections.
 if [[ "$EMBEDDING_PROVIDER" == "lexical" && "$QDRANT_COLLECTION" == "pali_memories" ]]; then
   QDRANT_COLLECTION="pali_memories_lexical"
+fi
+
+if [[ "$BACKEND" == "pgvector" && -z "${PGVECTOR_DSN// }" ]]; then
+  echo "ERROR: --pgvector-dsn is required when --backend=pgvector"
+  exit 1
 fi
 
 if [[ -n "$ENTITY_FACT_BACKEND" ]]; then
@@ -530,6 +565,11 @@ if [[ "$START_SERVER" -eq 1 ]]; then
     -qdrant-api-key "$QDRANT_API_KEY" \
     -qdrant-collection "$qdrant_collection_effective" \
     -qdrant-timeout-ms "$QDRANT_TIMEOUT_MS" \
+    -pgvector-dsn "$PGVECTOR_DSN" \
+    -pgvector-table "$PGVECTOR_TABLE" \
+    -pgvector-auto-migrate "$PGVECTOR_AUTO_MIGRATE" \
+    -pgvector-max-open-conns "$PGVECTOR_MAX_OPEN_CONNS" \
+    -pgvector-max-idle-conns "$PGVECTOR_MAX_IDLE_CONNS" \
     -embedding-provider "$EMBEDDING_PROVIDER" \
     ${PARSER_ENABLED_OVERRIDE:+-parser-enabled} \
     ${PARSER_ENABLED_OVERRIDE:+$PARSER_ENABLED_OVERRIDE} \
@@ -617,6 +657,10 @@ if [[ "$BACKEND" == "qdrant" ]]; then
   echo "    qdrant base  : $QDRANT_BASE_URL"
   echo "    qdrant coll  : $qdrant_collection_effective"
   echo "    qdrant mode  : $qdrant_namespace_mode"
+fi
+if [[ "$BACKEND" == "pgvector" ]]; then
+  echo "    pgvector dsn : $PGVECTOR_DSN"
+  echo "    pgvector tbl : $PGVECTOR_TABLE"
 fi
 if [[ -n "$ENTITY_FACT_BACKEND" ]]; then
   echo "    fact backend : $ENTITY_FACT_BACKEND"

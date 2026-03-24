@@ -29,6 +29,7 @@ The container profile at `deploy/docker/pali.container.yaml` keeps the same zero
 - `server.host: 0.0.0.0`
 - `database.sqlite_dsn: file:/var/lib/pali/pali.db?cache=shared`
 - service-name URLs for `qdrant`, `neo4j`, and `ollama`
+- a `pgvector` section is present for Compose/env-driven PostgreSQL overlays
 
 `pali init` will create the target config file from `pali.yaml.example` when it is missing:
 
@@ -169,6 +170,13 @@ qdrant:
   collection: pali_memories
   timeout_ms: 2000
 
+pgvector:
+  dsn: ""
+  table: pali_memories
+  auto_migrate: true
+  max_open_conns: 10
+  max_idle_conns: 5
+
 neo4j:
   uri: bolt://127.0.0.1:7687
   username: neo4j
@@ -212,6 +220,7 @@ logging:
 
 - `vector_backend: sqlite` is implemented.
 - `vector_backend: qdrant` is implemented.
+- `vector_backend: pgvector` is implemented and requires a PostgreSQL DSN plus the `pgvector` extension.
 - `entity_fact_backend: sqlite` and `entity_fact_backend: neo4j` are implemented.
 - `embedding.provider: lexical` is the default because it requires no external services.
 - `embedding.provider: lexical` is appropriate for CI, smoke tests, and local no-model runs.
@@ -221,9 +230,9 @@ logging:
 - `retrieval.multi_hop.llm_decomposition_enabled` is off by default.
 - `retrieval.answer_type_routing_enabled` is on by default.
 - `retrieval.early_rank_rerank_enabled` is on by default and is intended to lift relevant hits from ranks `11-25` into `1-10` before increasing retrieval depth.
-- `retrieval.temporal_resolver_enabled` is on by default for stronger temporal answer normalization.
+- `retrieval.temporal_resolver_enabled` is deprecated and currently has no runtime effect in server retrieval paths.
 - `retrieval.search.*` controls adaptive query variants, candidate overfetch windows, and rerank window depth.
-- `retrieval.open_domain_alternative_resolver_enabled` is the gated path for deterministic open-domain label/choice resolution.
+- `retrieval.open_domain_alternative_resolver_enabled` is deprecated and currently has no runtime effect in server retrieval paths.
 - `parser.answer_span_retention_enabled` stores extra answer-bearing metadata on parsed memories without replacing existing canonical memory content.
 - `profile_layer.support_links_enabled` stores source-support lines on summary/profile memories so retrieval can surface the summary and its backing evidence together.
 - `retrieval.multi_hop.decomposition_provider: none` is only valid when LLM decomposition is disabled.
@@ -231,14 +240,14 @@ logging:
 ## Category Improvement Rollout
 
 These flags were originally added for the single-hop / temporal / open-domain improvement slice.
-They are now enabled by default in runtime defaults and `pali.yaml.example`.
+Two legacy toggles remain in config for backward compatibility but are deprecated no-ops in runtime:
+- `retrieval.temporal_resolver_enabled`
+- `retrieval.open_domain_alternative_resolver_enabled`
 
 - For baseline-only comparison runs, disable these explicitly:
   - `retrieval.answer_type_routing_enabled: false`
   - `retrieval.early_rank_rerank_enabled: false`
-  - `retrieval.temporal_resolver_enabled: false`
 - Optional, still-experimental toggles remain off by default:
-  - `retrieval.open_domain_alternative_resolver_enabled: false`
   - `parser.answer_span_retention_enabled: false`
   - `profile_layer.support_links_enabled: false`
 

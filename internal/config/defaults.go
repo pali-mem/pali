@@ -106,6 +106,13 @@ func Defaults() Config {
 			Collection: "pali_memories",
 			TimeoutMS:  2000,
 		},
+		PGVector: PGVectorConfig{
+			DSN:          "",
+			Table:        "pali_memories",
+			AutoMigrate:  true,
+			MaxOpenConns: 10,
+			MaxIdleConns: 5,
+		},
 		Neo4j: Neo4jConfig{
 			URI:       "bolt://127.0.0.1:7687",
 			Username:  "neo4j",

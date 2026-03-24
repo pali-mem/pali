@@ -1,0 +1,33 @@
+services:
+  pali:
+    environment:
+      PALI_VECTOR_BACKEND: pgvector
+      PALI_PGVECTOR_DSN: postgres://${PGVECTOR_POSTGRES_USER:-postgres}:${PGVECTOR_POSTGRES_PASSWORD:-change-me}@postgres:5432/${PGVECTOR_POSTGRES_DB:-pali}?sslmode=disable
+      PALI_PGVECTOR_TABLE: ${PALI_PGVECTOR_TABLE:-pali_memories}
+      PALI_PGVECTOR_AUTO_MIGRATE: ${PALI_PGVECTOR_AUTO_MIGRATE:-true}
+      PALI_PGVECTOR_MAX_OPEN_CONNS: ${PALI_PGVECTOR_MAX_OPEN_CONNS:-10}
+      PALI_PGVECTOR_MAX_IDLE_CONNS: ${PALI_PGVECTOR_MAX_IDLE_CONNS:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    ports:
+      - "${PGVECTOR_BIND_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${PGVECTOR_POSTGRES_DB:-pali}
+      POSTGRES_USER: ${PGVECTOR_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${PGVECTOR_POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - pgvector-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  pgvector-data:

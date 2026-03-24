@@ -38,8 +38,14 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 	}
 	stopPostprocess := func() {}
 	closeEntityFactRepo := func() error { return nil }
+	closeVectorStore := func() error { return nil }
 	cleanup := func() error {
 		stopPostprocess()
+		if err := closeVectorStore(); err != nil {
+			_ = closeEntityFactRepo()
+			_ = db.Close()
+			return err
+		}
 		if err := closeEntityFactRepo(); err != nil {
 			_ = db.Close()
 			return err
@@ -55,33 +61,38 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 		return nil, nil, err
 	}
 	closeEntityFactRepo = entityFactCleanup
-	vectorStore, err := wiring.BuildVectorStore(cfg, db)
+	vectorStore, vectorCleanup, err := wiring.BuildVectorStore(cfg, db)
 	if err != nil {
 		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
+	closeVectorStore = vectorCleanup
 
 	embedder, embedMeta, err := embeddings.BuildWithMetadata(cfg)
 	if err != nil {
+		_ = closeVectorStore()
 		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
 	scorer, err := wiring.BuildImportanceScorer(cfg)
 	if err != nil {
+		_ = closeVectorStore()
 		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
 	infoParser, err := wiring.BuildInfoParser(cfg)
 	if err != nil {
+		_ = closeVectorStore()
 		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
 	}
 	decomposer, err := wiring.BuildMultiHopQueryDecomposer(cfg)
 	if err != nil {
+		_ = closeVectorStore()
 		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, err
@@ -100,6 +111,7 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 			RetryMax:     time.Duration(cfg.Postprocess.RetryMaxMS) * time.Millisecond,
 		})
 		if err != nil {
+			_ = closeVectorStore()
 			_ = closeEntityFactRepo()
 			_ = db.Close()
 			return nil, nil, fmt.Errorf("start postprocess workers: %w", err)
@@ -118,6 +130,7 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 
 	staticFS, err := fs.Sub(webassets.StaticFS, "static")
 	if err != nil {
+		_ = closeVectorStore()
 		_ = closeEntityFactRepo()
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("load embedded static assets: %w", err)
@@ -150,6 +163,7 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 	if cfg.Auth.Enabled {
 		authenticator, err := apiauth.NewJWTAuthenticator(cfg.Auth.JWTSecret, cfg.Auth.Issuer)
 		if err != nil {
+			_ = closeVectorStore()
 			_ = closeEntityFactRepo()
 			_ = db.Close()
 			return nil, nil, fmt.Errorf("initialize auth: %w", err)

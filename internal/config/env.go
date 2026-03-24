@@ -92,6 +92,12 @@ func applyEnvironment(cfg *Config) error {
 	overrides.string("PALI_QDRANT_COLLECTION", &cfg.Qdrant.Collection)
 	overrides.int("PALI_QDRANT_TIMEOUT_MS", &cfg.Qdrant.TimeoutMS)
 
+	overrides.string("PALI_PGVECTOR_DSN", &cfg.PGVector.DSN)
+	overrides.string("PALI_PGVECTOR_TABLE", &cfg.PGVector.Table)
+	overrides.bool("PALI_PGVECTOR_AUTO_MIGRATE", &cfg.PGVector.AutoMigrate)
+	overrides.int("PALI_PGVECTOR_MAX_OPEN_CONNS", &cfg.PGVector.MaxOpenConns)
+	overrides.int("PALI_PGVECTOR_MAX_IDLE_CONNS", &cfg.PGVector.MaxIdleConns)
+
 	overrides.string("PALI_NEO4J_URI", &cfg.Neo4j.URI)
 	overrides.string("PALI_NEO4J_USERNAME", &cfg.Neo4j.Username)
 	overrides.string("PALI_NEO4J_PASSWORD", &cfg.Neo4j.Password)

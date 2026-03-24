@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  commit_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+  tools:
+    golangci-lint:
+      enabled: true
+    yamllint:
+      enabled: true
+    hadolint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+  pre_merge_checks:
+    issue_assessment:
+      mode: warning
+    title:
+      mode: warning
+      requirements: "Use an imperative title that matches the actual change and mentions the main subsystem when useful."
+    description:
+      mode: warning
+    custom_checks:
+      - name: "Security Review"
+        mode: error
+        instructions: "Fail if the PR introduces obvious security risks such as hard-coded secrets, unsafe logging of credentials or tokens, missing tenant-isolation checks on new API or MCP paths, trust of unsanitized external input in shell/SQL/file operations, disabled auth or health protections without justification, or insecure default credentials without prominent documentation."
+      - name: "Config and Docs Sync"
+        mode: error
+        instructions: "Fail if public runtime behavior changes without matching updates to docs and examples. Review README.md, docs/configuration.md, pali.yaml.example, deploy/docker/pali.container.yaml, and relevant deployment or benchmark docs when config keys, supported backends, startup flows, or packaging behavior change."
+      - name: "Migration and Data Safety"
+        mode: warning
+        instructions: "Warn when a PR changes persistence, schema, vector storage, or packaging behavior without clear rollback or data-safety consideration. Look for migration expectations, backup implications, batch-write correctness, cleanup behavior, and multi-tenant isolation."
+
+chat:
+  auto_reply: true

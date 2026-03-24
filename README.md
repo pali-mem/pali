@@ -100,6 +100,8 @@ Current v0.2.0 core capabilities:
 - Tenant statistics and routing support
 - Tier auto-resolution (`episodic` vs `semantic`)
 - Optional JWT tenant-scoped auth
+- Vector backends: `sqlite`, `qdrant`, `pgvector`
+- Entity fact backends: `sqlite`, `neo4j`
 
 ## Install and Run Options
 
@@ -139,6 +141,7 @@ Compose files live under `deploy/docker/`:
 
 ```bash
 docker compose -f deploy/docker/compose.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.pgvector.yaml up --build
 docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yaml up --build
 docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.neo4j.yaml up --build
 docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.ollama.yaml up --build

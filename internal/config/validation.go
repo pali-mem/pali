@@ -171,6 +171,20 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("qdrant.timeout_ms must be >= 0")
 		}
 	}
+	if cfg.VectorBackend == "pgvector" {
+		if strings.TrimSpace(cfg.PGVector.DSN) == "" {
+			return fmt.Errorf("pgvector.dsn is required when vector_backend=pgvector")
+		}
+		if strings.TrimSpace(cfg.PGVector.Table) == "" {
+			return fmt.Errorf("pgvector.table is required when vector_backend=pgvector")
+		}
+		if cfg.PGVector.MaxOpenConns < 0 {
+			return fmt.Errorf("pgvector.max_open_conns must be >= 0")
+		}
+		if cfg.PGVector.MaxIdleConns < 0 {
+			return fmt.Errorf("pgvector.max_idle_conns must be >= 0")
+		}
+	}
 	if cfg.EntityFactBackend == "neo4j" {
 		if strings.TrimSpace(cfg.Neo4j.URI) == "" {
 			return fmt.Errorf("neo4j.uri is required when entity_fact_backend=neo4j")

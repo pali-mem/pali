@@ -87,7 +87,7 @@ Canonical config reference:
 Runtime notes:
 - `vector_backend=sqlite` is implemented.
 - `vector_backend=qdrant` is implemented using Qdrant HTTP API (`collections`, `points upsert/search/delete`) with tenant payload filters.
-- `vector_backend=pgvector` currently returns fail-fast startup errors (adapter not implemented yet).
+- `vector_backend=pgvector` is implemented using PostgreSQL + the `pgvector` extension with tenant-scoped upsert/search/delete support.
 - `entity_fact_backend=sqlite` is implemented.
 - `entity_fact_backend=neo4j` is implemented with batch-first UNWIND writes and relation lookup queries.
 - `importance_scorer=heuristic` is default.
@@ -128,7 +128,6 @@ scripts/release_gate.sh
 
 ## Known Gaps (Not Yet Implemented)
 
-- pgvector adapter + runtime wiring
 - richer tenant stats (tier/tag/recall breakdowns)
 - dashboard v2 features (pagination, inline edit/pin, recall history)
 - per-tenant WMR weight tuning

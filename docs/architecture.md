@@ -57,7 +57,7 @@ Operationally, this means enabling Qdrant or Neo4j does not stop the dashboard f
 
 Current extension points are all config-driven:
 
-- vector storage: `sqlite`, `qdrant`
+- vector storage: `sqlite`, `qdrant`, `pgvector`
 - entity facts: `sqlite`, `neo4j`
 - embeddings: `ollama`, `onnx`, `lexical`, `openrouter`
 - importance scoring: `heuristic`, `ollama`, `openrouter`

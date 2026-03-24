@@ -29,6 +29,12 @@ func main() {
 		qdrantCollection string
 		qdrantTimeoutMS  int
 
+		pgvectorDSN          string
+		pgvectorTable        string
+		pgvectorAutoMigrate  string
+		pgvectorMaxOpenConns int
+		pgvectorMaxIdleConns int
+
 		embeddingProvider       string
 		embeddingFallback       string
 		embeddingOllamaURL      string
@@ -57,6 +63,11 @@ func main() {
 	flag.StringVar(&qdrantAPIKey, "qdrant-api-key", "", "Override qdrant.api_key")
 	flag.StringVar(&qdrantCollection, "qdrant-collection", "", "Override qdrant.collection")
 	flag.IntVar(&qdrantTimeoutMS, "qdrant-timeout-ms", -1, "Override qdrant.timeout_ms")
+	flag.StringVar(&pgvectorDSN, "pgvector-dsn", "", "Override pgvector.dsn")
+	flag.StringVar(&pgvectorTable, "pgvector-table", "", "Override pgvector.table")
+	flag.StringVar(&pgvectorAutoMigrate, "pgvector-auto-migrate", "", "Override pgvector.auto_migrate (true|false)")
+	flag.IntVar(&pgvectorMaxOpenConns, "pgvector-max-open-conns", -1, "Override pgvector.max_open_conns")
+	flag.IntVar(&pgvectorMaxIdleConns, "pgvector-max-idle-conns", -1, "Override pgvector.max_idle_conns")
 
 	flag.StringVar(&embeddingProvider, "embedding-provider", "", "Override embedding.provider")
 	flag.StringVar(&embeddingFallback, "embedding-fallback-provider", "", "Override embedding.fallback_provider")
@@ -107,6 +118,25 @@ func main() {
 	}
 	if qdrantTimeoutMS >= 0 {
 		cfg.Qdrant.TimeoutMS = qdrantTimeoutMS
+	}
+	if strings.TrimSpace(pgvectorDSN) != "" {
+		cfg.PGVector.DSN = strings.TrimSpace(pgvectorDSN)
+	}
+	if strings.TrimSpace(pgvectorTable) != "" {
+		cfg.PGVector.Table = strings.TrimSpace(pgvectorTable)
+	}
+	if strings.TrimSpace(pgvectorAutoMigrate) != "" {
+		enabled, parseErr := strconv.ParseBool(strings.TrimSpace(pgvectorAutoMigrate))
+		if parseErr != nil {
+			exitf("invalid -pgvector-auto-migrate value %q: %v", pgvectorAutoMigrate, parseErr)
+		}
+		cfg.PGVector.AutoMigrate = enabled
+	}
+	if pgvectorMaxOpenConns >= 0 {
+		cfg.PGVector.MaxOpenConns = pgvectorMaxOpenConns
+	}
+	if pgvectorMaxIdleConns >= 0 {
+		cfg.PGVector.MaxIdleConns = pgvectorMaxIdleConns
 	}
 	if strings.TrimSpace(embeddingProvider) != "" {
 		cfg.Embedding.Provider = strings.ToLower(strings.TrimSpace(embeddingProvider))

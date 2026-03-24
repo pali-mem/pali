@@ -15,11 +15,12 @@ import (
 	heuristicscorer "github.com/pali-mem/pali/internal/scorer/heuristic"
 	ollamascorer "github.com/pali-mem/pali/internal/scorer/ollama"
 	openrouterscorer "github.com/pali-mem/pali/internal/scorer/openrouter"
+	pgvectorstore "github.com/pali-mem/pali/internal/vectorstore/pgvector"
 	qdrantstore "github.com/pali-mem/pali/internal/vectorstore/qdrant"
 	sqlitevec "github.com/pali-mem/pali/internal/vectorstore/sqlitevec"
 )
 
-func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, error) {
+func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, func() error, error) {
 	backend := strings.ToLower(strings.TrimSpace(cfg.VectorBackend))
 	if backend == "" {
 		backend = "sqlite"
@@ -27,18 +28,28 @@ func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, error)
 
 	switch backend {
 	case "sqlite":
-		return sqlitevec.NewStore(db), nil
+		return sqlitevec.NewStore(db), func() error { return nil }, nil
 	case "qdrant":
 		timeout := time.Duration(cfg.Qdrant.TimeoutMS) * time.Millisecond
 		client, err := qdrantstore.NewClient(cfg.Qdrant.BaseURL, cfg.Qdrant.APIKey, cfg.Qdrant.Collection, timeout)
 		if err != nil {
-			return nil, fmt.Errorf("initialize qdrant client: %w", err)
+			return nil, nil, fmt.Errorf("initialize qdrant client: %w", err)
 		}
-		return qdrantstore.NewStore(client), nil
+		return qdrantstore.NewStore(client), func() error { return nil }, nil
 	case "pgvector":
-		return nil, fmt.Errorf("vector_backend=pgvector is not implemented yet; use sqlite for now")
+		store, err := pgvectorstore.NewStore(pgvectorstore.Options{
+			DSN:          cfg.PGVector.DSN,
+			Table:        cfg.PGVector.Table,
+			AutoMigrate:  cfg.PGVector.AutoMigrate,
+			MaxOpenConns: cfg.PGVector.MaxOpenConns,
+			MaxIdleConns: cfg.PGVector.MaxIdleConns,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("initialize pgvector store: %w", err)
+		}
+		return store, store.Close, nil
 	default:
-		return nil, fmt.Errorf("unsupported vector_backend: %q", cfg.VectorBackend)
+		return nil, nil, fmt.Errorf("unsupported vector_backend: %q", cfg.VectorBackend)
 	}
 }
 

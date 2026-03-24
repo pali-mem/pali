@@ -20,6 +20,7 @@ type Config struct {
 	ProfileLayer      ProfileLayerConfig     `yaml:"profile_layer"`
 	Database          Database               `yaml:"database"`
 	Qdrant            QdrantConfig           `yaml:"qdrant"`
+	PGVector          PGVectorConfig         `yaml:"pgvector"`
 	Neo4j             Neo4jConfig            `yaml:"neo4j"`
 	Embedding         Embedding              `yaml:"embedding"`
 	OpenRouter        OpenRouterConfig       `yaml:"openrouter"`
@@ -62,6 +63,14 @@ type QdrantConfig struct {
 	APIKey     string `yaml:"api_key"`
 	Collection string `yaml:"collection"`
 	TimeoutMS  int    `yaml:"timeout_ms"`
+}
+
+type PGVectorConfig struct {
+	DSN          string `yaml:"dsn"`
+	Table        string `yaml:"table"`
+	AutoMigrate  bool   `yaml:"auto_migrate"`
+	MaxOpenConns int    `yaml:"max_open_conns"`
+	MaxIdleConns int    `yaml:"max_idle_conns"`
 }
 
 type Neo4jConfig struct {

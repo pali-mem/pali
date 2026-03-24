@@ -44,6 +44,7 @@ For one-command stacks with optional services, use:
 
 ```bash
 docker compose -f deploy/docker/compose.yaml up --build
+docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.pgvector.yaml up --build
 docker compose -f deploy/docker/compose.yaml -f deploy/docker/compose.qdrant.yaml up --build
 ```
 
