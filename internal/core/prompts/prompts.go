@@ -1,3 +1,4 @@
+// Package prompts assembles model prompts used by memory and scoring workflows.
 package prompts
 
 import (
@@ -5,6 +6,7 @@ import (
 	"fmt"
 )
 
+// Parser returns the prompt used to extract structured facts from a turn.
 func Parser(content string, maxFacts int) string {
 	return fmt.Sprintf(
 		"Extract high-signal factual memories from one dialogue turn.\n"+
@@ -36,6 +38,7 @@ func Parser(content string, maxFacts int) string {
 	)
 }
 
+// MultiHopDecomposition returns the prompt used to split multi-hop queries.
 func MultiHopDecomposition(query string, maxQueries int) string {
 	return fmt.Sprintf(
 		"Decompose this multi-hop memory query into atomic retrieval sub-queries.\n"+
@@ -52,6 +55,7 @@ func MultiHopDecomposition(query string, maxQueries int) string {
 	)
 }
 
+// Score returns the prompt used to rate memory importance.
 func Score(content string) string {
 	return "You are scoring memory importance for long-term retrieval.\n" +
 		"Return only one decimal number between 0 and 1.\n" +
@@ -60,6 +64,7 @@ func Score(content string) string {
 		"Memory:\n" + content
 }
 
+// BatchScore returns the prompt used to rate a batch of memories.
 func BatchScore(contents []string) string {
 	payload, _ := json.Marshal(contents)
 	return "You are scoring memory importance for long-term retrieval.\n" +

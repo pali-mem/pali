@@ -1,3 +1,4 @@
+// Package config loads, validates, and provides defaults for application configuration.
 package config
 
 import (
@@ -7,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config holds the complete application configuration.
 type Config struct {
 	Server            ServerConfig           `yaml:"server"`
 	VectorBackend     string                 `yaml:"vector_backend"`
@@ -28,11 +30,13 @@ type Config struct {
 	Logging           LoggingConfig          `yaml:"logging"`
 }
 
+// ServerConfig configures the HTTP server bind address.
 type ServerConfig struct {
 	Host string `yaml:"host"`
 	Port int    `yaml:"port"`
 }
 
+// Embedding configures embedding providers and local model paths.
 type Embedding struct {
 	Provider             string `yaml:"provider"`
 	FallbackProvider     string `yaml:"fallback_provider"`
@@ -43,12 +47,14 @@ type Embedding struct {
 	OllamaTimeoutSeconds int    `yaml:"ollama_timeout_seconds"`
 }
 
+// OllamaConfig configures Ollama connectivity.
 type OllamaConfig struct {
 	BaseURL   string `yaml:"base_url"`
 	Model     string `yaml:"model"`
 	TimeoutMS int    `yaml:"timeout_ms"`
 }
 
+// OpenRouterConfig configures OpenRouter connectivity and model selection.
 type OpenRouterConfig struct {
 	BaseURL        string `yaml:"base_url"`
 	APIKey         string `yaml:"api_key"`
@@ -57,6 +63,7 @@ type OpenRouterConfig struct {
 	TimeoutMS      int    `yaml:"timeout_ms"`
 }
 
+// QdrantConfig configures the Qdrant vector store.
 type QdrantConfig struct {
 	BaseURL    string `yaml:"base_url"`
 	APIKey     string `yaml:"api_key"`
@@ -64,6 +71,7 @@ type QdrantConfig struct {
 	TimeoutMS  int    `yaml:"timeout_ms"`
 }
 
+// Neo4jConfig configures the Neo4j entity-fact store.
 type Neo4jConfig struct {
 	URI       string `yaml:"uri"`
 	Username  string `yaml:"username"`
@@ -73,16 +81,19 @@ type Neo4jConfig struct {
 	BatchSize int    `yaml:"batch_size"`
 }
 
+// AuthConfig configures API authentication.
 type AuthConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	JWTSecret string `yaml:"jwt_secret"`
 	Issuer    string `yaml:"issuer"`
 }
 
+// Database configures the primary SQLite database.
 type Database struct {
 	SQLiteDSN string `yaml:"sqlite_dsn"`
 }
 
+// StructuredMemoryConfig configures structured-memory dual writes.
 type StructuredMemoryConfig struct {
 	Enabled               bool `yaml:"enabled"`
 	DualWriteObservations bool `yaml:"dual_write_observations"`
@@ -90,6 +101,7 @@ type StructuredMemoryConfig struct {
 	MaxObservations       int  `yaml:"max_observations"`
 }
 
+// PostprocessConfig configures postprocess worker execution.
 type PostprocessConfig struct {
 	Enabled        bool `yaml:"enabled"`
 	PollIntervalMS int  `yaml:"poll_interval_ms"`
@@ -101,6 +113,7 @@ type PostprocessConfig struct {
 	RetryMaxMS     int  `yaml:"retry_max_ms"`
 }
 
+// RetrievalConfig configures retrieval scoring and search behavior.
 type RetrievalConfig struct {
 	Scoring                              RetrievalScoringConfig  `yaml:"scoring"`
 	Search                               RetrievalSearchConfig   `yaml:"search"`
@@ -111,6 +124,7 @@ type RetrievalConfig struct {
 	OpenDomainAlternativeResolverEnabled bool                    `yaml:"open_domain_alternative_resolver_enabled"`
 }
 
+// RetrievalSearchConfig configures search-window tuning.
 type RetrievalSearchConfig struct {
 	AdaptiveQueryExpansionEnabled        bool    `yaml:"adaptive_query_expansion_enabled"`
 	AdaptiveQueryMaxExtraQueries         int     `yaml:"adaptive_query_max_extra_queries"`
@@ -126,12 +140,14 @@ type RetrievalSearchConfig struct {
 	EarlyRerankMaxWindow                 int     `yaml:"early_rerank_max_window"`
 }
 
+// RetrievalScoringConfig configures the retrieval scoring algorithm and weights.
 type RetrievalScoringConfig struct {
 	Algorithm string                    `yaml:"algorithm"`
 	WAL       ScoringWeightsConfig      `yaml:"wal"`
 	Match     MatchScoringWeightsConfig `yaml:"match"`
 }
 
+// RetrievalMultiHopConfig configures multi-hop retrieval behavior.
 type RetrievalMultiHopConfig struct {
 	EntityFactBridgeEnabled    bool    `yaml:"entity_fact_bridge_enabled"`
 	LLMDecompositionEnabled    bool    `yaml:"llm_decomposition_enabled"`
@@ -153,12 +169,14 @@ type RetrievalMultiHopConfig struct {
 	GraphSingletonInvalidation bool    `yaml:"graph_singleton_invalidation"`
 }
 
+// ScoringWeightsConfig configures weighted additive scoring.
 type ScoringWeightsConfig struct {
 	Recency    float64 `yaml:"recency"`
 	Relevance  float64 `yaml:"relevance"`
 	Importance float64 `yaml:"importance"`
 }
 
+// MatchScoringWeightsConfig configures match scoring weights.
 type MatchScoringWeightsConfig struct {
 	Recency      float64 `yaml:"recency"`
 	Relevance    float64 `yaml:"relevance"`
@@ -167,8 +185,9 @@ type MatchScoringWeightsConfig struct {
 	Routing      float64 `yaml:"routing"`
 }
 
+// ParserConfig configures the structured-memory parser.
 type ParserConfig struct {
-	Enabled                    bool    `yaml:"enabled"`
+	Enabled                    bool    `yaml:"enabled"` // Whether to enable the parser at all.
 	Provider                   string  `yaml:"provider"`
 	OllamaBaseURL              string  `yaml:"ollama_base_url"`
 	OllamaModel                string  `yaml:"ollama_model"`
@@ -181,15 +200,18 @@ type ParserConfig struct {
 	AnswerSpanRetentionEnabled bool    `yaml:"answer_span_retention_enabled"`
 }
 
+// ProfileLayerConfig configures profile-layer features.
 type ProfileLayerConfig struct {
 	SupportLinksEnabled bool `yaml:"support_links_enabled"`
 }
 
+// LoggingConfig configures developer-facing logging behavior.
 type LoggingConfig struct {
 	DevVerbose bool `yaml:"dev_verbose"`
 	Progress   bool `yaml:"progress"`
 }
 
+// Load reads configuration from disk, applies environment overrides, and validates the result.
 func Load(path string) (Config, error) {
 	cfg := Defaults()
 
