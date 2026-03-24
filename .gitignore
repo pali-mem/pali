@@ -62,6 +62,9 @@ test/benchmarks/generated/
 # Research
 /research/*
 
+# Scratchpad notes
+TODO.md
+
 # Built binaries (root-level)
 genfix
 /pali
