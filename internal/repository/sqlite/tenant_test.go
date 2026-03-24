@@ -13,7 +13,7 @@ func TestTenantRepositoryCreateExists(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	repo := NewTenantRepository(db)
 	created, err := repo.Create(ctx, domain.Tenant{
@@ -41,7 +41,7 @@ func TestTenantRepositoryListMemoryCounts(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memoryRepo := NewMemoryRepository(db)

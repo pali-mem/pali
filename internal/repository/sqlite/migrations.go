@@ -10,7 +10,7 @@ import (
 const (
 	countMemoriesForFTSBackfillSQL = `SELECT COUNT(1) FROM memories;`
 	countMemoryFTSRowsSQL          = `SELECT COUNT(1) FROM memory_fts;`
-	backfillMemoryFTSAllSQL = `
+	backfillMemoryFTSAllSQL        = `
 INSERT INTO memory_fts(content, tenant_id, memory_id)
 SELECT content, tenant_id, id
 FROM memories;
@@ -138,6 +138,7 @@ var migrationStatements = []string{
 	`CREATE INDEX IF NOT EXISTS idx_memory_postprocess_jobs_tenant ON memory_postprocess_jobs(tenant_id, updated_at DESC);`,
 }
 
+// RunMigrations applies schema changes to the SQLite database.
 func RunMigrations(ctx context.Context, db *sql.DB) error {
 	for _, stmt := range migrationStatements {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {

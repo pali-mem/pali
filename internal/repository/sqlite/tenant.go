@@ -10,14 +10,17 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// TenantRepository stores and queries tenant records in SQLite.
 type TenantRepository struct {
 	db *sql.DB
 }
 
+// NewTenantRepository builds a SQLite-backed tenant repository.
 func NewTenantRepository(db *sql.DB) *TenantRepository {
 	return &TenantRepository{db: db}
 }
 
+// Create inserts a tenant record.
 func (r *TenantRepository) Create(ctx context.Context, t domain.Tenant) (domain.Tenant, error) {
 	if strings.TrimSpace(t.ID) == "" || strings.TrimSpace(t.Name) == "" {
 		return domain.Tenant{}, domain.ErrInvalidInput
@@ -33,6 +36,7 @@ func (r *TenantRepository) Create(ctx context.Context, t domain.Tenant) (domain.
 	return t, nil
 }
 
+// Exists reports whether a tenant exists.
 func (r *TenantRepository) Exists(ctx context.Context, tenantID string) (bool, error) {
 	if strings.TrimSpace(tenantID) == "" {
 		return false, domain.ErrInvalidInput
@@ -44,6 +48,7 @@ func (r *TenantRepository) Exists(ctx context.Context, tenantID string) (bool, e
 	return exists, nil
 }
 
+// MemoryCount returns the number of memories for a tenant.
 func (r *TenantRepository) MemoryCount(ctx context.Context, tenantID string) (int64, error) {
 	if strings.TrimSpace(tenantID) == "" {
 		return 0, domain.ErrInvalidInput
@@ -55,6 +60,7 @@ func (r *TenantRepository) MemoryCount(ctx context.Context, tenantID string) (in
 	return count, nil
 }
 
+// Count returns the total tenant count.
 func (r *TenantRepository) Count(ctx context.Context) (int64, error) {
 	var count int64
 	if err := r.db.QueryRowContext(ctx, CountTenantsSQL).Scan(&count); err != nil {
@@ -63,6 +69,7 @@ func (r *TenantRepository) Count(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
+// List returns tenant records ordered by most recent creation time.
 func (r *TenantRepository) List(ctx context.Context, limit int) ([]domain.Tenant, error) {
 	if limit <= 0 {
 		limit = 100
@@ -72,7 +79,7 @@ func (r *TenantRepository) List(ctx context.Context, limit int) ([]domain.Tenant
 	if err != nil {
 		return nil, fmt.Errorf("list tenants: %w", err)
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	out := make([]domain.Tenant, 0, limit)
 	for rows.Next() {
@@ -95,6 +102,7 @@ func (r *TenantRepository) List(ctx context.Context, limit int) ([]domain.Tenant
 	return out, nil
 }
 
+// ListMemoryCounts returns memory counts for a set of tenant IDs.
 func (r *TenantRepository) ListMemoryCounts(ctx context.Context, tenantIDs []string) (map[string]int64, error) {
 	out := make(map[string]int64, len(tenantIDs))
 	if len(tenantIDs) == 0 {
@@ -121,7 +129,7 @@ func (r *TenantRepository) ListMemoryCounts(ctx context.Context, tenantIDs []str
 	if err != nil {
 		return nil, fmt.Errorf("list tenant memory counts: %w", err)
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	for rows.Next() {
 		var tenantID string

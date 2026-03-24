@@ -10,14 +10,17 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// EntityFactRepository stores and queries normalized entity facts in SQLite.
 type EntityFactRepository struct {
 	db *sql.DB
 }
 
+// NewEntityFactRepository builds a SQLite-backed entity fact repository.
 func NewEntityFactRepository(db *sql.DB) *EntityFactRepository {
 	return &EntityFactRepository{db: db}
 }
 
+// Store inserts a single entity fact.
 func (r *EntityFactRepository) Store(ctx context.Context, fact domain.EntityFact) (domain.EntityFact, error) {
 	now := time.Now().UTC()
 	if err := prepareEntityFactForStore(&fact, now); err != nil {
@@ -44,6 +47,7 @@ func (r *EntityFactRepository) Store(ctx context.Context, fact domain.EntityFact
 	return fact, nil
 }
 
+// StoreBatch inserts a batch of entity facts in one transaction.
 func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.EntityFact) ([]domain.EntityFact, error) {
 	if len(facts) == 0 {
 		return []domain.EntityFact{}, nil
@@ -54,7 +58,7 @@ func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.En
 	if err != nil {
 		return nil, fmt.Errorf("begin entity fact batch transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer rollbackTx(tx)
 
 	out := make([]domain.EntityFact, 0, len(facts))
 	for i := range facts {
@@ -89,6 +93,7 @@ func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.En
 	return out, nil
 }
 
+// ListByEntityRelation returns facts for an entity/relation pair.
 func (r *EntityFactRepository) ListByEntityRelation(
 	ctx context.Context,
 	tenantID, entity, relation string,
@@ -108,7 +113,7 @@ func (r *EntityFactRepository) ListByEntityRelation(
 	if err != nil {
 		return nil, fmt.Errorf("list entity facts by relation: %w", err)
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	out := make([]domain.EntityFact, 0, limit)
 	for rows.Next() {
@@ -186,6 +191,7 @@ func prepareEntityFactForStore(fact *domain.EntityFact, now time.Time) error {
 	return nil
 }
 
+// InvalidateEntityRelation marks older facts as invalidated.
 func (r *EntityFactRepository) InvalidateEntityRelation(
 	ctx context.Context,
 	tenantID, entity, relation, activeValue, invalidatedByFactID string,
