@@ -14,7 +14,6 @@ const defaultDimension = 256
 var tokenPattern = regexp.MustCompile(`[a-zA-Z0-9_]+`)
 
 // Embedder is the pure-Go lexical provider implementation (legacy name: mock).
-// Embedder is the pure-Go lexical provider implementation (legacy name: mock).
 type Embedder struct {
 	dim int
 }
