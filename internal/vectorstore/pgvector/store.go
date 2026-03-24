@@ -164,7 +164,9 @@ func (s *Store) Search(ctx context.Context, tenantID string, embedding []float32
 	if err != nil {
 		return nil, fmt.Errorf("search pgvector embeddings: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	candidates := make([]domain.VectorstoreCandidate, 0, topK)
 	for rows.Next() {
