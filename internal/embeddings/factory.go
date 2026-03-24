@@ -1,3 +1,4 @@
+// Package embeddings builds embedding providers from configuration.
 package embeddings
 
 import (
@@ -13,6 +14,7 @@ import (
 	embedopenrouter "github.com/pali-mem/pali/internal/embeddings/openrouter"
 )
 
+// BuildMetadata reports how the embedding provider was resolved.
 type BuildMetadata struct {
 	PrimaryProvider  string
 	ResolvedProvider string
@@ -20,11 +22,13 @@ type BuildMetadata struct {
 	UsedFallback     bool
 }
 
+// Build constructs the configured embedder.
 func Build(cfg config.Config) (domain.Embedder, error) {
 	embedder, _, err := BuildWithMetadata(cfg)
 	return embedder, err
 }
 
+// BuildWithMetadata constructs the configured embedder and returns resolution details.
 func BuildWithMetadata(cfg config.Config) (domain.Embedder, BuildMetadata, error) {
 	primary := providerOrDefault(cfg.Embedding.Provider)
 	embedder, err := buildProvider(primary, cfg)

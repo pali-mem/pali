@@ -1,3 +1,4 @@
+// Package ollama provides Ollama-backed embeddings.
 package ollama
 
 import (
@@ -19,6 +20,7 @@ const (
 	defaultTimeout = 10 * time.Second
 )
 
+// Embedder wraps the Ollama embeddings API.
 type Embedder struct {
 	baseURL string
 	model   string
@@ -45,6 +47,7 @@ type ollamaError struct {
 	Error string `json:"error"`
 }
 
+// NewEmbedder constructs an Ollama embedder.
 func NewEmbedder(baseURL, model string, timeout time.Duration) (*Embedder, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -72,6 +75,7 @@ func NewEmbedder(baseURL, model string, timeout time.Duration) (*Embedder, error
 	return e, nil
 }
 
+// Embed returns an embedding for a single text.
 func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	embeddings, err := e.BatchEmbed(ctx, []string{text})
 	if err != nil {
@@ -80,6 +84,7 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	return embeddings[0], nil
 }
 
+// BatchEmbed returns embeddings for a batch of texts.
 func (e *Embedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	if e == nil {
 		return nil, fmt.Errorf("ollama embedder is nil")
@@ -269,7 +274,9 @@ func (e *Embedder) do(ctx context.Context, method, path string, body []byte) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

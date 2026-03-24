@@ -1,5 +1,6 @@
 //go:build !onnx
 
+// Package onnx provides a compile-time stub when the onnx build tag is absent.
 package onnx
 
 import (
