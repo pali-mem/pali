@@ -8,6 +8,7 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// Service coordinates memory storage, retrieval, parsing, and ranking.
 type Service struct {
 	repo       domain.MemoryRepository
 	entityRepo domain.EntityFactRepository
@@ -31,6 +32,7 @@ type Service struct {
 	progress                   bool
 }
 
+// StructuredMemoryOptions configures structured-memory dual writes.
 type StructuredMemoryOptions struct {
 	Enabled               bool
 	DualWriteObservations bool
@@ -38,6 +40,7 @@ type StructuredMemoryOptions struct {
 	MaxObservations       int
 }
 
+// RetrievalBehaviorOptions configures retrieval-time feature flags.
 type RetrievalBehaviorOptions struct {
 	AnswerTypeRoutingEnabled             bool
 	EarlyRankRerankEnabled               bool
@@ -47,6 +50,7 @@ type RetrievalBehaviorOptions struct {
 	SearchTuning                         RetrievalSearchTuningOptions
 }
 
+// RetrievalSearchTuningOptions configures search window and expansion tuning.
 type RetrievalSearchTuningOptions struct {
 	AdaptiveQueryExpansionEnabled        bool
 	AdaptiveQueryMaxExtraQueries         int
@@ -62,18 +66,21 @@ type RetrievalSearchTuningOptions struct {
 	EarlyRerankMaxWindow                 int
 }
 
+// RankingOptions configures final memory scoring.
 type RankingOptions struct {
 	Algorithm string
 	WAL       WALWeights
 	Match     MatchWeights
 }
 
+// WALWeights configures weighted-additive scoring weights.
 type WALWeights struct {
 	Recency    float64
 	Relevance  float64
 	Importance float64
 }
 
+// MatchWeights configures match-score weights.
 type MatchWeights struct {
 	Recency      float64
 	Relevance    float64
@@ -82,13 +89,14 @@ type MatchWeights struct {
 	Routing      float64
 }
 
+// RerankOptions configures late reranking of candidate memories.
 type RerankOptions struct {
-	Enabled  bool
-	Provider string
-	Window   int
-	Blend    float64
+	Enabled bool
+	Window  int
+	Blend   float64
 }
 
+// MultiHopOptions configures multi-hop query expansion and graph search.
 type MultiHopOptions struct {
 	EntityFactBridgeEnabled    bool
 	LLMDecompositionEnabled    bool
@@ -105,6 +113,7 @@ type MultiHopOptions struct {
 	GraphSingletonInvalidation bool
 }
 
+// ParserOptions configures memory fact extraction from content.
 type ParserOptions struct {
 	Enabled                    bool
 	Provider                   string
@@ -116,6 +125,7 @@ type ParserOptions struct {
 	AnswerSpanRetentionEnabled bool
 }
 
+// ParsedFact is a normalized fact extracted from memory content.
 type ParsedFact struct {
 	Content        string
 	QueryViewText  string
@@ -127,10 +137,12 @@ type ParsedFact struct {
 	AnswerMetadata domain.MemoryAnswerMetadata
 }
 
+// InfoParser extracts structured facts from content.
 type InfoParser interface {
 	Parse(ctx context.Context, content string, maxFacts int) ([]ParsedFact, error)
 }
 
+// ServiceOption customizes memory service construction.
 type ServiceOption interface {
 	apply(*Service)
 }
@@ -241,22 +253,27 @@ func (o canonicalEntityKindsOption) apply(s *Service) {
 	s.preferCanonicalEntityKinds = o.enabled
 }
 
+// WithInfoParser sets the content parser used for extracted facts.
 func WithInfoParser(parser InfoParser) ServiceOption {
 	return parserImplOption{parser: parser}
 }
 
+// WithMultiHopQueryDecomposer sets the multi-hop query decomposer.
 func WithMultiHopQueryDecomposer(decomposer MultiHopQueryDecomposer) ServiceOption {
 	return decomposerOption{decomposer: decomposer}
 }
 
+// WithEntityFactRepository sets the repository used for entity facts.
 func WithEntityFactRepository(repo domain.EntityFactRepository) ServiceOption {
 	return entityFactRepoOption{repo: repo}
 }
 
+// WithLogger sets the logger used by the service.
 func WithLogger(logger *log.Logger) ServiceOption {
 	return loggerOption{logger: logger}
 }
 
+// WithDebug enables verbose and progress logging for service operations.
 func WithDebug(verbose bool, progress bool) ServiceOption {
 	return debugOptions{
 		verbose:  verbose,
@@ -264,6 +281,7 @@ func WithDebug(verbose bool, progress bool) ServiceOption {
 	}
 }
 
+// WithImplicitCanonicalKindsForEntityFacts toggles canonical kind expansion.
 func WithImplicitCanonicalKindsForEntityFacts(enabled bool) ServiceOption {
 	return canonicalEntityKindsOption{enabled: enabled}
 }
@@ -356,10 +374,9 @@ func defaultMultiHopOptions() MultiHopOptions {
 
 func defaultRerankOptions() RerankOptions {
 	return RerankOptions{
-		Enabled:  true,
-		Provider: "pairwise",
-		Window:   50,
-		Blend:    0.40,
+		Enabled: true,
+		Window:  50,
+		Blend:   0.40,
 	}
 }
 
@@ -500,8 +517,6 @@ func normalizeMultiHopOptions(in MultiHopOptions) MultiHopOptions {
 func normalizeRerankOptions(in RerankOptions) RerankOptions {
 	def := defaultRerankOptions()
 	out := in
-	out.Enabled = true
-	out.Provider = def.Provider
 	if out.Window <= 0 {
 		out.Window = def.Window
 	}
@@ -517,6 +532,7 @@ func normalizeRerankOptions(in RerankOptions) RerankOptions {
 	return out
 }
 
+// NewService constructs a memory service with the provided dependencies.
 func NewService(
 	repo domain.MemoryRepository,
 	tenantRepo domain.TenantRepository,
