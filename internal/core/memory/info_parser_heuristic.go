@@ -47,6 +47,7 @@ var shortRoleGazetteer = map[string]struct{}{
 
 type heuristicInfoParser struct{}
 
+// NewHeuristicInfoParser returns the heuristic parser implementation.
 func NewHeuristicInfoParser() InfoParser {
 	return heuristicInfoParser{}
 }

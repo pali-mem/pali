@@ -891,10 +891,9 @@ func TestSearchWithPairwiseRerankPromotesBetterQueryDocumentFit(t *testing.T) {
 		retrievalEmbedderStub{},
 		retrievalScorerStub{},
 		RerankOptions{
-			Enabled:  true,
-			Provider: "pairwise",
-			Window:   50,
-			Blend:    1.0,
+			Enabled: true,
+			Window:  50,
+			Blend:   1.0,
 		},
 	)
 	results, err := svc.Search(context.Background(), "tenant_1", "which group did caroline join", 5)

@@ -166,30 +166,6 @@ func (structuredEmbedderStub) Embed(ctx context.Context, text string) ([]float32
 	return vec, nil
 }
 
-type forcedSimilarityVectorStub struct {
-	candidateID string
-}
-
-func (v *forcedSimilarityVectorStub) Upsert(ctx context.Context, tenantID, memoryID string, embedding []float32) error {
-	if strings.TrimSpace(v.candidateID) == "" {
-		v.candidateID = memoryID
-	}
-	return nil
-}
-
-func (*forcedSimilarityVectorStub) Delete(ctx context.Context, tenantID, memoryID string) error {
-	return nil
-}
-
-func (v *forcedSimilarityVectorStub) Search(ctx context.Context, tenantID string, embedding []float32, topK int) ([]domain.VectorstoreCandidate, error) {
-	if strings.TrimSpace(v.candidateID) == "" {
-		return []domain.VectorstoreCandidate{}, nil
-	}
-	return []domain.VectorstoreCandidate{
-		{MemoryID: v.candidateID, Similarity: 0.99},
-	}, nil
-}
-
 func cosineSimilarityF32(a, b []float32) float64 {
 	n := len(a)
 	if len(b) < n {

@@ -17,7 +17,7 @@ func TestPostprocessWorkerVectorJobSucceeds(t *testing.T) {
 	ctx := context.Background()
 	db, err := sqliterepo.Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
@@ -80,7 +80,7 @@ func TestPostprocessWorkerParserJobCreatesDerivedMemories(t *testing.T) {
 	ctx := context.Background()
 	db, err := sqliterepo.Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)
@@ -159,7 +159,7 @@ func TestPostprocessWorkerParserJobRetainsAnswerMetadataAndDropsScaffolds(t *tes
 	ctx := context.Background()
 	db, err := sqliterepo.Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	tenantRepo := sqliterepo.NewTenantRepository(db)
 	memoryRepo := sqliterepo.NewMemoryRepository(db)

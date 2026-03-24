@@ -67,7 +67,7 @@ func TestOllamaInfoParser_ParseHappyPath(t *testing.T) {
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -94,7 +94,7 @@ func TestOllamaInfoParser_ParseEventKind(t *testing.T) {
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -114,7 +114,7 @@ func TestOllamaInfoParser_ParseLimitsToMaxFacts(t *testing.T) {
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -131,7 +131,7 @@ func TestOllamaInfoParser_ParseDeduplicatesFacts(t *testing.T) {
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -148,7 +148,7 @@ func TestOllamaInfoParser_ParseFiltersLowSignalFacts(t *testing.T) {
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -162,7 +162,7 @@ func TestOllamaInfoParser_ParseFiltersLowSignalFacts(t *testing.T) {
 func TestOllamaInfoParser_ParseHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal server error"))
+		_, _ = w.Write([]byte("internal server error"))
 	}))
 	defer srv.Close()
 
@@ -174,7 +174,7 @@ func TestOllamaInfoParser_ParseHTTPError(t *testing.T) {
 func TestOllamaInfoParser_ParseInvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody("not json at all"))
+		_, _ = w.Write(makeOllamaBody("not json at all"))
 	}))
 	defer srv.Close()
 
@@ -190,7 +190,7 @@ func TestOllamaInfoParser_ParseInfersEntityWhenMissing(t *testing.T) {
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -207,7 +207,7 @@ func TestOllamaInfoParser_ParsePreservesProvidedRelationValueWhenEntityMissing(t
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(makeOllamaBody(parserJSON))
+		_, _ = w.Write(makeOllamaBody(parserJSON))
 	}))
 	defer srv.Close()
 
@@ -228,13 +228,13 @@ func TestNewOllamaInfoParser_PrefightSucceeds(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/version":
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"version":"0.5.0"}`))
+			_, _ = w.Write([]byte(`{"version":"0.5.0"}`))
 		case "/api/tags":
 			b, _ := json.Marshal(map[string]any{
 				"models": []map[string]any{{"name": model}},
 			})
 			w.WriteHeader(http.StatusOK)
-			w.Write(b)
+			_, _ = w.Write(b)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -251,13 +251,13 @@ func TestNewOllamaInfoParser_PrefightFailsModelMissing(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/version":
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"version":"0.5.0"}`))
+			_, _ = w.Write([]byte(`{"version":"0.5.0"}`))
 		case "/api/tags":
 			b, _ := json.Marshal(map[string]any{
 				"models": []map[string]any{{"name": "some-other-model"}},
 			})
 			w.WriteHeader(http.StatusOK)
-			w.Write(b)
+			_, _ = w.Write(b)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
