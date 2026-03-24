@@ -22,14 +22,9 @@ const (
 	minParsedFactContentLength      = 25
 )
 
-var dualWriteNegationTokens = map[string]struct{}{
-	"not":   {},
-	"no":    {},
-	"never": {},
-}
-
 var factCompoundSplitPattern = regexp.MustCompile(`(?i)\s+and\s+`)
 
+// StoreInput is the normalized input used to persist a memory.
 type StoreInput struct {
 	TenantID       string
 	Content        string
@@ -41,6 +36,7 @@ type StoreInput struct {
 	AnswerMetadata domain.MemoryAnswerMetadata
 }
 
+// Store writes a single memory.
 func (s *Service) Store(ctx context.Context, in StoreInput) (domain.Memory, error) {
 	stored, err := s.StoreBatch(ctx, []StoreInput{in})
 	if err != nil {
@@ -59,6 +55,7 @@ type preparedStoreInput struct {
 	resolvedKind domain.MemoryKind
 }
 
+// StoreBatch writes multiple memories.
 func (s *Service) StoreBatch(ctx context.Context, inputs []StoreInput) ([]domain.Memory, error) {
 	if len(inputs) == 0 {
 		return []domain.Memory{}, nil
@@ -513,15 +510,6 @@ func (s *Service) applyParsedFact(
 		return nil, err
 	}
 	return &stored, nil
-}
-
-func shouldReplaceMemory(existing domain.Memory, nextContent string) bool {
-	existingLen := len(strings.TrimSpace(existing.Content))
-	nextLen := len(strings.TrimSpace(nextContent))
-	if nextLen == 0 {
-		return false
-	}
-	return nextLen >= existingLen+12
 }
 
 func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored domain.Memory) error {
