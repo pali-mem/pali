@@ -1,7 +1,9 @@
+// Package dto defines request and response payloads for the HTTP API.
 package dto
 
 import "time"
 
+// StoreMemoryRequest describes a single memory to be stored.
 type StoreMemoryRequest struct {
 	TenantID       string             `json:"tenant_id"`
 	Content        string             `json:"content"`
@@ -13,10 +15,12 @@ type StoreMemoryRequest struct {
 	AnswerMetadata *AnswerMetadataDTO `json:"answer_metadata,omitempty"`
 }
 
+// StoreMemoryBatchRequest wraps a batch of memory-store requests.
 type StoreMemoryBatchRequest struct {
 	Items []StoreMemoryRequest `json:"items"`
 }
 
+// IngestMemoryResponse reports the accepted ingest job IDs.
 type IngestMemoryResponse struct {
 	IngestID   string    `json:"ingest_id"`
 	MemoryIDs  []string  `json:"memory_ids"`
@@ -24,6 +28,7 @@ type IngestMemoryResponse struct {
 	AcceptedAt time.Time `json:"accepted_at"`
 }
 
+// SearchMemoryRequest describes a memory search request.
 type SearchMemoryRequest struct {
 	TenantID      string   `json:"tenant_id"`
 	Query         string   `json:"query"`
@@ -36,15 +41,18 @@ type SearchMemoryRequest struct {
 	Debug         bool     `json:"debug,omitempty"`
 }
 
+// StoreMemoryResponse reports a single stored memory.
 type StoreMemoryResponse struct {
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// StoreMemoryBatchResponse reports the results of a batch store.
 type StoreMemoryBatchResponse struct {
 	Items []StoreMemoryResponse `json:"items"`
 }
 
+// MemoryResponse is the public memory representation returned by the API.
 type MemoryResponse struct {
 	ID             string             `json:"id"`
 	TenantID       string             `json:"tenant_id"`
@@ -62,11 +70,13 @@ type MemoryResponse struct {
 	LastRecalledAt time.Time          `json:"last_recalled_at"`
 }
 
+// SearchMemoryResponse wraps search results and optional debug information.
 type SearchMemoryResponse struct {
 	Items []MemoryResponse      `json:"items"`
 	Debug *SearchMemoryDebugDTO `json:"debug,omitempty"`
 }
 
+// PostprocessJobResponse reports the status of a postprocess job.
 type PostprocessJobResponse struct {
 	ID          string    `json:"id"`
 	IngestID    string    `json:"ingest_id"`
@@ -84,15 +94,18 @@ type PostprocessJobResponse struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// ListPostprocessJobsResponse wraps a list of postprocess jobs.
 type ListPostprocessJobsResponse struct {
 	Items []PostprocessJobResponse `json:"items"`
 }
 
+// SearchMemoryDebugDTO exposes debug information for a memory search.
 type SearchMemoryDebugDTO struct {
 	Plan    SearchPlanDebugDTO      `json:"plan"`
 	Ranking []SearchRankingDebugDTO `json:"ranking,omitempty"`
 }
 
+// SearchPlanDebugDTO describes the retrieval plan selected for a search.
 type SearchPlanDebugDTO struct {
 	Intent           string   `json:"intent"`
 	Confidence       float64  `json:"confidence"`
@@ -104,6 +117,7 @@ type SearchPlanDebugDTO struct {
 	FallbackPath     []string `json:"fallback_path,omitempty"`
 }
 
+// AnswerMetadataDTO carries answer-level metadata for a memory.
 type AnswerMetadataDTO struct {
 	AnswerKind         string   `json:"answer_kind,omitempty"`
 	SourceSentence     string   `json:"source_sentence,omitempty"`
@@ -117,6 +131,7 @@ type AnswerMetadataDTO struct {
 	SupportLines       []string `json:"support_lines,omitempty"`
 }
 
+// SearchRankingDebugDTO describes ranking details for a candidate memory.
 type SearchRankingDebugDTO struct {
 	Rank         int     `json:"rank"`
 	MemoryID     string  `json:"memory_id"`

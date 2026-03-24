@@ -1,3 +1,4 @@
+// Command configrender rewrites a base YAML profile with CLI overrides.
 package main
 
 import (

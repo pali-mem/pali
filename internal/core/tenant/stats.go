@@ -1,3 +1,4 @@
+// Package tenant provides tenant service helpers and statistics views.
 package tenant
 
 import (
@@ -6,17 +7,21 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// Stats summarizes tenant-level counters.
 type Stats struct {
 	MemoryCount int64 `json:"memory_count"`
 }
 
-type TenantWithStats struct {
+// WithStats couples a tenant record with its stats.
+type WithStats struct {
 	Tenant Tenant
 	Stats  Stats
 }
 
+// Tenant is the tenant domain model re-exported for convenience.
 type Tenant = domain.Tenant
 
+// Stats returns aggregate statistics for a tenant.
 func (s *Service) Stats(ctx context.Context, tenantID string) (Stats, error) {
 	exists, err := s.repo.Exists(ctx, tenantID)
 	if err != nil {
@@ -34,24 +39,25 @@ func (s *Service) Stats(ctx context.Context, tenantID string) (Stats, error) {
 	return Stats{MemoryCount: count}, nil
 }
 
-func (s *Service) ListWithStats(ctx context.Context, limit int) ([]TenantWithStats, error) {
+// ListWithStats returns tenants together with their aggregate statistics.
+func (s *Service) ListWithStats(ctx context.Context, limit int) ([]WithStats, error) {
 	tenants, err := s.repo.List(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
 	if len(tenants) == 0 {
-		return []TenantWithStats{}, nil
+		return []WithStats{}, nil
 	}
 
 	countsRepo, ok := s.repo.(domain.TenantMemoryCountsRepository)
 	if !ok || countsRepo == nil {
-		out := make([]TenantWithStats, 0, len(tenants))
+		out := make([]WithStats, 0, len(tenants))
 		for _, tenant := range tenants {
 			stats, err := s.Stats(ctx, tenant.ID)
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, TenantWithStats{Tenant: tenant, Stats: stats})
+			out = append(out, WithStats{Tenant: tenant, Stats: stats})
 		}
 		return out, nil
 	}
@@ -65,9 +71,9 @@ func (s *Service) ListWithStats(ctx context.Context, limit int) ([]TenantWithSta
 		return nil, err
 	}
 
-	out := make([]TenantWithStats, 0, len(tenants))
+	out := make([]WithStats, 0, len(tenants))
 	for _, tenant := range tenants {
-		out = append(out, TenantWithStats{
+		out = append(out, WithStats{
 			Tenant: tenant,
 			Stats: Stats{
 				MemoryCount: counts[tenant.ID],

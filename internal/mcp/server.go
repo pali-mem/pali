@@ -1,3 +1,4 @@
+// Package mcp hosts the top-level MCP server wiring for Pali.
 package mcp
 
 import (
@@ -11,15 +12,18 @@ import (
 	"github.com/pali-mem/pali/internal/mcp/tools"
 )
 
+// Services bundles the core services needed to run the MCP server.
 type Services struct {
 	Memory *corememory.Service
 	Tenant *coretenant.Service
 }
 
+// Logger is the minimal logging contract used by the MCP server.
 type Logger interface {
 	Printf(format string, v ...any)
 }
 
+// Options configures the MCP server.
 type Options struct {
 	DefaultTenantID string
 	AuthEnabled     bool
@@ -27,6 +31,7 @@ type Options struct {
 	Instructions    string
 }
 
+// Server wraps the SDK server instance used by Pali.
 type Server struct {
 	sdk *sdkmcp.Server
 }
@@ -43,6 +48,7 @@ const (
 		"After the user shares durable facts, preferences, identity details, plans, or corrections, call memory_store or memory_store_preference."
 )
 
+// NewServer constructs the MCP server and registers the default tools.
 func NewServer(services Services, options ...Options) (*Server, error) {
 	if services.Memory == nil || services.Tenant == nil {
 		return nil, fmt.Errorf("mcp services are required")
@@ -96,14 +102,17 @@ func addDefaultPrompts(s *sdkmcp.Server) {
 	})
 }
 
+// Run starts the MCP server over the provided transport.
 func (s *Server) Run(ctx context.Context, transport sdkmcp.Transport) error {
 	return s.sdk.Run(ctx, transport)
 }
 
+// RunStdio starts the MCP server over stdio.
 func (s *Server) RunStdio(ctx context.Context) error {
 	return s.Run(ctx, &sdkmcp.StdioTransport{})
 }
 
+// SDK returns the underlying SDK server.
 func (s *Server) SDK() *sdkmcp.Server {
 	return s.sdk
 }

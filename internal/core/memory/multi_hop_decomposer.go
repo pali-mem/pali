@@ -1,3 +1,4 @@
+// Package memory contains the memory service and retrieval helpers.
 package memory
 
 import (
@@ -11,6 +12,7 @@ import (
 	coreprompts "github.com/pali-mem/pali/internal/core/prompts"
 )
 
+// MultiHopQueryDecomposer splits a query into atomic multi-hop subqueries.
 type MultiHopQueryDecomposer interface {
 	Decompose(ctx context.Context, query string, maxQueries int) ([]string, error)
 }
@@ -26,6 +28,7 @@ type llmMultiHopQueryDecomposer struct {
 	verbose   bool
 }
 
+// NewLLMMultiHopQueryDecomposer constructs an LLM-backed query decomposer.
 func NewLLMMultiHopQueryDecomposer(
 	generator llmPromptGenerator,
 	logger *log.Logger,

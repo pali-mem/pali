@@ -7,6 +7,7 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// Get returns a single memory by ID.
 func (s *Service) Get(ctx context.Context, tenantID, memoryID string) (*domain.Memory, error) {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" {
 		return nil, domain.ErrInvalidInput

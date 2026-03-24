@@ -1,3 +1,4 @@
+// Package neo4j stores and traverses entity facts in Neo4j.
 package neo4j
 
 import (
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	neo4jconfig "github.com/neo4j/neo4j-go-driver/v5/neo4j/config"
 	"github.com/pali-mem/pali/internal/domain"
 )
 
@@ -183,6 +185,7 @@ ORDER BY traversal_score DESC, support_count DESC, path_length ASC, memory_id AS
 LIMIT $limit
 `
 
+// Options configures the Neo4j-backed entity fact repository.
 type Options struct {
 	URI       string
 	Username  string
@@ -192,12 +195,14 @@ type Options struct {
 	BatchSize int
 }
 
+// EntityFactRepository stores and traverses entity facts in Neo4j.
 type EntityFactRepository struct {
 	driver    neo4j.DriverWithContext
 	database  string
 	batchSize int
 }
 
+// NewEntityFactRepository constructs a Neo4j-backed entity fact repository.
 func NewEntityFactRepository(opts Options) (*EntityFactRepository, error) {
 	uri := strings.TrimSpace(opts.URI)
 	if uri == "" {
@@ -224,7 +229,7 @@ func NewEntityFactRepository(opts Options) (*EntityFactRepository, error) {
 	driver, err := neo4j.NewDriverWithContext(
 		uri,
 		neo4j.BasicAuth(username, password, ""),
-		func(cfg *neo4j.Config) {
+		func(cfg *neo4jconfig.Config) {
 			cfg.SocketConnectTimeout = timeout
 		},
 	)
@@ -246,6 +251,7 @@ func NewEntityFactRepository(opts Options) (*EntityFactRepository, error) {
 	return repo, nil
 }
 
+// Close shuts down the Neo4j driver.
 func (r *EntityFactRepository) Close() error {
 	if r == nil || r.driver == nil {
 		return nil
@@ -253,6 +259,7 @@ func (r *EntityFactRepository) Close() error {
 	return r.driver.Close(context.Background())
 }
 
+// initialize prepares the Neo4j schema before use.
 func (r *EntityFactRepository) initialize(ctx context.Context) error {
 	if r == nil || r.driver == nil {
 		return fmt.Errorf("neo4j entity fact repository is not initialized")
@@ -265,7 +272,9 @@ func (r *EntityFactRepository) initialize(ctx context.Context) error {
 		DatabaseName: r.database,
 		AccessMode:   neo4j.AccessModeWrite,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	for _, statement := range schemaStatements {
 		_, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -283,6 +292,7 @@ func (r *EntityFactRepository) initialize(ctx context.Context) error {
 	return nil
 }
 
+// Store writes a single entity fact.
 func (r *EntityFactRepository) Store(ctx context.Context, fact domain.EntityFact) (domain.EntityFact, error) {
 	out, err := r.StoreBatch(ctx, []domain.EntityFact{fact})
 	if err != nil {
@@ -294,6 +304,7 @@ func (r *EntityFactRepository) Store(ctx context.Context, fact domain.EntityFact
 	return out[0], nil
 }
 
+// StoreBatch writes a batch of entity facts.
 func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.EntityFact) ([]domain.EntityFact, error) {
 	if len(facts) == 0 {
 		return []domain.EntityFact{}, nil
@@ -316,7 +327,9 @@ func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.En
 		DatabaseName: r.database,
 		AccessMode:   neo4j.AccessModeWrite,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	for start := 0; start < len(prepared); start += r.batchSize {
 		end := minInt(start+r.batchSize, len(prepared))
@@ -359,6 +372,7 @@ func (r *EntityFactRepository) StoreBatch(ctx context.Context, facts []domain.En
 	return prepared, nil
 }
 
+// ListByEntityRelation lists facts for one entity and relation.
 func (r *EntityFactRepository) ListByEntityRelation(
 	ctx context.Context,
 	tenantID, entity, relation string,
@@ -381,7 +395,9 @@ func (r *EntityFactRepository) ListByEntityRelation(
 		DatabaseName: r.database,
 		AccessMode:   neo4j.AccessModeRead,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	raw, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		result, runErr := tx.Run(ctx, listEntityFactsByRelationCypher, map[string]any{
@@ -418,6 +434,7 @@ func (r *EntityFactRepository) ListByEntityRelation(
 	return facts, nil
 }
 
+// ListByEntityNeighborhood lists nearby facts around a seed entity set.
 func (r *EntityFactRepository) ListByEntityNeighborhood(
 	ctx context.Context,
 	tenantID string,
@@ -455,7 +472,9 @@ func (r *EntityFactRepository) ListByEntityNeighborhood(
 		DatabaseName: r.database,
 		AccessMode:   neo4j.AccessModeRead,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	raw, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		result, runErr := tx.Run(ctx, listEntityFactsByNeighborhoodCypher, map[string]any{
@@ -491,6 +510,7 @@ func (r *EntityFactRepository) ListByEntityNeighborhood(
 	return facts, nil
 }
 
+// ListByEntityPaths traverses fact paths from seed entities.
 func (r *EntityFactRepository) ListByEntityPaths(
 	ctx context.Context,
 	tenantID string,
@@ -524,7 +544,9 @@ func (r *EntityFactRepository) ListByEntityPaths(
 		DatabaseName: r.database,
 		AccessMode:   neo4j.AccessModeRead,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	cypher := fmt.Sprintf(listEntityFactPathsCypherTemplate, graphPathMaxEdges(maxHops))
 	raw, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -563,6 +585,7 @@ func (r *EntityFactRepository) ListByEntityPaths(
 	return candidates, nil
 }
 
+// InvalidateEntityRelation marks stale facts for one entity relation.
 func (r *EntityFactRepository) InvalidateEntityRelation(
 	ctx context.Context,
 	tenantID, entity, relation, activeValue, invalidatedByFactID string,
@@ -583,7 +606,9 @@ func (r *EntityFactRepository) InvalidateEntityRelation(
 		DatabaseName: r.database,
 		AccessMode:   neo4j.AccessModeWrite,
 	})
-	defer session.Close(ctx)
+	defer func() {
+		_ = session.Close(ctx)
+	}()
 
 	_, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		result, runErr := tx.Run(ctx, invalidateEntityFactsByRelationCypher, map[string]any{

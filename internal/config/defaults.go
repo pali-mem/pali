@@ -1,5 +1,6 @@
 package config
 
+// Defaults returns the built-in configuration defaults.
 func Defaults() Config {
 	return Config{
 		Server: ServerConfig{

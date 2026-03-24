@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Validate checks whether the configuration is internally consistent.
 func Validate(cfg Config) error {
 	if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
 		return fmt.Errorf("invalid server.port: %d", cfg.Server.Port)

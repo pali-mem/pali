@@ -1,3 +1,4 @@
+// Command jwt generates a tenant-scoped JWT for local use.
 package main
 
 import (

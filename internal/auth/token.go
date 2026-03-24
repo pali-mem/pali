@@ -8,6 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// GenerateTenantToken signs a tenant-scoped JWT.
 func GenerateTenantToken(secret, issuer, tenantID string, ttl time.Duration) (string, error) {
 	secret = strings.TrimSpace(secret)
 	issuer = strings.TrimSpace(issuer)

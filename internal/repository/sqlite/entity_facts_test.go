@@ -14,7 +14,7 @@ func TestEntityFactRepositoryStoreAndLookup(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memoryRepo := NewMemoryRepository(db)
@@ -69,7 +69,7 @@ func TestEntityFactRepositoryStoreBatchDedupes(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memoryRepo := NewMemoryRepository(db)
@@ -113,7 +113,7 @@ func TestEntityFactRepositoryInvalidateEntityRelation(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, testutil.InMemoryDBDSN())
 	require.NoError(t, err)
-	defer db.Close()
+	defer closeDB(db)
 
 	tenantRepo := NewTenantRepository(db)
 	memoryRepo := NewMemoryRepository(db)

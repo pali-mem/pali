@@ -12,10 +12,12 @@ import (
 	coreprompts "github.com/pali-mem/pali/internal/core/prompts"
 )
 
+// Scorer scores memories through an OpenRouter client.
 type Scorer struct {
 	client *Client
 }
 
+// NewScorer returns an OpenRouter-backed scorer.
 func NewScorer(c *Client) *Scorer { return &Scorer{client: c} }
 
 var numberPattern = regexp.MustCompile(`[-+]?(?:\d+\.?\d*|\.\d+)`)
@@ -26,6 +28,7 @@ var (
 	openRouterMaxParallelScorings = 8
 )
 
+// Score returns an importance score for a single memory.
 func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
 	if s == nil || s.client == nil {
 		return 0, fmt.Errorf("openrouter scorer is not configured")
@@ -48,6 +51,7 @@ func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
 	return score, nil
 }
 
+// BatchScore scores a batch of memories with bounded parallelism.
 func (s *Scorer) BatchScore(ctx context.Context, texts []string) ([]float64, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("openrouter scorer is not configured")

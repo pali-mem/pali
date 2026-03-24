@@ -1,3 +1,4 @@
+// Package tools registers the MCP tools exposed by Pali.
 package tools
 
 import (
@@ -15,16 +16,19 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// Logger is the minimal logging contract used by the toolset.
 type Logger interface {
 	Printf(format string, v ...any)
 }
 
+// ToolsetOptions configures MCP tool registration and tenant resolution.
 type ToolsetOptions struct {
 	DefaultTenantID string
 	AuthEnabled     bool
 	Logger          Logger
 }
 
+// Toolset registers Pali MCP tools and tracks per-session tenant state.
 type Toolset struct {
 	memory *corememory.Service
 	tenant *coretenant.Service
@@ -37,6 +41,7 @@ type Toolset struct {
 	sessionTenants map[string]string
 }
 
+// NewToolset constructs a toolset for the configured memory and tenant services.
 func NewToolset(memory *corememory.Service, tenant *coretenant.Service, opts ToolsetOptions) *Toolset {
 	logger := opts.Logger
 	if logger == nil {
@@ -53,6 +58,7 @@ func NewToolset(memory *corememory.Service, tenant *coretenant.Service, opts Too
 	}
 }
 
+// Register adds the Pali MCP tools and prompts to the provided server.
 func (t *Toolset) Register(s *sdkmcp.Server) error {
 	if t.memory == nil || t.tenant == nil {
 		return fmt.Errorf("mcp toolset requires initialized services")
@@ -159,6 +165,7 @@ func (t *Toolset) Register(s *sdkmcp.Server) error {
 	return nil
 }
 
+// MemoryStoreInput is the input for writing a durable memory.
 type MemoryStoreInput struct {
 	TenantID  string   `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 	Content   string   `json:"content" jsonschema:"Memory content"`
@@ -169,6 +176,7 @@ type MemoryStoreInput struct {
 	CreatedBy string   `json:"created_by,omitempty" jsonschema:"Creator actor: auto|user|system"`
 }
 
+// MemoryStorePreferenceInput is the input for writing a preference memory.
 type MemoryStorePreferenceInput struct {
 	TenantID string   `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 	Key      string   `json:"key" jsonschema:"Preference key"`
@@ -176,6 +184,7 @@ type MemoryStorePreferenceInput struct {
 	Tags     []string `json:"tags,omitempty" jsonschema:"Additional tags"`
 }
 
+// MemorySearchInput is the input for searching memories.
 type MemorySearchInput struct {
 	TenantID string   `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 	Query    string   `json:"query" jsonschema:"Search query"`
@@ -185,33 +194,40 @@ type MemorySearchInput struct {
 	Kinds    []string `json:"kinds,omitempty" jsonschema:"Optional kind filter: raw_turn|observation|summary|event"`
 }
 
+// MemoryListInput is the input for listing memories.
 type MemoryListInput struct {
 	TenantID string `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"List limit"`
 }
 
+// MemoryDeleteInput is the input for deleting a memory.
 type MemoryDeleteInput struct {
 	TenantID string `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 	MemoryID string `json:"memory_id" jsonschema:"Memory ID to delete"`
 }
 
+// TenantCreateInput is the input for creating a tenant.
 type TenantCreateInput struct {
 	ID   string `json:"id" jsonschema:"Tenant ID"`
 	Name string `json:"name" jsonschema:"Tenant display name"`
 }
 
+// TenantListInput is the input for listing tenants.
 type TenantListInput struct {
 	Limit int `json:"limit,omitempty" jsonschema:"List limit"`
 }
 
+// TenantStatsInput is the input for tenant statistics.
 type TenantStatsInput struct {
 	TenantID string `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 }
 
+// TenantExistsInput is the input for tenant existence checks.
 type TenantExistsInput struct {
 	TenantID string `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
 }
 
+// MemoryItem is the tool-layer projection of a stored memory.
 type MemoryItem struct {
 	ID             string    `json:"id"`
 	TenantID       string    `json:"tenant_id"`
@@ -229,12 +245,14 @@ type MemoryItem struct {
 	LastRecalledAt time.Time `json:"last_recalled_at"`
 }
 
+// TenantItem is the tool-layer projection of a tenant.
 type TenantItem struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// MemoryStoreOutput is the response from memory storage.
 type MemoryStoreOutput struct {
 	ID         string    `json:"id"`
 	TenantID   string    `json:"tenant_id"`
@@ -245,49 +263,59 @@ type MemoryStoreOutput struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// MemorySearchOutput is the response from memory search.
 type MemorySearchOutput struct {
 	Items []MemoryItem `json:"items"`
 }
 
+// MemoryListOutput is the response from memory listing.
 type MemoryListOutput struct {
 	Items []MemoryItem `json:"items"`
 }
 
+// MemoryDeleteOutput is the response from memory deletion.
 type MemoryDeleteOutput struct {
 	Deleted bool `json:"deleted"`
 }
 
+// TenantCreateOutput is the response from tenant creation.
 type TenantCreateOutput struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// TenantListOutput is the response from tenant listing.
 type TenantListOutput struct {
 	Items []TenantItem `json:"items"`
 }
 
+// TenantStatsOutput is the response from tenant statistics.
 type TenantStatsOutput struct {
 	TenantID    string `json:"tenant_id"`
 	MemoryCount int64  `json:"memory_count"`
 }
 
+// TenantExistsOutput is the response from tenant existence checks.
 type TenantExistsOutput struct {
 	TenantID string `json:"tenant_id"`
 	Exists   bool   `json:"exists"`
 }
 
+// HealthCheckOutput is the response from the health check tool.
 type HealthCheckOutput struct {
 	Status string    `json:"status"`
 	Time   time.Time `json:"time"`
 }
 
+// CapabilitiesHelpOutput describes the available tools and conventions.
 type CapabilitiesHelpOutput struct {
 	CanonicalToolNames   []string          `json:"canonical_tool_names"`
 	TenantResolutionPath []string          `json:"tenant_resolution_path"`
 	ExampleCalls         []ToolCallExample `json:"example_calls"`
 }
 
+// ToolCallExample is an example tool call shown in capability help.
 type ToolCallExample struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments"`

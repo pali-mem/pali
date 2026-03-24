@@ -8,6 +8,7 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// Delete removes a memory and its vector embedding.
 func (s *Service) Delete(ctx context.Context, tenantID, memoryID string) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" {
 		return domain.ErrInvalidInput

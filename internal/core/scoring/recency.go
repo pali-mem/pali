@@ -2,6 +2,7 @@ package scoring
 
 import "math"
 
+// Recency applies exponential decay based on the hours since last access.
 func Recency(decayFactor, hoursSinceAccess float64) float64 {
 	if decayFactor <= 0 || decayFactor >= 1 {
 		decayFactor = 0.98

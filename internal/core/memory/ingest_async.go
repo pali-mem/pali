@@ -8,6 +8,7 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// IngestAsync stores a single memory and queues async work.
 func (s *Service) IngestAsync(
 	ctx context.Context,
 	in StoreInput,
@@ -16,6 +17,7 @@ func (s *Service) IngestAsync(
 	return s.IngestBatchAsync(ctx, []StoreInput{in}, maxAttempts)
 }
 
+// IngestBatchAsync stores a batch of memories and queues async work.
 func (s *Service) IngestBatchAsync(
 	ctx context.Context,
 	inputs []StoreInput,
@@ -53,6 +55,7 @@ func (s *Service) IngestBatchAsync(
 	return repo.StoreBatchAsyncIngest(ctx, items, maxAttempts)
 }
 
+// GetPostprocessJob returns a postprocess job by ID.
 func (s *Service) GetPostprocessJob(ctx context.Context, jobID string) (*domain.MemoryPostprocessJob, error) {
 	repo, ok := s.repo.(domain.MemoryPostprocessJobRepository)
 	if !ok || repo == nil {
@@ -72,6 +75,7 @@ func (s *Service) GetPostprocessJob(ctx context.Context, jobID string) (*domain.
 	return job, nil
 }
 
+// ListPostprocessJobs lists postprocess jobs for a tenant.
 func (s *Service) ListPostprocessJobs(
 	ctx context.Context,
 	filter domain.MemoryPostprocessJobFilter,

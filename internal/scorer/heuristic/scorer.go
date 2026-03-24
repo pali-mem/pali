@@ -1,3 +1,4 @@
+// Package heuristic provides a lightweight, non-LLM importance scorer.
 package heuristic
 
 import (
@@ -7,12 +8,15 @@ import (
 	"strings"
 )
 
+// Scorer scores memories using simple lexical heuristics.
 type Scorer struct{}
 
+// NewScorer returns a heuristic scorer.
 func NewScorer() *Scorer { return &Scorer{} }
 
 var scorerTokens = regexp.MustCompile(`[a-zA-Z0-9_]+`)
 
+// Score returns an importance estimate for a single memory.
 func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
 	_ = ctx
 	text = strings.ToLower(strings.TrimSpace(text))
@@ -58,6 +62,7 @@ func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
 	return score, nil
 }
 
+// BatchScore scores each input memory independently.
 func (s *Scorer) BatchScore(ctx context.Context, texts []string) ([]float64, error) {
 	out := make([]float64, 0, len(texts))
 	for _, text := range texts {

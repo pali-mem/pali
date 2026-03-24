@@ -1,12 +1,15 @@
+// Package mock provides a simple scorer implementation for tests.
 package mock
 
 import "context"
 
-type Scorer struct{}
+type scorer struct{}
 
-func NewScorer() *Scorer { return &Scorer{} }
+// NewScorer returns a no-op scorer used in tests.
+func NewScorer() *scorer { return &scorer{} }
 
-func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
+// Score returns a fixed score of 0.5 for non-empty text.
+func (s *scorer) Score(ctx context.Context, text string) (float64, error) {
 	_ = ctx
 	if text == "" {
 		return 0, nil
@@ -14,7 +17,8 @@ func (s *Scorer) Score(ctx context.Context, text string) (float64, error) {
 	return 0.5, nil
 }
 
-func (s *Scorer) BatchScore(ctx context.Context, texts []string) ([]float64, error) {
+// BatchScore scores each input text individually.
+func (s *scorer) BatchScore(ctx context.Context, texts []string) ([]float64, error) {
 	out := make([]float64, 0, len(texts))
 	for _, text := range texts {
 		score, err := s.Score(ctx, text)

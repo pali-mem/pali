@@ -99,6 +99,29 @@ func buildAdaptiveSearchQueries(
 	return out
 }
 
+func appendUniqueSearchQueries(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	for _, query := range base {
+		seen[strings.ToLower(strings.TrimSpace(query))] = struct{}{}
+	}
+	out := append([]string{}, base...)
+	for _, query := range extra {
+		key := strings.ToLower(strings.TrimSpace(query))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, query)
+	}
+	return out
+}
+
 func buildLowConfidenceBackoffQueries(query string, profile queryProfile, maxQueries int) []string {
 	if maxQueries <= 0 {
 		return []string{}

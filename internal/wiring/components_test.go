@@ -16,7 +16,7 @@ import (
 func TestBuildVectorStore_SQLite(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	cfg := config.Defaults()
 	cfg.VectorBackend = "sqlite"
@@ -31,7 +31,7 @@ func TestBuildVectorStore_SQLite(t *testing.T) {
 func TestBuildVectorStore_Qdrant(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	cfg := config.Defaults()
 	cfg.VectorBackend = "qdrant"
@@ -45,7 +45,7 @@ func TestBuildVectorStore_Qdrant(t *testing.T) {
 func TestBuildVectorStore_PGVector(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	cfg := config.Defaults()
 	cfg.VectorBackend = "pgvector"
@@ -61,7 +61,7 @@ func TestBuildVectorStore_PGVector(t *testing.T) {
 func TestBuildEntityFactRepository_SQLite(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	cfg := config.Defaults()
 	cfg.EntityFactBackend = "sqlite"
@@ -76,7 +76,7 @@ func TestBuildEntityFactRepository_SQLite(t *testing.T) {
 func TestBuildEntityFactRepository_Neo4j(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	cfg := config.Defaults()
 	cfg.EntityFactBackend = "neo4j"
@@ -99,7 +99,7 @@ func TestBuildEntityFactRepository_Neo4j(t *testing.T) {
 func TestBuildEntityFactRepository_Unsupported(t *testing.T) {
 	db, err := sqliterepo.Open(context.Background(), "file::memory:?cache=shared")
 	require.NoError(t, err)
-	defer db.Close()
+	defer sqliterepo.CloseDBForTest(db)
 
 	cfg := config.Defaults()
 	cfg.EntityFactBackend = "unsupported"

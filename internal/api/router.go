@@ -1,3 +1,4 @@
+// Package api wires HTTP handlers, middleware, and supporting services.
 package api
 
 import (
@@ -23,10 +24,12 @@ import (
 	webassets "github.com/pali-mem/pali/web"
 )
 
+// NewRouter builds the API router using the supplied configuration.
 func NewRouter(cfg config.Config) (*gin.Engine, func() error, error) {
 	return NewRouterWithConfigPath(cfg, "")
 }
 
+// NewRouterWithConfigPath builds the API router and threads the config path through startup checks.
 func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine, func() error, error) {
 	if gin.Mode() == "" {
 		gin.SetMode(gin.ReleaseMode)

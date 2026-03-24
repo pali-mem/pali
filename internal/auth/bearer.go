@@ -9,11 +9,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// JWTAuthenticator validates HMAC-signed tenant tokens.
 type JWTAuthenticator struct {
 	secret []byte
 	issuer string
 }
 
+// NewJWTAuthenticator constructs a JWT authenticator.
 func NewJWTAuthenticator(secret, issuer string) (*JWTAuthenticator, error) {
 	if strings.TrimSpace(secret) == "" {
 		return nil, errors.New("jwt secret is required")
@@ -24,6 +26,7 @@ func NewJWTAuthenticator(secret, issuer string) (*JWTAuthenticator, error) {
 	}, nil
 }
 
+// Authenticate validates a token and returns its tenant ID.
 func (a *JWTAuthenticator) Authenticate(ctx context.Context, token string) (string, error) {
 	_ = ctx
 	token = strings.TrimSpace(token)

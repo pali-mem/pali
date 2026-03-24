@@ -1,3 +1,4 @@
+// Package bootstrap prepares local model assets and validates setup prerequisites.
 package bootstrap
 
 import (
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	DefaultModelID        = "sentence-transformers/all-MiniLM-L6-v2"
+	defaultModelID        = "sentence-transformers/all-MiniLM-L6-v2"
 	modelDir              = "models/all-MiniLM-L6-v2"
 	runtimePathEnv        = "ONNXRUNTIME_SHARED_LIBRARY_PATH"
 	defaultOllamaBaseURL  = "http://127.0.0.1:11434"
@@ -27,6 +28,7 @@ const (
 	defaultOllamaTagsPath = "/api/tags"
 )
 
+// Options configures the setup workflow.
 type Options struct {
 	ConfigPath        string
 	SkipModelDownload bool
@@ -38,24 +40,27 @@ type Options struct {
 	OllamaModel       string
 }
 
+// DefaultOptions returns the setup defaults.
 func DefaultOptions() Options {
 	return Options{
 		ConfigPath: "pali.yaml",
-		ModelID:    DefaultModelID,
+		ModelID:    defaultModelID,
 	}
 }
 
+// AddFlags binds setup flags to the provided flag set.
 func AddFlags(fs *flag.FlagSet, opts *Options) {
 	fs.StringVar(&opts.ConfigPath, "config", "pali.yaml", "Config file path to create/read during setup")
 	fs.BoolVar(&opts.SkipModelDownload, "skip-model-download", false, "Skip downloading ONNX model/tokenizer from Hugging Face")
 	fs.BoolVar(&opts.DownloadModel, "download-model", false, "Force ONNX model/tokenizer download even when provider is not onnx")
 	fs.BoolVar(&opts.SkipRuntimeCheck, "skip-runtime-check", false, "Skip checking ONNX Runtime shared library presence")
 	fs.BoolVar(&opts.SkipOllamaCheck, "skip-ollama-check", false, "Skip checking Ollama server/model readiness")
-	fs.StringVar(&opts.ModelID, "model-id", DefaultModelID, "Hugging Face model id used for setup download")
+	fs.StringVar(&opts.ModelID, "model-id", defaultModelID, "Hugging Face model id used for setup download")
 	fs.StringVar(&opts.OllamaBaseURL, "ollama-base-url", "", "Ollama base URL for readiness checks (default from config embedding.ollama_base_url)")
 	fs.StringVar(&opts.OllamaModel, "ollama-model", "", "Ollama model name for readiness checks (default from config embedding.ollama_model)")
 }
 
+// Run executes the setup workflow.
 func Run(opts Options, stdout, stderr io.Writer) error {
 	paths := []string{
 		modelDir,
@@ -91,7 +96,7 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	dlMessage := "skipped ONNX model download (use -download-model to prefetch for ONNX)"
 	if shouldDownloadModel {
 		if err := ensureModelArtifacts(opts.ModelID); err != nil {
-			fmt.Fprintf(stderr, "rerun with -skip-model-download for offline setup\n")
+			_, _ = fmt.Fprintf(stderr, "rerun with -skip-model-download for offline setup\n")
 			return fmt.Errorf("failed ensuring model artifacts: %w", err)
 		}
 		dlMessage = "ensured ONNX model/tokenizer files in " + modelDir
@@ -133,29 +138,29 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 			}
 			if err := ensureOllamaReady(ollamaBaseURL, ollamaModel); err != nil {
 				ollamaMessage = "Ollama embedder is not ready (needed when an Ollama-backed component is enabled)"
-				fmt.Fprintln(stdout)
-				fmt.Fprintln(stdout, err.Error())
-				fmt.Fprintln(stdout)
+				_, _ = fmt.Fprintln(stdout)
+				_, _ = fmt.Fprintln(stdout, err.Error())
+				_, _ = fmt.Fprintln(stdout)
 			} else {
 				ollamaMessage = fmt.Sprintf("detected Ollama + model %q at %s", ollamaModel, ollamaBaseURL)
 			}
 		}
 	}
 
-	fmt.Fprintln(stdout, "Pali setup completed.")
-	fmt.Fprintln(stdout, "- ensured directories under models/ and web/static/")
-	fmt.Fprintf(stdout, "- ensured config file %s (copied from pali.yaml.example when missing)\n", configPath)
-	fmt.Fprintf(stdout, "- %s\n", dlMessage)
-	fmt.Fprintf(stdout, "- %s\n", runtimeMessage)
-	fmt.Fprintf(stdout, "- %s\n", ollamaMessage)
+	_, _ = fmt.Fprintln(stdout, "Pali setup completed.")
+	_, _ = fmt.Fprintln(stdout, "- ensured directories under models/ and web/static/")
+	_, _ = fmt.Fprintf(stdout, "- ensured config file %s (copied from pali.yaml.example when missing)\n", configPath)
+	_, _ = fmt.Fprintf(stdout, "- %s\n", dlMessage)
+	_, _ = fmt.Fprintf(stdout, "- %s\n", runtimeMessage)
+	_, _ = fmt.Fprintf(stdout, "- %s\n", ollamaMessage)
 	if !shouldDownloadModel {
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Tip: for higher accuracy embeddings, download the ONNX model:")
-		fmt.Fprintln(stdout, "  pali init -download-model")
+		_, _ = fmt.Fprintln(stdout)
+		_, _ = fmt.Fprintln(stdout, "Tip: for higher accuracy embeddings, download the ONNX model:")
+		_, _ = fmt.Fprintln(stdout, "  pali init -download-model")
 	}
-	fmt.Fprintln(stdout, "Next:")
-	fmt.Fprintf(stdout, "1) run: pali serve -config %s\n", configPath)
-	fmt.Fprintln(stdout, "2) open: http://localhost:8080/dashboard")
+	_, _ = fmt.Fprintln(stdout, "Next:")
+	_, _ = fmt.Fprintf(stdout, "1) run: pali serve -config %s\n", configPath)
+	_, _ = fmt.Fprintln(stdout, "2) open: http://localhost:8080/dashboard")
 
 	return nil
 }
@@ -164,6 +169,7 @@ func ensureDir(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
 
+// EnsureConfig creates a default config file if one does not already exist.
 func EnsureConfig(cfg string) error {
 	cfg = strings.TrimSpace(cfg)
 	if cfg == "" {
@@ -223,7 +229,9 @@ func downloadModelFile(modelID, remoteFile, localPath string) error {
 	if err != nil {
 		return fmt.Errorf("download %s: %w", remoteFile, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: unexpected HTTP status %s", remoteFile, resp.Status)
@@ -324,21 +332,21 @@ func defaultRuntimeSONAME() string {
 }
 
 func printRuntimeInstallHint(w io.Writer) {
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "ONNX Runtime setup hint:")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "ONNX Runtime setup hint:")
 	switch runtime.GOOS {
 	case "darwin":
-		fmt.Fprintln(w, "- macOS: brew install onnxruntime")
-		fmt.Fprintln(w, "- then verify /opt/homebrew/lib/libonnxruntime.dylib or set ONNXRUNTIME_SHARED_LIBRARY_PATH")
+		_, _ = fmt.Fprintln(w, "- macOS: brew install onnxruntime")
+		_, _ = fmt.Fprintln(w, "- then verify /opt/homebrew/lib/libonnxruntime.dylib or set ONNXRUNTIME_SHARED_LIBRARY_PATH")
 	case "windows":
-		fmt.Fprintln(w, "- Windows: download ONNX Runtime release zip and point ONNXRUNTIME_SHARED_LIBRARY_PATH to onnxruntime.dll")
-		fmt.Fprintln(w, "- also install Microsoft Visual C++ 2019 runtime")
+		_, _ = fmt.Fprintln(w, "- Windows: download ONNX Runtime release zip and point ONNXRUNTIME_SHARED_LIBRARY_PATH to onnxruntime.dll")
+		_, _ = fmt.Fprintln(w, "- also install Microsoft Visual C++ 2019 runtime")
 	default:
-		fmt.Fprintln(w, "- download ONNX Runtime release archive and point ONNXRUNTIME_SHARED_LIBRARY_PATH to the shared library")
+		_, _ = fmt.Fprintln(w, "- download ONNX Runtime release archive and point ONNXRUNTIME_SHARED_LIBRARY_PATH to the shared library")
 	}
-	fmt.Fprintln(w, "- release binaries: https://github.com/microsoft/onnxruntime/releases")
-	fmt.Fprintln(w, "- docs: https://onnxruntime.ai/docs/install/")
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "- release binaries: https://github.com/microsoft/onnxruntime/releases")
+	_, _ = fmt.Fprintln(w, "- docs: https://onnxruntime.ai/docs/install/")
+	_, _ = fmt.Fprintln(w)
 }
 
 func ensureOllamaReady(baseURL, model string) error {
@@ -355,12 +363,12 @@ func ensureOllamaReady(baseURL, model string) error {
 	client := &http.Client{Timeout: defaultOllamaTimeout}
 	ctx := context.Background()
 	if _, err := ollamaGET(ctx, client, baseURL+"/api/version"); err != nil {
-		return fmt.Errorf("Ollama is not reachable at %s: %v\nInstall: https://ollama.com/download\nThen run:\n  1) ollama serve\n  2) ollama pull %s", baseURL, err, model)
+		return fmt.Errorf("ollama is not reachable at %s: %v\ninstall: https://ollama.com/download\nthen run:\n  1) ollama serve\n  2) ollama pull %s", baseURL, err, model)
 	}
 
 	body, err := ollamaGET(ctx, client, baseURL+defaultOllamaTagsPath)
 	if err != nil {
-		return fmt.Errorf("failed listing Ollama models at %s: %v\nRun: ollama pull %s", baseURL, err, model)
+		return fmt.Errorf("failed listing ollama models at %s: %v\nrun: ollama pull %s", baseURL, err, model)
 	}
 
 	var parsed struct {
@@ -373,7 +381,7 @@ func ensureOllamaReady(baseURL, model string) error {
 	}
 
 	if !containsOllamaModel(parsed.Models, model) {
-		return fmt.Errorf("Ollama model %q is missing\nRun: ollama pull %s", model, model)
+		return fmt.Errorf("ollama model %q is missing\nrun: ollama pull %s", model, model)
 	}
 
 	return nil
@@ -388,7 +396,9 @@ func ollamaGET(ctx context.Context, client *http.Client, url string) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
