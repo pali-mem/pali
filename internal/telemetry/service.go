@@ -1,3 +1,4 @@
+// Package telemetry records request, search, and storage activity snapshots.
 package telemetry
 
 import (
@@ -19,21 +20,25 @@ const (
 	TenantContextKey = "telemetry_tenant_id"
 )
 
+// Options configures telemetry retention and buffer sizes.
 type Options struct {
 	RequestWindowMinutes int
 	EventBufferSize      int
 }
 
+// SnapshotOptions configures snapshot output sizes.
 type SnapshotOptions struct {
 	Events     int
 	TopTenants int
 }
 
+// MinuteCount stores a request count for one minute bucket.
 type MinuteCount struct {
 	Minute time.Time `json:"minute"`
 	Count  int64     `json:"count"`
 }
 
+// Event is a telemetry event captured by the service.
 type Event struct {
 	At        time.Time `json:"at"`
 	Type      string    `json:"type"`
@@ -45,12 +50,14 @@ type Event struct {
 	Detail    string    `json:"detail,omitempty"`
 }
 
+// TenantStat stores per-tenant activity counts.
 type TenantStat struct {
 	TenantID string `json:"tenant_id"`
 	Writes   int64  `json:"writes"`
 	Searches int64  `json:"searches"`
 }
 
+// Snapshot is an aggregated telemetry view.
 type Snapshot struct {
 	GeneratedAt          time.Time     `json:"generated_at"`
 	ActiveRequests       int64         `json:"active_requests"`
@@ -63,6 +70,7 @@ type Snapshot struct {
 	TopTenantsBySearches []TenantStat  `json:"top_tenants_by_searches"`
 }
 
+// RequestObservation captures one HTTP request.
 type RequestObservation struct {
 	At       time.Time
 	Method   string
@@ -72,6 +80,7 @@ type RequestObservation struct {
 	Latency  time.Duration
 }
 
+// StoreObservation captures a single memory store action.
 type StoreObservation struct {
 	At       time.Time
 	TenantID string
@@ -79,6 +88,7 @@ type StoreObservation struct {
 	Latency  time.Duration
 }
 
+// BatchStoreObservation captures a batch memory store action.
 type BatchStoreObservation struct {
 	At           time.Time
 	TenantWrites map[string]int
@@ -86,6 +96,7 @@ type BatchStoreObservation struct {
 	Latency      time.Duration
 }
 
+// SearchObservation captures a memory search action.
 type SearchObservation struct {
 	At       time.Time
 	TenantID string
@@ -103,6 +114,7 @@ type tenantCounts struct {
 	Searches int64
 }
 
+// Service records telemetry observations and computes summaries.
 type Service struct {
 	activeRequests  atomic.Int64
 	storeCount      atomic.Int64
@@ -121,6 +133,7 @@ type Service struct {
 	tenantCounts map[string]*tenantCounts
 }
 
+// NewService constructs a telemetry service.
 func NewService(opts Options) *Service {
 	window := opts.RequestWindowMinutes
 	if window <= 0 {
@@ -138,6 +151,7 @@ func NewService(opts Options) *Service {
 	}
 }
 
+// RequestStarted increments the active request counter.
 func (s *Service) RequestStarted() {
 	if s == nil {
 		return
@@ -145,6 +159,7 @@ func (s *Service) RequestStarted() {
 	s.activeRequests.Add(1)
 }
 
+// RequestFinished decrements the active request counter.
 func (s *Service) RequestFinished() {
 	if s == nil {
 		return
@@ -152,6 +167,7 @@ func (s *Service) RequestFinished() {
 	s.activeRequests.Add(-1)
 }
 
+// RecordRequest records an HTTP request observation.
 func (s *Service) RecordRequest(obs RequestObservation) {
 	if s == nil {
 		return
@@ -181,6 +197,7 @@ func (s *Service) RecordRequest(obs RequestObservation) {
 	}
 }
 
+// RecordStore records a single memory store observation.
 func (s *Service) RecordStore(obs StoreObservation) {
 	if s == nil {
 		return
@@ -205,6 +222,7 @@ func (s *Service) RecordStore(obs StoreObservation) {
 	})
 }
 
+// RecordBatchStore records a batch memory store observation.
 func (s *Service) RecordBatchStore(obs BatchStoreObservation) {
 	if s == nil {
 		return
@@ -258,6 +276,7 @@ func (s *Service) RecordBatchStore(obs BatchStoreObservation) {
 	})
 }
 
+// RecordSearch records a memory search observation.
 func (s *Service) RecordSearch(obs SearchObservation) {
 	if s == nil {
 		return
@@ -282,6 +301,7 @@ func (s *Service) RecordSearch(obs SearchObservation) {
 	})
 }
 
+// Snapshot returns an aggregated telemetry snapshot.
 func (s *Service) Snapshot(opts SnapshotOptions) Snapshot {
 	if s == nil {
 		return Snapshot{
@@ -484,6 +504,7 @@ func shouldTrackRequestPath(path string) bool {
 	return strings.HasPrefix(path, "/v1/")
 }
 
+// ShouldTrackRequestPath reports whether a path should be counted in telemetry.
 func ShouldTrackRequestPath(path string) bool {
 	return shouldTrackRequestPath(path)
 }
