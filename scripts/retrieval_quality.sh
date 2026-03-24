@@ -736,7 +736,11 @@ if [[ "$BACKEND" == "qdrant" ]]; then
   echo "    qdrant mode  : $qdrant_namespace_mode"
 fi
 if [[ "$BACKEND" == "pgvector" ]]; then
-  echo "    pgvector dsn : $PGVECTOR_DSN"
+  pgvector_dsn_safe="$PGVECTOR_DSN"
+  if [[ -n "$pgvector_dsn_safe" ]]; then
+    pgvector_dsn_safe="$(printf '%s' "$pgvector_dsn_safe" | sed -E 's#(://[^:/]+:)[^@]+@#\\1****@#')"
+  fi
+  echo "    pgvector dsn : $pgvector_dsn_safe"
   echo "    pgvector tbl : $PGVECTOR_TABLE"
 fi
 if [[ -n "$ENTITY_FACT_BACKEND" ]]; then

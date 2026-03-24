@@ -123,6 +123,13 @@ func TestValidate_PGVectorBackendRequiresValidConfig(t *testing.T) {
 
 	cfg = Defaults()
 	cfg.VectorBackend = "pgvector"
+	cfg.PGVector.DSN = "://bad"
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pgvector.dsn")
+
+	cfg = Defaults()
+	cfg.VectorBackend = "pgvector"
 	cfg.PGVector.DSN = "postgres://user:pass@localhost:5432/pali"
 	cfg.PGVector.Table = ""
 	err = Validate(cfg)

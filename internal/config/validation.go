@@ -176,6 +176,9 @@ func Validate(cfg Config) error {
 		if strings.TrimSpace(cfg.PGVector.DSN) == "" {
 			return fmt.Errorf("pgvector.dsn is required when vector_backend=pgvector")
 		}
+		if _, err := url.ParseRequestURI(cfg.PGVector.DSN); err != nil {
+			return fmt.Errorf("invalid pgvector.dsn: %w", err)
+		}
 		if strings.TrimSpace(cfg.PGVector.Table) == "" {
 			return fmt.Errorf("pgvector.table is required when vector_backend=pgvector")
 		}
