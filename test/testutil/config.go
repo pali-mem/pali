@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// MustLoadProviderConfig loads a provider config from the test fixtures.
 func MustLoadProviderConfig(t *testing.T, profile string) config.Config {
 	t.Helper()
 	cfg, err := config.Load(providerConfigPath(profile))

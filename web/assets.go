@@ -1,3 +1,4 @@
+// Package webassets exposes embedded dashboard assets.
 package webassets
 
 import "embed"
