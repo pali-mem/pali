@@ -9,14 +9,17 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
+// TenantHandler serves tenant endpoints.
 type TenantHandler struct {
 	service *coretenant.Service
 }
 
+// NewTenantHandler constructs a tenant handler.
 func NewTenantHandler(service *coretenant.Service) *TenantHandler {
 	return &TenantHandler{service: service}
 }
 
+// Create creates a new tenant.
 func (h *TenantHandler) Create(c *gin.Context) {
 	var req dto.CreateTenantRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -44,6 +47,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 	})
 }
 
+// Stats returns tenant statistics.
 func (h *TenantHandler) Stats(c *gin.Context) {
 	tenantID := c.Param("id")
 	if err := enforceTenantAccess(c, tenantID); err != nil {

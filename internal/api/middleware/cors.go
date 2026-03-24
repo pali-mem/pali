@@ -1,7 +1,9 @@
+// Package middleware contains HTTP middleware shared by the API.
 package middleware
 
 import "github.com/gin-gonic/gin"
 
+// CORS allows cross-origin API access for browser clients.
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")

@@ -8,6 +8,7 @@ import (
 	"github.com/pali-mem/pali/internal/telemetry"
 )
 
+// Telemetry records request observations when telemetry is enabled.
 func Telemetry(service *telemetry.Service) gin.HandlerFunc {
 	if service == nil {
 		return func(c *gin.Context) {
