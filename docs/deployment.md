@@ -65,11 +65,11 @@ pali init -config /etc/pali/pali.yaml -skip-model-download
 2. Edit `/etc/pali/pali.yaml` for your environment.
    - Full reference: `docs/configuration.md`
    - Multi-tenant/auth model: `docs/multitenancy.md`
-   - Required secrets can come from env fallbacks:
-     - `OPENROUTER_API_KEY`
-     - `NEO4J_PASSWORD`
-   - Containerized deployments can also use explicit `PALI_*` environment overrides, for example:
-   - `PALI_SERVER_HOST`
+  - Required secrets can come from env fallbacks:
+    - `OPENROUTER_API_KEY`
+    - `NEO4J_PASSWORD`
+  - Containerized deployments can also use explicit `PALI_*` environment overrides, for example:
+    - `PALI_SERVER_HOST`
     - `PALI_DATABASE_SQLITE_DSN`
     - `PALI_VECTOR_BACKEND`
     - `PALI_QDRANT_BASE_URL`
