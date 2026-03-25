@@ -249,6 +249,22 @@ Each trend row now records:
 
 Latest suite runs in this workspace (March 12, 2026):
 
+### Release-Curated Lexical Verification (March 24, 2026)
+
+These are small release-curated verification runs on the checked-in release fixture/eval set (`8` memories, `8` labeled eval queries). They are useful for backend bring-up and regression checks, but they are not medium-scale positioning runs.
+
+| date_utc | backend | run type | key metrics |
+|---|---|---|---|
+| `2026-03-24` | `sqlite + lexical` | retrieval quality | `Top1=1.000000`, `Recall@5=1.000000`, `MRR=1.000000` |
+| `2026-03-24` | `pgvector + lexical` | retrieval quality | `Top1=1.000000`, `Recall@5=1.000000`, `MRR=1.000000` |
+| `2026-03-24` | `pgvector + lexical` | API benchmark | store `106.896 ops/s`, store `p95=3.640ms`, search `34.931 ops/s`, search `p95=19.589ms`, batch mode `enabled`, batch fallbacks `0` |
+
+Artifacts:
+
+- sqlite retrieval: `test/benchmarks/results/release-curated-sqlite-lexical-full/20260324T192041Z/`
+- pgvector retrieval: `test/benchmarks/results/release-curated-pgvector-lexical-full/20260324T192107Z/`
+- pgvector benchmark: `test/benchmarks/results/release-benchmark-pgvector-lexical-full/20260324T192146Z/`
+
 - `speed-medium-fast` (`20260312T045156Z`)
   - artifact: `test/benchmarks/results/suites/20260312T045156Z-speed-medium-fast/`
   - dataset: `locomo_medium500.fixture(500)` + `locomo_medium500.eval(231)`

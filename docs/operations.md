@@ -55,6 +55,7 @@ This document captures the minimum runbook for running Pali in production-like e
 - Schedule regular snapshots for:
   - SQLite DB file
   - vector state (qdrant, if used)
+  - PostgreSQL database/schema used by `pgvector` (if enabled)
   - Neo4j data (if enabled for entity facts)
 - Test restore at least once per change window:
   1. Restore snapshot to a staging path.
@@ -73,5 +74,5 @@ This document captures the minimum runbook for running Pali in production-like e
 2. Validate network and TLS path from gateway to Pali.
 3. Run `/health` and tenant auth checks.
 4. Review startup and request logs for recent migration/provider failures.
-5. Validate disk and backing store availability (SQLite/Qdrant/Neo4j).
+5. Validate disk and backing store availability (SQLite/Qdrant/PostgreSQL/Neo4j).
 6. If required, roll back to the last known-good deployment and preserve evidence for post-mortem.

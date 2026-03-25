@@ -22,6 +22,7 @@ type Config struct {
 	ProfileLayer      ProfileLayerConfig     `yaml:"profile_layer"`
 	Database          Database               `yaml:"database"`
 	Qdrant            QdrantConfig           `yaml:"qdrant"`
+	PGVector          PGVectorConfig         `yaml:"pgvector"`
 	Neo4j             Neo4jConfig            `yaml:"neo4j"`
 	Embedding         Embedding              `yaml:"embedding"`
 	OpenRouter        OpenRouterConfig       `yaml:"openrouter"`
@@ -69,6 +70,15 @@ type QdrantConfig struct {
 	APIKey     string `yaml:"api_key"`
 	Collection string `yaml:"collection"`
 	TimeoutMS  int    `yaml:"timeout_ms"`
+}
+
+// PGVectorConfig configures the pgvector-backed PostgreSQL vector store.
+type PGVectorConfig struct {
+	DSN          string `yaml:"dsn"`
+	Table        string `yaml:"table"`
+	AutoMigrate  bool   `yaml:"auto_migrate"`
+	MaxOpenConns int    `yaml:"max_open_conns"`
+	MaxIdleConns int    `yaml:"max_idle_conns"`
 }
 
 // Neo4jConfig configures the Neo4j entity-fact store.
@@ -187,7 +197,7 @@ type MatchScoringWeightsConfig struct {
 
 // ParserConfig configures the structured-memory parser.
 type ParserConfig struct {
-	Enabled                    bool    `yaml:"enabled"` // Whether to enable the parser at all.
+	Enabled                    bool    `yaml:"enabled"`
 	Provider                   string  `yaml:"provider"`
 	OllamaBaseURL              string  `yaml:"ollama_base_url"`
 	OllamaModel                string  `yaml:"ollama_model"`

@@ -16,8 +16,10 @@
 - benchmark scripts now default to the canonical checked-in fixture and eval set
 - benchmark result directories now include the source provider profile and rendered runtime config
 - release docs, deployment docs, configuration docs, and benchmark docs were synced to current runtime behavior
+- `pgvector` moved from scaffold-only to a supported vector backend with config, runtime wiring, and benchmark-script support
+- added a first-party Docker Compose overlay for PostgreSQL + `pgvector`
 
 ### Notes
 
 - latest retained March 9, 2026 LOCOMO raw runs remain documented as research-only context, not the release baseline
-- `pgvector` remains non-release work
+- `pgvector` requires a reachable PostgreSQL instance with the `vector` extension available

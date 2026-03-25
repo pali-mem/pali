@@ -108,6 +108,43 @@ func TestValidate_QdrantBackendRequiresValidConfig(t *testing.T) {
 	require.Contains(t, err.Error(), "qdrant.collection")
 }
 
+func TestValidate_PGVectorBackendRequiresValidConfig(t *testing.T) {
+	cfg := Defaults()
+	cfg.VectorBackend = "pgvector"
+	cfg.PGVector.DSN = "postgres://user:pass@localhost:5432/pali"
+	require.NoError(t, Validate(cfg))
+
+	cfg = Defaults()
+	cfg.VectorBackend = "pgvector"
+	cfg.PGVector.DSN = ""
+	err := Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pgvector.dsn")
+
+	cfg = Defaults()
+	cfg.VectorBackend = "pgvector"
+	cfg.PGVector.DSN = "://bad"
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pgvector.dsn")
+
+	cfg = Defaults()
+	cfg.VectorBackend = "pgvector"
+	cfg.PGVector.DSN = "postgres://user:pass@localhost:5432/pali"
+	cfg.PGVector.Table = ""
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pgvector.table")
+
+	cfg = Defaults()
+	cfg.VectorBackend = "pgvector"
+	cfg.PGVector.DSN = "postgres://user:pass@localhost:5432/pali"
+	cfg.PGVector.MaxOpenConns = -1
+	err = Validate(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pgvector.max_open_conns")
+}
+
 func TestValidate_EntityFactBackendRequiresValidConfig(t *testing.T) {
 	cfg := Defaults()
 	cfg.EntityFactBackend = "neo4j"
