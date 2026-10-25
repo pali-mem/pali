@@ -140,6 +140,25 @@ func TestListByEntityRelation_ValidationAndDefaults(t *testing.T) {
 	require.Contains(t, err.Error(), "not initialized")
 }
 
+func TestListByEntityRelations_ValidationAndDefaults(t *testing.T) {
+	repo := &EntityFactRepository{}
+	ctx := context.Background()
+
+	facts, err := repo.ListByEntityRelations(ctx, "", nil, []string{"role"}, 10)
+	require.NoError(t, err)
+	require.Empty(t, facts)
+	_, err = repo.ListByEntityRelations(ctx, " ", []string{"alice"}, []string{"role"}, 10)
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+	_, err = repo.ListByEntityRelations(ctx, "tenant_1", []string{"alice", " "}, []string{"role"}, 10)
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+	_, err = repo.ListByEntityRelations(ctx, "tenant_1", []string{"alice"}, []string{""}, 10)
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+
+	_, err = repo.ListByEntityRelations(ctx, " tenant_1 ", []string{" Alice "}, []string{"  ROLE "}, 0)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not initialized")
+}
+
 func TestListByEntityPaths_ValidationAndDefaults(t *testing.T) {
 	repo := &EntityFactRepository{}
 

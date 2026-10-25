@@ -33,16 +33,9 @@ func (s *Service) searchByEntityFacts(
 	if lookupLimit < 20 {
 		lookupLimit = 20
 	}
-	facts := make([]domain.EntityFact, 0, lookupLimit*len(relations))
-	for _, relation := range relations {
-		relationFacts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
-		if err != nil {
-			return nil, false, err
-		}
-		if s.multiHop.GraphSingletonInvalidation {
-			relationFacts = filterActiveEntityFacts(relationFacts)
-		}
-		facts = append(facts, relationFacts...)
+	facts, err := s.listEntityFactsByRelations(ctx, tenantID, []string{entity}, relations, lookupLimit)
+	if err != nil {
+		return nil, false, err
 	}
 	if len(facts) == 0 {
 		return nil, false, nil
@@ -294,27 +287,22 @@ func (s *Service) collectEntityHintCandidates(
 	if lookupLimit > 24 {
 		lookupLimit = 24
 	}
-	ids := make([]string, 0, lookupLimit*len(relations))
-	seen := make(map[string]struct{}, lookupLimit*len(relations))
-	for _, relation := range relations {
-		facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
-		if err != nil {
-			return nil, err
+	facts, err := s.listEntityFactsByRelations(ctx, tenantID, []string{entity}, relations, lookupLimit)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(facts))
+	seen := make(map[string]struct{}, len(facts))
+	for _, fact := range facts {
+		memoryID := strings.TrimSpace(fact.MemoryID)
+		if memoryID == "" {
+			continue
 		}
-		if s.multiHop.GraphSingletonInvalidation {
-			facts = filterActiveEntityFacts(facts)
+		if _, ok := seen[memoryID]; ok {
+			continue
 		}
-		for _, fact := range facts {
-			memoryID := strings.TrimSpace(fact.MemoryID)
-			if memoryID == "" {
-				continue
-			}
-			if _, ok := seen[memoryID]; ok {
-				continue
-			}
-			seen[memoryID] = struct{}{}
-			ids = append(ids, memoryID)
-		}
+		seen[memoryID] = struct{}{}
+		ids = append(ids, memoryID)
 	}
 	if len(ids) == 0 {
 		return []lexicalCandidate{}, nil
@@ -362,6 +350,44 @@ func (s *Service) collectEntityHintCandidates(
 		candidates = candidates[:maxHintCandidates]
 	}
 	return candidates, nil
+}
+
+// listEntityFactsByRelations returns the facts for every entity (outer) and
+// relation (inner) pair in that order, using the repository's batch lookup
+// when available and one ListByEntityRelation call per pair otherwise. With
+// GraphSingletonInvalidation, invalidated facts are dropped.
+func (s *Service) listEntityFactsByRelations(
+	ctx context.Context,
+	tenantID string,
+	entities, relations []string,
+	limit int,
+) ([]domain.EntityFact, error) {
+	if len(entities) == 0 || len(relations) == 0 {
+		return []domain.EntityFact{}, nil
+	}
+	var facts []domain.EntityFact
+	if batchRepo, ok := s.entityRepo.(domain.EntityFactBatchLookupRepository); ok && batchRepo != nil {
+		batch, err := batchRepo.ListByEntityRelations(ctx, tenantID, entities, relations, limit)
+		if err != nil {
+			return nil, err
+		}
+		facts = batch
+	} else {
+		facts = make([]domain.EntityFact, 0, len(entities)*len(relations))
+		for _, entity := range entities {
+			for _, relation := range relations {
+				pairFacts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, limit)
+				if err != nil {
+					return nil, err
+				}
+				facts = append(facts, pairFacts...)
+			}
+		}
+	}
+	if s.multiHop.GraphSingletonInvalidation {
+		facts = filterActiveEntityFacts(facts)
+	}
+	return facts, nil
 }
 
 func lexicalHitsWithoutScores(memories []domain.Memory) []domain.LexicalHit {

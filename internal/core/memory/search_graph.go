@@ -72,27 +72,20 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 			}
 		}
 	}
-	for _, entity := range entities {
-		for _, relation := range relations {
-			facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
-			if err != nil {
-				return nil, err
-			}
-			if s.multiHop.GraphSingletonInvalidation {
-				facts = filterActiveEntityFacts(facts)
-			}
-			for _, fact := range facts {
-				memoryID := strings.TrimSpace(fact.MemoryID)
-				if memoryID == "" {
-					continue
-				}
-				if _, ok := seen[memoryID]; ok {
-					continue
-				}
-				seen[memoryID] = struct{}{}
-				ids = append(ids, memoryID)
-			}
+	facts, err := s.listEntityFactsByRelations(ctx, tenantID, entities, relations, lookupLimit)
+	if err != nil {
+		return nil, err
+	}
+	for _, fact := range facts {
+		memoryID := strings.TrimSpace(fact.MemoryID)
+		if memoryID == "" {
+			continue
 		}
+		if _, ok := seen[memoryID]; ok {
+			continue
+		}
+		seen[memoryID] = struct{}{}
+		ids = append(ids, memoryID)
 	}
 	if graphRepo, ok := s.entityRepo.(domain.EntityFactGraphRepository); ok && graphRepo != nil {
 		neighborLimit := lookupLimit * len(relations) * 2
