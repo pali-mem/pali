@@ -66,6 +66,7 @@ npm install pali-client
 
 - [Configuration](configuration.md)
 - [Support Matrix](support-matrix.md)
+- [Benchmarks](benchmarks.md)
 - [API](api.md)
 - [MCP Integration](mcp.md)
 - [Go Client SDK](client/README.md)
@@ -109,7 +110,7 @@ Then continue with [Getting Started](getting-started.md) for tenant creation plu
 |---|---|
 | Setup and operations | [Getting Started](getting-started.md), [Deployment](deployment.md), [Operations](operations.md) |
 | Integration | [API](api.md), [MCP Integration](mcp.md), [Go Client SDK](client/README.md), [Python SDK repo](https://github.com/pali-mem/pali-py), [Python package](https://pypi.org/project/pali-client/), [JavaScript SDK repo](https://github.com/pali-mem/pali-js), [JavaScript package](https://www.npmjs.com/package/pali-client) |
-| Runtime behavior | [Configuration](configuration.md), [Support Matrix](support-matrix.md), [Multi-Tenancy](multitenancy.md), [ONNX Runtime](onnx.md) |
+| Runtime behavior | [Configuration](configuration.md), [Support Matrix](support-matrix.md), [Benchmarks](benchmarks.md), [Multi-Tenancy](multitenancy.md), [ONNX Runtime](onnx.md) |
 | System design | [Architecture](architecture.md) |
 
 ## Maintainer references

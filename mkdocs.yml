@@ -61,6 +61,7 @@ nav:
       - Multi-Tenancy: multitenancy.md
       - Configuration: configuration.md
       - Support Matrix: support-matrix.md
+      - Benchmarks: benchmarks.md
       - Deployment: deployment.md
       - Operations: operations.md
   - Reference:
