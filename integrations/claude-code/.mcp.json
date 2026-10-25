@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pali": {
+      "command": "pali",
+      "args": ["mcp", "serve", "-config", "${PALI_CONFIG:-}", "-tenant", "auto"],
+      "env": {
+        "PALI_DATABASE_SQLITE_DSN": "file:${CLAUDE_PLUGIN_DATA}/pali.db?cache=shared"
+      }
+    }
+  }
+}

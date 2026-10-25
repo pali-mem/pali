@@ -65,6 +65,16 @@ pali mcp serve     # MCP server mode for agent hosts
 
 ---
 
+## Use with coding agents
+
+```bash
+pali connect claude-code   # or: cursor, codex
+```
+
+Writes the Pali MCP server into the agent's config (project scope by default, `--scope user` for the global one) with one tenant per repository. Add `--dry-run` to preview. A Claude Code plugin with a session-start memory protocol lives in [`integrations/claude-code`](integrations/claude-code). Details: [Use with coding agents](docs/coding-agents.md).
+
+---
+
 ## SDKs
 
 - **Go** — [`docs/client/README.md`](docs/client/README.md)

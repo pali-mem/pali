@@ -67,6 +67,7 @@ nav:
   - Reference:
       - API: api.md
       - MCP Integration: mcp.md
+      - Coding Agents: coding-agents.md
       - ONNX Runtime: onnx.md
       - Go Client SDK: client/README.md
       - Python SDK Repo: https://github.com/pali-mem/pali-py
