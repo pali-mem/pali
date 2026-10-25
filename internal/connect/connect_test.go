@@ -5,11 +5,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-const testExe = "/opt/pali/bin/pali"
+// testExe must satisfy filepath.IsAbs on every OS; forward slashes keep the
+// expected JSON and TOML strings free of escaped backslashes.
+var testExe = func() string {
+	if runtime.GOOS == "windows" {
+		return "C:/opt/pali/bin/pali"
+	}
+	return "/opt/pali/bin/pali"
+}()
 
 // newProject makes a fake home and a git project dir named name.
 func newProject(t *testing.T, name string) (home, project string) {
@@ -114,7 +122,8 @@ func TestRunJSONAgents(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if info.Mode().Perm() != 0o600 {
+			// Windows reports only read-only vs read-write, so 0o600 is not observable there.
+			if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 				t.Fatalf("file mode changed to %v", info.Mode().Perm())
 			}
 		})
