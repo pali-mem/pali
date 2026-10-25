@@ -52,10 +52,9 @@ func parseParserFacts(raw string, maxFacts int) ([]ParsedFact, error) {
 			}
 		}
 		if entity == "" && (relation != "" || value != "") {
+			// Left empty when unresolved; the store path resolves the speaker or
+			// skips the entity fact.
 			entity = inferEntityFromFact(text)
-			if entity == "" {
-				entity = "user"
-			}
 		}
 		key := strings.ToLower(text)
 		if _, ok := seen[key]; ok {

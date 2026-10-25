@@ -667,7 +667,7 @@ func prepareParsedFactsForStore(sourceContent string, facts []ParsedFact, retain
 			(strings.TrimSpace(fact.Relation) != "" || strings.TrimSpace(fact.Value) != "") {
 			fact.Entity = inferEntityFromFact(content)
 			if strings.TrimSpace(fact.Entity) == "" {
-				fact.Entity = "user"
+				fact.Entity = speakerFromSource(sourceContent)
 			}
 		}
 		if !passesCanonicalFactAdmission(sourceContent, fact) {
@@ -811,7 +811,7 @@ func expandCompoundPreparedFacts(sourceContent string, fact ParsedFact, retainAn
 			(strings.TrimSpace(candidate.Relation) != "" || strings.TrimSpace(candidate.Value) != "") {
 			candidate.Entity = inferEntityFromFact(clause)
 			if strings.TrimSpace(candidate.Entity) == "" {
-				candidate.Entity = "user"
+				candidate.Entity = speakerFromSource(sourceContent)
 			}
 		}
 		if !passesCanonicalFactAdmission(sourceContent, candidate) {
