@@ -29,7 +29,7 @@ func (r *batchEntityFactRepoStub) ListByEntityRelations(
 	for _, entity := range entities {
 		for _, relation := range relations {
 			r.batchPairs++
-			facts, err := r.retrievalEntityFactRepoStub.ListByEntityRelation(ctx, tenantID, entity, relation, limit)
+			facts, err := r.ListByEntityRelation(ctx, tenantID, entity, relation, limit)
 			if err != nil {
 				return nil, err
 			}
