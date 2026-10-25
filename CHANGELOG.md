@@ -7,7 +7,7 @@ Full notes and benchmark deltas: [`changelog/v0.2.1.md`](changelog/v0.2.1.md).
 ### Fixed
 
 - ranking: routed (temporal / person / multi-hop) queries no longer saturate top scores to `1.0`; final sort is deterministic
-- retrieval: lexical candidates carry real FTS5 BM25 scores (SQLite) instead of rank position
+- retrieval: lexical candidates carry real FTS5 BM25 scores (SQLite) instead of rank position; equal BM25 scores keep newest-first order instead of falling to random IDs
 - retrieval: a bare `and` between noun phrases no longer classifies a query as multi-hop
 - parser: dedupe on normalized content + kind; month/time tags no longer match ordinary words; single-sentence utterances are not stored twice; pronouns are not graph entities; long low-signal text is filtered
 - heuristic importance scorer: replaced a TF-IDF term that scored `"ok"` at 1.0
