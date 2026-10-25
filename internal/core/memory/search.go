@@ -355,6 +355,11 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		case a.Score < b.Score:
 			return 1
 		default:
+			// BM25 ties (e.g. identical content) keep the repository's
+			// newest-first order instead of falling to random IDs.
+			if c := b.Memory.UpdatedAt.Compare(a.Memory.UpdatedAt); c != 0 {
+				return c
+			}
 			return strings.Compare(a.Memory.ID, b.Memory.ID)
 		}
 	})
