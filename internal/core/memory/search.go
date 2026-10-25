@@ -86,6 +86,24 @@ type SearchRankingDebug struct {
 	RouteFit     float64 `json:"route_fit"`
 }
 
+// compareLexicalCandidates orders lexical candidates by score descending.
+// BM25 ties (e.g. identical content) keep the repository's newest-first
+// order (UpdatedAt descending) instead of falling to random IDs; ID is the
+// final tie-break.
+func compareLexicalCandidates(a, b lexicalCandidate) int {
+	switch {
+	case a.Score > b.Score:
+		return -1
+	case a.Score < b.Score:
+		return 1
+	default:
+		if c := b.Memory.UpdatedAt.Compare(a.Memory.UpdatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Memory.ID, b.Memory.ID)
+	}
+}
+
 // Search runs a query with default filters and returns matching memories.
 func (s *Service) Search(ctx context.Context, tenantID, query string, topK int) ([]domain.Memory, error) {
 	return s.SearchWithFilters(ctx, tenantID, query, topK, SearchOptions{})
@@ -348,21 +366,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	if len(lexicalCandidates) == 0 && len(denseCandidates) == 0 {
 		return []domain.Memory{}, nil
 	}
-	slices.SortFunc(lexicalCandidates, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			// BM25 ties (e.g. identical content) keep the repository's
-			// newest-first order instead of falling to random IDs.
-			if c := b.Memory.UpdatedAt.Compare(a.Memory.UpdatedAt); c != 0 {
-				return c
-			}
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	slices.SortFunc(lexicalCandidates, compareLexicalCandidates)
 	slices.SortFunc(denseCandidates, func(a, b domain.VectorstoreCandidate) int {
 		return compareScoreDescThenID(a.Similarity, b.Similarity, a.MemoryID, b.MemoryID)
 	})
