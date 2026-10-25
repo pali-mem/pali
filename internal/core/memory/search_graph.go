@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"slices"
 	"strings"
 
 	"github.com/pali-mem/pali/internal/domain"
@@ -26,13 +25,7 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 		return []lexicalCandidate{}, nil
 	}
 	relations := expandEntityFactRelations(graphRelationHints(query, plan))
-	lookupLimit := topK / 10
-	if lookupLimit < 8 {
-		lookupLimit = 8
-	}
-	if lookupLimit > 24 {
-		lookupLimit = 24
-	}
+	lookupLimit := entityLookupLimit(topK)
 	ids := make([]string, 0, len(entities)*len(relations)*lookupLimit)
 	seen := make(map[string]struct{}, len(entities)*len(relations)*lookupLimit)
 	pathScoreByID := make(map[string]float64, lookupLimit)
@@ -120,15 +113,8 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 	}
 	candidates := make([]lexicalCandidate, 0, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		score := graphBridgeCandidateScore(query, memory.Content, entities, pathScoreByID[memory.ID], s.multiHop.GraphWeight)
 		threshold := 0.16
@@ -143,16 +129,7 @@ func (s *Service) collectGraphEntityBridgeCandidates(
 			Score:  score,
 		})
 	}
-	slices.SortFunc(candidates, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	sortLexicalByScore(candidates)
 	maxBridgeCandidates := topK
 	if maxBridgeCandidates < 12 {
 		maxBridgeCandidates = 12
@@ -186,16 +163,7 @@ func graphEntityBridgeSeeds(query string, plan queryPlan, lexical []lexicalCandi
 	}
 
 	ordered := append([]lexicalCandidate{}, lexical...)
-	slices.SortFunc(ordered, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	sortLexicalByScore(ordered)
 	maxSeedScan := 8
 	if len(ordered) < maxSeedScan {
 		maxSeedScan = len(ordered)

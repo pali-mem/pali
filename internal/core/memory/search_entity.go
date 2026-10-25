@@ -68,15 +68,8 @@ func (s *Service) searchByEntityFacts(
 
 	filtered := make([]domain.Memory, 0, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		filtered = append(filtered, memory)
 	}
@@ -93,6 +86,8 @@ func (s *Service) searchByEntityFacts(
 	}
 	profile := classifyQuery(query)
 	scored := rankMemories(filtered, signalByID, max(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval)
+	// Unlike sortScoredByScore this has no ID tie-break; adding one would
+	// reorder tied aggregation results.
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -186,15 +181,8 @@ func (s *Service) collectLexicalCandidates(
 		}
 		for idx, hit := range hits {
 			memory := hit.Memory
-			if len(kindFilter) > 0 {
-				if _, ok := kindFilter[memory.Kind]; !ok {
-					continue
-				}
-			}
-			if len(tierFilter) > 0 {
-				if _, ok := tierFilter[memory.Tier]; !ok {
-					continue
-				}
+			if !passesFilters(memory, kindFilter, tierFilter) {
+				continue
 			}
 			// Prefer the backend's real BM25 strength (normalized so the best hit
 			// for this query is 1.0). Fall back to rank position only when the
@@ -246,15 +234,8 @@ func (s *Service) filterDenseCandidatesByMetadata(
 	}
 	allowed := make(map[string]struct{}, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		allowed[memory.ID] = struct{}{}
 	}
@@ -280,14 +261,7 @@ func (s *Service) collectEntityHintCandidates(
 		return []lexicalCandidate{}, nil
 	}
 	relations := []string{"activity", "preference", "event", "plan", "goal", "identity", "role", "relationship", "relationship status", "belief", "value", "trait", "place", "book"}
-	lookupLimit := topK / 10
-	if lookupLimit < 8 {
-		lookupLimit = 8
-	}
-	if lookupLimit > 24 {
-		lookupLimit = 24
-	}
-	facts, err := s.listEntityFactsByRelations(ctx, tenantID, []string{entity}, relations, lookupLimit)
+	facts, err := s.listEntityFactsByRelations(ctx, tenantID, []string{entity}, relations, entityLookupLimit(topK))
 	if err != nil {
 		return nil, err
 	}
@@ -313,15 +287,8 @@ func (s *Service) collectEntityHintCandidates(
 	}
 	candidates := make([]lexicalCandidate, 0, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		score := lexicalContentScore(query, memory.Content)
 		if score < 0.12 {
@@ -332,16 +299,7 @@ func (s *Service) collectEntityHintCandidates(
 			Score:  score,
 		})
 	}
-	slices.SortFunc(candidates, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	sortLexicalByScore(candidates)
 	maxHintCandidates := topK / 2
 	if maxHintCandidates < 8 {
 		maxHintCandidates = 8

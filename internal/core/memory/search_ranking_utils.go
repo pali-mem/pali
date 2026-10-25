@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/pali-mem/pali/internal/domain"
@@ -340,13 +339,8 @@ func fuseCandidatesByRRF(
 		ids = append(ids, id)
 	}
 
-	sort.Slice(ids, func(i, j int) bool {
-		a := ids[i]
-		b := ids[j]
-		if rrfScore[a] == rrfScore[b] {
-			return a < b
-		}
-		return rrfScore[a] > rrfScore[b]
+	slices.SortFunc(ids, func(a, b string) int {
+		return compareScoreDescThenID(rrfScore[a], rrfScore[b], a, b)
 	})
 
 	if len(ids) > limit {
@@ -382,18 +376,56 @@ func rrfToNormalized(rrf float64) float64 {
 	return clamp01(rrf / (rrf + base))
 }
 
+// compareScoreDescThenID orders higher scores first and breaks ties by
+// ascending ID, so equal scores sort deterministically.
+func compareScoreDescThenID(aScore, bScore float64, aID, bID string) int {
+	switch {
+	case aScore > bScore:
+		return -1
+	case aScore < bScore:
+		return 1
+	default:
+		return strings.Compare(aID, bID)
+	}
+}
+
 func sortScoredByScore(items []scoredMemory) []scoredMemory {
 	slices.SortFunc(items, func(a, b scoredMemory) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
+		return compareScoreDescThenID(a.Score, b.Score, a.Memory.ID, b.Memory.ID)
 	})
 	return items
+}
+
+func sortLexicalByScore(items []lexicalCandidate) {
+	slices.SortFunc(items, func(a, b lexicalCandidate) int {
+		return compareScoreDescThenID(a.Score, b.Score, a.Memory.ID, b.Memory.ID)
+	})
+}
+
+// passesFilters reports whether memory matches the kind and tier filters;
+// an empty filter allows everything.
+func passesFilters(
+	memory domain.Memory,
+	kindFilter map[domain.MemoryKind]struct{},
+	tierFilter map[domain.MemoryTier]struct{},
+) bool {
+	if len(kindFilter) > 0 {
+		if _, ok := kindFilter[memory.Kind]; !ok {
+			return false
+		}
+	}
+	if len(tierFilter) > 0 {
+		if _, ok := tierFilter[memory.Tier]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// entityLookupLimit is the per entity/relation fact limit used by the
+// entity-hint and graph-bridge lookups: topK/10 clamped to [8, 24].
+func entityLookupLimit(topK int) int {
+	return min(max(topK/10, 8), 24)
 }
 
 func mathLog1pSafe(v float64) float64 {

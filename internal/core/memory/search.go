@@ -364,14 +364,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		}
 	})
 	slices.SortFunc(denseCandidates, func(a, b domain.VectorstoreCandidate) int {
-		switch {
-		case a.Similarity > b.Similarity:
-			return -1
-		case a.Similarity < b.Similarity:
-			return 1
-		default:
-			return strings.Compare(a.MemoryID, b.MemoryID)
-		}
+		return compareScoreDescThenID(a.Similarity, b.Similarity, a.MemoryID, b.MemoryID)
 	})
 
 	fuseStart := time.Now()
@@ -399,15 +392,8 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 
 	filtered := make([]scoredMemory, 0, len(scored))
 	for _, item := range scored {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[item.Memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[item.Memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(item.Memory, kindFilter, tierFilter) {
+			continue
 		}
 		if item.Score < opts.MinScore {
 			continue

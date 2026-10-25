@@ -219,16 +219,7 @@ func buildIterativeMultiHopQueries(query string, lexical []lexicalCandidate, max
 	baseTokens := normalizedRankingTokens(query)
 	// Highest-confidence lexical hits are used as first-hop evidence.
 	ordered := append([]lexicalCandidate{}, lexical...)
-	slices.SortFunc(ordered, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	sortLexicalByScore(ordered)
 	bestScore := 0.0
 	for _, candidate := range ordered {
 		if candidate.Memory.Kind == "" || candidate.Memory.Kind == domain.MemoryKindRawTurn {
@@ -281,16 +272,7 @@ func buildPseudoRelevanceQueries(query string, profile queryProfile, lexical []l
 		return []string{}
 	}
 	ordered := append([]lexicalCandidate{}, lexical...)
-	slices.SortFunc(ordered, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	sortLexicalByScore(ordered)
 	best := ordered[0].Score
 	if best < prfExpansionMinBestScore || best >= prfExpansionSkipStrongFirstPass {
 		return []string{}
@@ -356,14 +338,7 @@ func buildPseudoRelevanceQueries(query string, profile queryProfile, lexical []l
 		return []string{}
 	}
 	slices.SortFunc(scored, func(a, b tokenStats) int {
-		switch {
-		case a.score > b.score:
-			return -1
-		case a.score < b.score:
-			return 1
-		default:
-			return strings.Compare(a.token, b.token)
-		}
+		return compareScoreDescThenID(a.score, b.score, a.token, b.token)
 	})
 	extraTokens := make([]string, 0, prfExpansionMaxExtraTokens)
 	for _, token := range scored {
