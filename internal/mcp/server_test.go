@@ -3,7 +3,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -328,7 +330,9 @@ func connectInMemorySession(ctx context.Context, t *testing.T, server *Server) (
 		}
 		select {
 		case err := <-runErr:
-			if err != nil && ctx.Err() == nil {
+			// Closing the client closes the in-memory pipe; whether the server
+			// then reports io.ErrClosedPipe or nil depends on timing.
+			if err != nil && ctx.Err() == nil && !errors.Is(err, io.ErrClosedPipe) {
 				require.NoError(t, err)
 			}
 		default:
