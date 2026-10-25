@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pali-mem/pali/internal/api/dto"
+	apiauth "github.com/pali-mem/pali/internal/auth"
 	coretenant "github.com/pali-mem/pali/internal/core/tenant"
 	"github.com/pali-mem/pali/internal/domain"
 )
@@ -60,8 +64,68 @@ func (h *TenantHandler) Stats(c *gin.Context) {
 		return
 	}
 
+	byTier, byKind := stats.ByTier, stats.ByKind
+	if byTier == nil {
+		byTier = map[string]int64{}
+	}
+	if byKind == nil {
+		byKind = map[string]int64{}
+	}
 	c.JSON(http.StatusOK, dto.TenantStatsResponse{
-		TenantID:    tenantID,
-		MemoryCount: stats.MemoryCount,
+		TenantID:       tenantID,
+		MemoryCount:    stats.MemoryCount,
+		ByTier:         byTier,
+		ByKind:         byKind,
+		TotalRecalls:   stats.TotalRecalls,
+		NewestMemoryAt: stats.NewestMemoryAt,
 	})
+}
+
+const (
+	defaultTenantListLimit = 100
+	maxTenantListLimit     = 500
+)
+
+// List returns tenants with their memory counts. With a tenant-scoped token
+// only the caller's own tenant is returned.
+func (h *TenantHandler) List(c *gin.Context) {
+	limit := defaultTenantListLimit
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		limit = min(parsed, maxTenantListLimit)
+	}
+
+	var tenants []coretenant.WithStats
+	if authTenantID, scoped := apiauth.TenantIDFromGin(c); scoped {
+		one, err := h.service.GetWithStats(c.Request.Context(), authTenantID)
+		switch {
+		case err == nil:
+			tenants = []coretenant.WithStats{one}
+		case !errors.Is(err, domain.ErrNotFound):
+			writeError(c, err)
+			return
+		}
+	} else {
+		var err error
+		tenants, err = h.service.ListWithStats(c.Request.Context(), limit)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+	}
+
+	out := make([]dto.TenantItemResponse, 0, len(tenants))
+	for _, item := range tenants {
+		out = append(out, dto.TenantItemResponse{
+			ID:          item.Tenant.ID,
+			Name:        item.Tenant.Name,
+			CreatedAt:   item.Tenant.CreatedAt,
+			MemoryCount: item.Stats.MemoryCount,
+		})
+	}
+	c.JSON(http.StatusOK, dto.ListTenantsResponse{Items: out})
 }

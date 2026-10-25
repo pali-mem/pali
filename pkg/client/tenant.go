@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,18 @@ import (
 func (c *Client) CreateTenant(ctx context.Context, req CreateTenantRequest) (CreateTenantResponse, error) {
 	var out CreateTenantResponse
 	err := c.doJSON(ctx, http.MethodPost, "/v1/tenants", nil, req, &out)
+	return out, err
+}
+
+// ListTenants calls GET /v1/tenants. A limit of 0 uses the server default (100, max 500).
+// Tenant-scoped tokens only see their own tenant.
+func (c *Client) ListTenants(ctx context.Context, limit int) (ListTenantsResponse, error) {
+	var out ListTenantsResponse
+	var q url.Values
+	if limit > 0 {
+		q = url.Values{"limit": []string{strconv.Itoa(limit)}}
+	}
+	err := c.doJSON(ctx, http.MethodGet, "/v1/tenants", q, nil, &out)
 	return out, err
 }
 
