@@ -61,11 +61,13 @@ nav:
       - Multi-Tenancy: multitenancy.md
       - Configuration: configuration.md
       - Support Matrix: support-matrix.md
+      - Benchmarks: benchmarks.md
       - Deployment: deployment.md
       - Operations: operations.md
   - Reference:
       - API: api.md
       - MCP Integration: mcp.md
+      - Coding Agents: coding-agents.md
       - ONNX Runtime: onnx.md
       - Go Client SDK: client/README.md
       - Python SDK Repo: https://github.com/pali-mem/pali-py

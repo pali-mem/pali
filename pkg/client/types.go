@@ -23,8 +23,25 @@ type CreateTenantResponse struct {
 
 // TenantStatsResponse is returned by GET /v1/tenants/:id/stats.
 type TenantStatsResponse struct {
-	TenantID    string `json:"tenant_id"`
-	MemoryCount int64  `json:"memory_count"`
+	TenantID       string           `json:"tenant_id"`
+	MemoryCount    int64            `json:"memory_count"`
+	ByTier         map[string]int64 `json:"by_tier"`
+	ByKind         map[string]int64 `json:"by_kind"`
+	TotalRecalls   int64            `json:"total_recalls"`
+	NewestMemoryAt *time.Time       `json:"newest_memory_at"`
+}
+
+// TenantItem is one tenant returned by GET /v1/tenants.
+type TenantItem struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	CreatedAt   time.Time `json:"created_at"`
+	MemoryCount int64     `json:"memory_count"`
+}
+
+// ListTenantsResponse is returned by GET /v1/tenants.
+type ListTenantsResponse struct {
+	Items []TenantItem `json:"items"`
 }
 
 // StoreMemoryRequest is the request payload for POST /v1/memory.
@@ -77,11 +94,38 @@ type MemoryResponse struct {
 	Source         string    `json:"source"`
 	CreatedBy      string    `json:"created_by"`
 	Kind           string    `json:"kind"`
+	Importance     float64   `json:"importance"`
 	RecallCount    int       `json:"recall_count"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	LastAccessedAt time.Time `json:"last_accessed_at"`
 	LastRecalledAt time.Time `json:"last_recalled_at"`
+}
+
+// ListMemoryRequest holds the query parameters for GET /v1/memory.
+// Limit defaults to 50 server-side and is capped at 200.
+type ListMemoryRequest struct {
+	TenantID string
+	Limit    int
+	Offset   int
+	Tiers    []string
+	Kinds    []string
+}
+
+// ListMemoryResponse is returned by GET /v1/memory. NextOffset is nil on the last page.
+type ListMemoryResponse struct {
+	Items      []MemoryResponse `json:"items"`
+	NextOffset *int             `json:"next_offset,omitempty"`
+}
+
+// UpdateMemoryRequest is the request payload for PATCH /v1/memory/:id.
+// Nil fields are left unchanged; at least one field must be set.
+// An empty, non-nil Tags slice clears the tags.
+type UpdateMemoryRequest struct {
+	Content    *string   `json:"content,omitempty"`
+	Tags       *[]string `json:"tags,omitempty"`
+	Tier       *string   `json:"tier,omitempty"`
+	Importance *float64  `json:"importance,omitempty"`
 }
 
 // SearchPlanDebug is planner diagnostics returned when debug mode is enabled.

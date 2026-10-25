@@ -481,7 +481,7 @@ func TestStoreWithParserUsesBatchEmbeddingWhenAvailable(t *testing.T) {
 		ParserOptions{
 			Enabled:      true,
 			StoreRawTurn: true,
-			MaxFacts:     5,
+			MaxFacts:     1,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -516,7 +516,7 @@ func TestStoreWithParserFallsBackToSequentialEmbedWhenBatchFails(t *testing.T) {
 		ParserOptions{
 			Enabled:      true,
 			StoreRawTurn: true,
-			MaxFacts:     5,
+			MaxFacts:     1,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -611,7 +611,7 @@ func TestStoreBatchWithParserUsesSingleBatchEmbedAcrossTurns(t *testing.T) {
 		ParserOptions{
 			Enabled:      true,
 			StoreRawTurn: true,
-			MaxFacts:     5,
+			MaxFacts:     1,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -1132,7 +1132,7 @@ func TestPrepareParsedFactsForStoreKeepsCompoundFactWithImplicitSubject(t *testi
 	require.Equal(t, "Alice is vegetarian and avoids dairy.", prepared[0].Content)
 }
 
-func TestPrepareParsedFactsForStoreBackfillsUserEntityWhenRelationPresent(t *testing.T) {
+func TestPrepareParsedFactsForStoreLeavesEntityEmptyWhenSpeakerUnknown(t *testing.T) {
 	source := "I use TypeScript."
 	prepared := prepareParsedFactsForStore(source, []ParsedFact{
 		{
@@ -1143,7 +1143,7 @@ func TestPrepareParsedFactsForStoreBackfillsUserEntityWhenRelationPresent(t *tes
 		},
 	}, false)
 	require.Len(t, prepared, 1)
-	require.Equal(t, "user", strings.ToLower(prepared[0].Entity))
+	require.Equal(t, "", prepared[0].Entity)
 	require.Equal(t, "tool", prepared[0].Relation)
 	require.Equal(t, "TypeScript", prepared[0].Value)
 }

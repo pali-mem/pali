@@ -121,7 +121,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	}
 
 	// Phase 2: collect unique embedding texts in original order (sequential, no locking needed).
-	uniqueTexts := make([]string, 0, len(items)*(s.parser.MaxFacts+1))
+	uniqueTexts := make([]string, 0, len(items)*(s.heuristicParseBudget()+1))
 	seenTexts := make(map[string]struct{}, len(uniqueTexts))
 	pushText := func(text string) {
 		if text == "" {

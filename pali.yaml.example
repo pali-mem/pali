@@ -78,7 +78,7 @@ parser:
   openrouter_model: openai/gpt-oss-120b:nitro
   ollama_timeout_ms: 20000
   store_raw_turn: true
-  max_facts: 4
+  max_facts: 0 # 0 = provider default; >0 = parsed facts kept per turn
   answer_span_retention_enabled: false
 
 profile_layer:

@@ -25,7 +25,6 @@ var (
 	factPreferencePattern    = regexp.MustCompile(`(?i)\b(?:favorite|prefer(?:s)?|likes?|loves?|enjoys?)\b`)
 	factBeliefPattern        = regexp.MustCompile(`(?i)\b(?:believes?|believed|thinks?|thought|values?|valued|cares? about|stands? for)\b`)
 	factTraitPattern         = regexp.MustCompile(`(?i)\b(?:personality|trait|traits|tendency|tendencies|character|characteristic|known for)\b`)
-	factLeadingVerbPattern   = regexp.MustCompile(`(?i)^(?:is|was|attended|participated in|joined|went to|visited|likes?|loves?|enjoys?|practices?|plays?|uses?|using|does|chooses?|prefers?)\s+`)
 	factValueStopPattern     = regexp.MustCompile(`(?i)\b(?:because|since|while|although|but|and\s+(?:it|that|this)\b)\b`)
 
 	entityFactCanonicalRelations = map[string]struct{}{
@@ -72,13 +71,13 @@ func inferEntityRelationValue(content string, kind domain.MemoryKind) (string, s
 	}
 	entity := inferEntityFromFact(content)
 	relation := inferRelationFromFact(content, kind)
-	if entity == "" || relation == "" {
+	// A first-person fact has no entity until the caller resolves the speaker;
+	// relation and value are still inferred so admission is unaffected.
+	if relation == "" || (entity == "" && !isFirstPersonFact(content)) {
 		return "", "", ""
 	}
+	// value may be empty when no relation-specific value can be extracted.
 	value := inferValueFromFact(content, relation, entity)
-	if value == "" {
-		return "", "", ""
-	}
 	return entity, relation, value
 }
 
@@ -86,13 +85,30 @@ func inferEntityFromFact(content string) string {
 	candidate := strings.TrimSpace(content)
 	candidate = factLeadingDatePattern.ReplaceAllString(candidate, "")
 	if factFirstPersonPattern.MatchString(candidate) {
-		return "user"
+		return ""
 	}
 	m := factEntityPrefixPattern.FindStringSubmatch(candidate)
 	if len(m) < 2 {
 		return ""
 	}
 	return strings.Join(strings.Fields(strings.TrimSpace(m[1])), " ")
+}
+
+// isFirstPersonFact reports whether the fact is phrased from the first person,
+// so its subject is the unresolved speaker rather than a named entity.
+func isFirstPersonFact(content string) bool {
+	candidate := factLeadingDatePattern.ReplaceAllString(strings.TrimSpace(content), "")
+	return factFirstPersonPattern.MatchString(candidate)
+}
+
+// speakerFromSource returns the speaker of an annotated source turn, or "" when
+// the source carries no speaker.
+func speakerFromSource(sourceContent string) string {
+	turn, ok := parseAnnotatedTurn(sourceContent)
+	if !ok {
+		return ""
+	}
+	return strings.Join(strings.Fields(strings.TrimSpace(turn.Speaker)), " ")
 }
 
 func inferRelationFromFact(content string, kind domain.MemoryKind) string {
@@ -149,16 +165,9 @@ func inferValueFromFact(content, relation, entity string) string {
 	if m := selector.FindStringSubmatch(content); len(m) >= 2 {
 		return cleanupEntityFactValue(m[1])
 	}
-
-	value := strings.TrimSpace(content)
-	if entity != "" {
-		prefix := strings.ToLower(entity) + " "
-		if strings.HasPrefix(strings.ToLower(value), prefix) {
-			value = strings.TrimSpace(value[len(entity):])
-		}
-	}
-	value = factLeadingVerbPattern.ReplaceAllString(value, "")
-	return cleanupEntityFactValue(value)
+	// No relation-specific value: leave it empty rather than reusing the rest of
+	// the sentence, which ends up in query-view text and embeddings.
+	return ""
 }
 
 func cleanupEntityFactValue(value string) string {

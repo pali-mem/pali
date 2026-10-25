@@ -87,11 +87,16 @@ type MatchWeights struct {
 	Routing      float64
 }
 
-// RerankOptions configures late reranking of candidate memories.
+// RerankOptions configures late pairwise reranking of candidate memories.
 type RerankOptions struct {
+	// Enabled gates the pairwise rerank stage; false skips it entirely.
 	Enabled bool
-	Window  int
-	Blend   float64
+	// Window is how many head candidates are rescored. Values <= 0 use the
+	// default (50). The window is never smaller than the requested topK.
+	Window int
+	// Blend is the weight given to the pairwise score, clamped to [0, 1].
+	// 0 keeps first-stage scores unchanged.
+	Blend float64
 }
 
 // MultiHopOptions configures multi-hop query expansion and graph search.
@@ -113,10 +118,11 @@ type MultiHopOptions struct {
 
 // ParserOptions configures memory fact extraction from content.
 type ParserOptions struct {
-	Enabled                    bool
-	Provider                   string
-	Model                      string
-	StoreRawTurn               bool
+	Enabled      bool
+	Provider     string
+	Model        string
+	StoreRawTurn bool
+	// MaxFacts caps parsed facts kept per turn; 0 keeps the provider default.
 	MaxFacts                   int
 	AnswerSpanRetentionEnabled bool
 }
@@ -341,7 +347,7 @@ func defaultParserOptions() ParserOptions {
 		Provider:                   "heuristic",
 		Model:                      "",
 		StoreRawTurn:               true,
-		MaxFacts:                   4,
+		MaxFacts:                   0,
 		AnswerSpanRetentionEnabled: false,
 	}
 }
@@ -502,9 +508,6 @@ func normalizeRerankOptions(in RerankOptions) RerankOptions {
 	}
 	if out.Blend > 1 {
 		out.Blend = 1
-	}
-	if out.Blend == 0 {
-		out.Blend = def.Blend
 	}
 	return out
 }

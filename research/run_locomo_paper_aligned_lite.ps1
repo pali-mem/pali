@@ -27,7 +27,7 @@ param(
     [int]   $StoreBatchTimeoutSecs   = 90,
     [int]   $StoreSingleTimeoutSecs  = 45,
     [switch]$ParserStoreRaw          = $true,
-    [int]   $ParserMaxFacts          = 5,
+    [int]   $ParserMaxFacts          = 0,
     [double]$ParserDedupeThreshold   = 0.88,
     [double]$ParserUpdateThreshold   = 0.94,
     [string]$CacheDb        = "research/cache/paperlite_structured_ollama.sqlite",

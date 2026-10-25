@@ -237,7 +237,9 @@ func hasResolvedFactSubject(sourceContent, content, entity string) bool {
 	}
 	entity = strings.Join(strings.Fields(strings.TrimSpace(entity)), " ")
 	if entity == "" {
-		return false
+		// First-person facts stay admitted without an entity; no entity fact is
+		// written for them unless the speaker is resolved.
+		return isFirstPersonFact(content)
 	}
 	// A pronoun is never a resolved subject; storing "she"/"it" as an entity
 	// node lets multi-hop bridging link unrelated facts.
@@ -251,12 +253,12 @@ func inferSpecificValueCandidate(content string) string {
 	}
 	content = factLeadingDatePattern.ReplaceAllString(content, "")
 	entity := inferEntityFromFact(content)
-	if entity == "" {
+	if entity == "" && !isFirstPersonFact(content) {
 		return ""
 	}
 	lower := strings.ToLower(content)
 	lowerEntity := strings.ToLower(entity)
-	if strings.HasPrefix(lower, lowerEntity+" ") {
+	if entity != "" && strings.HasPrefix(lower, lowerEntity+" ") {
 		content = strings.TrimSpace(content[len(entity):])
 	}
 	for _, prefix := range []string{
@@ -303,10 +305,9 @@ func buildFactQuestionView(fact ParsedFact) string {
 		return ""
 	}
 	relation := normalizeEntityFactRelation(fact.Relation)
+	// An empty value yields only the value-free templates; never reuse the
+	// sentence as a value here.
 	value := normalizeEntityFactValue(fact.Value)
-	if value == "" {
-		value = inferSpecificValueCandidate(fact.Content)
-	}
 	parts := make([]string, 0, 6)
 	add := func(text string) {
 		text = normalizeFactContent(text)

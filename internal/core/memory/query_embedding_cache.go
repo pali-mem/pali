@@ -31,6 +31,7 @@ func newQueryEmbeddingCache(capacity int) *queryEmbeddingCache {
 	}
 }
 
+// Get returns a copy of the cached embedding for key and marks it recently used.
 func (c *queryEmbeddingCache) Get(key string) ([]float32, bool) {
 	if c == nil || strings.TrimSpace(key) == "" {
 		return nil, false
@@ -50,6 +51,7 @@ func (c *queryEmbeddingCache) Get(key string) ([]float32, bool) {
 	return cloneEmbedding(entry.embedding), true
 }
 
+// Set stores a copy of embedding under key, evicting the least recently used entry when full.
 func (c *queryEmbeddingCache) Set(key string, embedding []float32) {
 	if c == nil || strings.TrimSpace(key) == "" || len(embedding) == 0 {
 		return

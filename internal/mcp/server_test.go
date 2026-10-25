@@ -32,7 +32,7 @@ func TestServerRegistersExpectedTools(t *testing.T) {
 
 	tools, err := session.ListTools(ctx, &sdkmcp.ListToolsParams{})
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(tools.Tools), 11)
+	require.GreaterOrEqual(t, len(tools.Tools), 13)
 
 	names := make(map[string]struct{}, len(tools.Tools))
 	for _, tool := range tools.Tools {
@@ -43,6 +43,8 @@ func TestServerRegistersExpectedTools(t *testing.T) {
 		"memory_store_preference",
 		"memory_search",
 		"memory_list",
+		"memory_get",
+		"memory_update",
 		"memory_delete",
 		"tenant_create",
 		"tenant_list",
@@ -156,6 +158,107 @@ func TestServerToolFlow(t *testing.T) {
 	require.Len(t, searchOut.Items, 1)
 	require.Equal(t, "mcp_test", searchOut.Items[0].Source)
 	require.Equal(t, "user", searchOut.Items[0].CreatedBy)
+}
+
+func TestServerMemoryGetAndUpdate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	server, cleanup := newTestMCPServer(t)
+	defer cleanup()
+
+	session, stop := connectInMemorySession(ctx, t, server)
+	defer stop()
+
+	for _, id := range []string{"tenant_get", "tenant_get_other"} {
+		res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+			Name:      "tenant_create",
+			Arguments: map[string]any{"id": id, "name": id},
+		})
+		require.NoError(t, err)
+		require.False(t, res.IsError)
+	}
+
+	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name: "memory_store",
+		Arguments: map[string]any{
+			"tenant_id": "tenant_get",
+			"content":   "Jane graduates on May 22, 2027",
+			"tier":      "episodic",
+			"tags":      []string{"school"},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	memoryID := decodeStructured[tools.MemoryStoreOutput](t, res).ID
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name:      "memory_get",
+		Arguments: map[string]any{"tenant_id": "tenant_get", "memory_id": memoryID},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	got := decodeStructured[tools.MemoryGetOutput](t, res)
+	require.Equal(t, memoryID, got.Memory.ID)
+	require.Equal(t, "Jane graduates on May 22, 2027", got.Memory.Content)
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name:      "memory_get",
+		Arguments: map[string]any{"tenant_id": "tenant_get_other", "memory_id": memoryID},
+	})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name:      "memory_get",
+		Arguments: map[string]any{"tenant_id": "tenant_get", "memory_id": "mem_missing"},
+	})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name: "memory_update",
+		Arguments: map[string]any{
+			"tenant_id":  "tenant_get",
+			"memory_id":  memoryID,
+			"content":    "Jane graduates on May 29, 2027",
+			"tags":       []string{},
+			"tier":       "semantic",
+			"importance": 0.6,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, toolResultText(res))
+	updated := decodeStructured[tools.MemoryUpdateOutput](t, res)
+	require.Equal(t, "Jane graduates on May 29, 2027", updated.Memory.Content)
+	require.Empty(t, updated.Memory.Tags)
+	require.Equal(t, "semantic", updated.Memory.Tier)
+	require.InDelta(t, 0.6, updated.Memory.Importance, 0.0001)
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name:      "memory_search",
+		Arguments: map[string]any{"tenant_id": "tenant_get", "query": "May 29", "top_k": 3},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	found := decodeStructured[tools.MemorySearchOutput](t, res)
+	require.NotEmpty(t, found.Items)
+	require.Equal(t, memoryID, found.Items[0].ID)
+
+	for name, args := range map[string]map[string]any{
+		"no fields":  {"tenant_id": "tenant_get", "memory_id": memoryID},
+		"bad tier":   {"tenant_id": "tenant_get", "memory_id": memoryID, "tier": "bogus"},
+		"wrong user": {"tenant_id": "tenant_get_other", "memory_id": memoryID, "content": "x"},
+	} {
+		res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "memory_update", Arguments: args})
+		require.NoError(t, err, name)
+		require.True(t, res.IsError, name)
+	}
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "pali_capabilities", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	caps := decodeStructured[tools.CapabilitiesHelpOutput](t, res)
+	require.Contains(t, caps.CanonicalToolNames, "memory_get")
+	require.Contains(t, caps.CanonicalToolNames, "memory_update")
 }
 
 func TestServerUsesConfigDefaultTenantWhenInputMissing(t *testing.T) {

@@ -82,6 +82,39 @@ RETURN
 	coalesce(f.created_at_ns, 0) AS created_at_ns
 `
 
+// listEntityFactsByRelationsCypher runs the single-pair lookup once per
+// pair inside a subquery, so each pair keeps its own ordering and limit.
+const listEntityFactsByRelationsCypher = `
+UNWIND $pairs AS pair
+CALL {
+	WITH pair
+	MATCH (f:PaliEntityFact {
+		tenant_id: $tenant_id,
+		entity: pair.entity,
+		relation: pair.relation
+	})
+	WITH f
+	ORDER BY f.created_at_ns DESC
+	LIMIT $limit
+	RETURN f
+}
+RETURN
+	pair.idx AS pair_idx,
+	f.id AS id,
+	f.tenant_id AS tenant_id,
+	f.entity AS entity,
+	f.relation AS relation,
+	coalesce(f.relation_raw, '') AS relation_raw,
+	f.value AS value,
+	coalesce(f.memory_id, '') AS memory_id,
+	coalesce(f.observed_at_ns, 0) AS observed_at_ns,
+	coalesce(f.valid_from_ns, 0) AS valid_from_ns,
+	coalesce(f.valid_to_ns, 0) AS valid_to_ns,
+	coalesce(f.invalidated_by_fact_id, '') AS invalidated_by_fact_id,
+	coalesce(f.confidence, 0.0) AS confidence,
+	coalesce(f.created_at_ns, 0) AS created_at_ns
+`
+
 const listEntityFactsByNeighborhoodCypher = `
 MATCH (seed:PaliEntity {tenant_id: $tenant_id})
 WHERE seed.name IN $seeds
@@ -432,6 +465,101 @@ func (r *EntityFactRepository) ListByEntityRelation(
 		return nil, fmt.Errorf("neo4j entity fact query returned unexpected type: %T", raw)
 	}
 	return facts, nil
+}
+
+// ListByEntityRelations returns the facts ListByEntityRelation would return
+// for every entity (outer) and relation (inner) pair, concatenated in that
+// order, using one query for all distinct pairs.
+func (r *EntityFactRepository) ListByEntityRelations(
+	ctx context.Context,
+	tenantID string,
+	entities, relations []string,
+	limit int,
+) ([]domain.EntityFact, error) {
+	if len(entities) == 0 || len(relations) == 0 {
+		return []domain.EntityFact{}, nil
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+
+	type pairKey struct{ entity, relation string }
+	requested := make([]pairKey, 0, len(entities)*len(relations))
+	indexByPair := make(map[pairKey]int, len(entities)*len(relations))
+	pairs := make([]map[string]any, 0, len(entities)*len(relations))
+	for _, entity := range entities {
+		entity = normalizeEntityFactKey(entity)
+		for _, relation := range relations {
+			relation = normalizeEntityFactKey(relation)
+			if entity == "" || relation == "" {
+				return nil, domain.ErrInvalidInput
+			}
+			key := pairKey{entity: entity, relation: relation}
+			requested = append(requested, key)
+			if _, ok := indexByPair[key]; !ok {
+				indexByPair[key] = len(pairs)
+				pairs = append(pairs, map[string]any{"idx": int64(len(pairs)), "entity": entity, "relation": relation})
+			}
+		}
+	}
+	if r == nil || r.driver == nil {
+		return nil, fmt.Errorf("neo4j entity fact repository is not initialized")
+	}
+
+	session := r.driver.NewSession(ctx, neo4j.SessionConfig{
+		DatabaseName: r.database,
+		AccessMode:   neo4j.AccessModeRead,
+	})
+	defer func() {
+		_ = session.Close(ctx)
+	}()
+
+	raw, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+		result, runErr := tx.Run(ctx, listEntityFactsByRelationsCypher, map[string]any{
+			"tenant_id": tenantID,
+			"pairs":     pairs,
+			"limit":     limit,
+		})
+		if runErr != nil {
+			return nil, runErr
+		}
+
+		factsByPair := make([][]domain.EntityFact, len(pairs))
+		for result.Next(ctx) {
+			record := result.Record()
+			idxValue, _ := record.Get("pair_idx")
+			idx, ok := asInt64(idxValue)
+			if !ok || idx < 0 || int(idx) >= len(pairs) {
+				return nil, fmt.Errorf("neo4j entity fact row has invalid pair_idx: %v", idxValue)
+			}
+			fact, recordErr := scanEntityFactRecord(record)
+			if recordErr != nil {
+				return nil, recordErr
+			}
+			factsByPair[idx] = append(factsByPair[idx], fact)
+		}
+		if iterErr := result.Err(); iterErr != nil {
+			return nil, iterErr
+		}
+		return factsByPair, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("neo4j list entity facts by relations: %w", err)
+	}
+
+	factsByPair, ok := raw.([][]domain.EntityFact)
+	if !ok {
+		return nil, fmt.Errorf("neo4j entity fact query returned unexpected type: %T", raw)
+	}
+	out := make([]domain.EntityFact, 0, len(requested))
+	for _, key := range requested {
+		out = append(out, factsByPair[indexByPair[key]]...)
+	}
+	return out, nil
 }
 
 // ListByEntityNeighborhood lists nearby facts around a seed entity set.

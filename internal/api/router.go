@@ -155,6 +155,7 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 	r.GET("/dashboard/memories/view/:id", dashboardHandlers.ViewMemory)
 	r.POST("/dashboard/memories", dashboardHandlers.CreateMemory)
 	r.POST("/dashboard/memories/:id/delete", dashboardHandlers.DeleteMemory)
+	r.POST("/dashboard/memories/:id/edit", dashboardHandlers.EditMemory)
 	r.GET("/dashboard/tenants", dashboardHandlers.Tenants)
 	r.POST("/dashboard/tenants", dashboardHandlers.CreateTenant)
 	r.GET("/dashboard/stats", dashboardHandlers.Stats)
@@ -181,8 +182,12 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 		v1.POST("/memory/search", memory.Search)
 		v1.GET("/memory/jobs", memory.ListPostprocessJobs)
 		v1.GET("/memory/jobs/:id", memory.GetPostprocessJob)
+		v1.GET("/memory", memory.List)
+		v1.GET("/memory/:id", memory.Get)
+		v1.PATCH("/memory/:id", memory.Update)
 		v1.DELETE("/memory/:id", memory.Delete)
 
+		v1.GET("/tenants", tenant.List)
 		v1.POST("/tenants", tenant.Create)
 		v1.GET("/tenants/:id/stats", tenant.Stats)
 	}

@@ -238,6 +238,16 @@ type EntityFactBatchRepository interface {
 	StoreBatch(ctx context.Context, facts []EntityFact) ([]EntityFact, error)
 }
 
+// EntityFactBatchLookupRepository is an optional extension for repositories
+// that can look up many entity/relation pairs in one round trip.
+type EntityFactBatchLookupRepository interface {
+	// ListByEntityRelations returns what calling ListByEntityRelation for every
+	// entity (outer loop) and relation (inner loop) would return, concatenated
+	// in that order: per-pair limit, per-pair ordering, and the same
+	// ErrInvalidInput rules.
+	ListByEntityRelations(ctx context.Context, tenantID string, entities, relations []string, limit int) ([]EntityFact, error)
+}
+
 // EntityFactInvalidationRepository is an optional extension for repositories
 // that can close out older singleton facts when a newer canonical fact wins.
 // EntityFactInvalidationRepository can invalidate older singleton facts.
@@ -283,4 +293,58 @@ type TenantMemoryCountsRepository interface {
 // TenantCountRepository returns the total tenant count.
 type TenantCountRepository interface {
 	Count(ctx context.Context) (int64, error)
+}
+
+// MemoryListFilter selects one page of a tenant's memories, newest first.
+type MemoryListFilter struct {
+	Limit  int
+	Offset int
+	Tiers  []MemoryTier
+	Kinds  []MemoryKind
+}
+
+// MemoryListRepository is an optional extension for repositories that can
+// page through a tenant's memories ordered by creation time, newest first.
+type MemoryListRepository interface {
+	ListPage(ctx context.Context, tenantID string, filter MemoryListFilter) ([]Memory, error)
+}
+
+// MemoryPatch is a partial update; nil fields are left unchanged.
+// CanonicalKey and SourceTurnHash let the caller refresh identity when the
+// content changes.
+type MemoryPatch struct {
+	Content        *string
+	Tags           *[]string
+	Tier           *MemoryTier
+	Importance     *float64
+	CanonicalKey   *string
+	SourceTurnHash *string
+}
+
+// MemoryUpdateRepository is an optional extension for repositories that can
+// apply a partial update to one memory and keep the lexical index in sync.
+// Update returns ErrNotFound when the memory does not exist for the tenant.
+type MemoryUpdateRepository interface {
+	Update(ctx context.Context, tenantID, memoryID string, patch MemoryPatch) (Memory, error)
+}
+
+// TenantMemoryStats summarizes the memories of one tenant.
+type TenantMemoryStats struct {
+	MemoryCount    int64
+	ByTier         map[string]int64
+	ByKind         map[string]int64
+	TotalRecalls   int64
+	NewestMemoryAt time.Time
+}
+
+// TenantMemoryStatsRepository is an optional extension for repositories that
+// can return a detailed memory breakdown for a tenant.
+type TenantMemoryStatsRepository interface {
+	MemoryStats(ctx context.Context, tenantID string) (TenantMemoryStats, error)
+}
+
+// TenantGetRepository is an optional extension for repositories that can
+// fetch a single tenant record. Get returns ErrNotFound when missing.
+type TenantGetRepository interface {
+	Get(ctx context.Context, tenantID string) (Tenant, error)
 }

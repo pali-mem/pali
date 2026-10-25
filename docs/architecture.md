@@ -20,6 +20,14 @@ The repository layer remains the source of truth for persisted memory rows and t
 - `embedding.provider: openrouter`: remote embeddings via OpenRouter (`/api/v1/embeddings`).
 - `embedding.fallback_provider: lexical` (default): used automatically when primary provider initialization fails.
 
+## Memory Tiers
+
+Tiers are `working`, `episodic`, and `semantic`; `auto` is accepted as input only and is never stored. Explicit non-`auto` tiers are kept. With `auto` (or an empty tier), the write path (`internal/core/memory/tier_policy.go`) stores `semantic` when any stable signal is present, otherwise `episodic`:
+
+- `created_by` is `user` or `system`
+- a semantic tag such as `preferences`, `profile`, `identity`, or `always`
+- preference or profile phrasing in the content, such as `user prefers`, `i prefer`, or `my name is`
+
 ## Retrieval Pipeline
 
 Memory search uses hybrid retrieval + reranking:
@@ -52,6 +60,8 @@ The dashboard is built for operators inspecting the running service:
 
 - tenant lists and counts come from the tenant and memory repositories
 - persisted memory rows are rendered from the core repository-backed memory model
+- the memories page pages through a tenant's memories (50 per page, newest first) and the detail page can edit content, tags, tier, and importance through the memory service
+- the stats page shows a per-tenant breakdown (by tier, by kind, total recalls, newest memory)
 - retrieval-backed actions still use the memory service, so configured vector/entity extensions affect recall and ranking
 
 Operationally, this means enabling Qdrant or Neo4j does not stop the dashboard from showing memories. Those backends enrich retrieval; they do not become the canonical listing store.

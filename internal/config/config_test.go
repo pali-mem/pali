@@ -62,7 +62,7 @@ func TestDefaults(t *testing.T) {
 	require.True(t, cfg.Retrieval.MultiHop.GraphSingletonInvalidation)
 	require.False(t, cfg.Parser.Enabled)
 	require.Equal(t, "heuristic", cfg.Parser.Provider)
-	require.Equal(t, 4, cfg.Parser.MaxFacts)
+	require.Equal(t, 0, cfg.Parser.MaxFacts)
 	require.False(t, cfg.Parser.AnswerSpanRetentionEnabled)
 	require.False(t, cfg.ProfileLayer.SupportLinksEnabled)
 	require.Equal(t, "lexical", cfg.Embedding.Provider)

@@ -47,7 +47,7 @@ parser:
   ollama_model: deepseek-r1:7b
   ollama_timeout_ms: 20000
   store_raw_turn: true
-  max_facts: 4
+  max_facts: 0
 
 database:
   sqlite_dsn: file:pali.db?cache=shared
