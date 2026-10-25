@@ -4,7 +4,7 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-v0.2.0-blue)
+![Status](https://img.shields.io/badge/Status-v0.2.1-blue)
 
 <a href="https://github.com/user-attachments/assets/704a5235-4782-4d50-bdc0-8e929ba1c8c3">
   <img src="pali_banner.png" alt="Pali" width="830" />
