@@ -257,8 +257,8 @@ func Validate(cfg Config) error {
 	if (cfg.StructuredMemory.DualWriteObservations || cfg.StructuredMemory.DualWriteEvents) && cfg.StructuredMemory.MaxObservations == 0 {
 		return fmt.Errorf("structured_memory.max_observations must be > 0 when dual_write_observations=true or dual_write_events=true")
 	}
-	if cfg.Parser.MaxFacts <= 0 {
-		return fmt.Errorf("parser.max_facts must be > 0")
+	if cfg.Parser.MaxFacts < 0 {
+		return fmt.Errorf("parser.max_facts must be >= 0")
 	}
 	if cfg.Parser.OllamaTimeoutMS < 0 {
 		return fmt.Errorf("parser.ollama_timeout_ms must be >= 0")

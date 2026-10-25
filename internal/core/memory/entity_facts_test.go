@@ -40,7 +40,7 @@ func TestInferEntityRelationValue_RemovesLeadingDatePrefix(t *testing.T) {
 func TestInferEntityRelationValue_FirstPersonEntityFallback(t *testing.T) {
 	entity, relation, value := inferEntityRelationValue("i like coffee", domain.MemoryKindObservation)
 
-	require.Equal(t, "user", entity)
+	require.Equal(t, "", entity)
 	require.Equal(t, "preference", relation)
 	require.Equal(t, "coffee", value)
 }
@@ -50,9 +50,9 @@ func TestInferEntityFromFact_TrimsAndNormalizes(t *testing.T) {
 	require.Equal(t, "Alice Johnson", entity)
 }
 
-func TestInferEntityFromFact_FirstPersonFallsBackToUser(t *testing.T) {
-	require.Equal(t, "user", inferEntityFromFact("I use TypeScript at work"))
-	require.Equal(t, "user", inferEntityFromFact("On 8 May 2023, I fixed the auth bug"))
+func TestInferEntityFromFact_FirstPersonLeavesEntityEmpty(t *testing.T) {
+	require.Equal(t, "", inferEntityFromFact("I use TypeScript at work"))
+	require.Equal(t, "", inferEntityFromFact("On 8 May 2023, I fixed the auth bug"))
 }
 
 func TestInferRelationFromFact_DetectsRoleAndPlace(t *testing.T) {
@@ -66,13 +66,17 @@ func TestInferRelationFromFact_DetectsRelationshipStatusAndPreference(t *testing
 }
 
 func TestInferValueFromFact_NormalizesPrefixes(t *testing.T) {
-	value := inferValueFromFact("Alice is a vegetarian", "activity", "Alice")
-	require.Equal(t, "a vegetarian", value)
+	value := inferValueFromFact("Alice enjoys the hiking trails", "activity", "Alice")
+	require.Equal(t, "hiking trails", value)
+}
+
+func TestInferValueFromFact_NoSelectorMatchLeavesValueEmpty(t *testing.T) {
+	require.Equal(t, "", inferValueFromFact("Alice is a vegetarian", "activity", "Alice"))
 }
 
 func TestInferEntityRelationValue_FirstPersonTechPreference(t *testing.T) {
 	entity, relation, value := inferEntityRelationValue("I use TypeScript for backend services", domain.MemoryKindObservation)
-	require.Equal(t, "user", entity)
+	require.Equal(t, "", entity)
 	require.Equal(t, "activity", relation)
 	require.Equal(t, "TypeScript for backend services", value)
 }

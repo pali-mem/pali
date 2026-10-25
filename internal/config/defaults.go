@@ -88,7 +88,7 @@ func Defaults() Config {
 			OpenRouterModel:            "openai/gpt-oss-120b:nitro",
 			OllamaTimeoutMS:            20000,
 			StoreRawTurn:               true,
-			MaxFacts:                   4,
+			MaxFacts:                   0,
 			AnswerSpanRetentionEnabled: false,
 		},
 		ProfileLayer: ProfileLayerConfig{

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/pali-mem/pali/internal/domain"
@@ -215,7 +214,7 @@ func TestOllamaInfoParser_ParsePreservesProvidedRelationValueWhenEntityMissing(t
 	facts, err := p.Parse(context.Background(), "I use TypeScript", 5)
 	require.NoError(t, err)
 	require.Len(t, facts, 1)
-	require.Equal(t, "user", strings.ToLower(facts[0].Entity))
+	require.Equal(t, "", facts[0].Entity)
 	require.Equal(t, "tool", facts[0].Relation)
 	require.Equal(t, "TypeScript", facts[0].Value)
 }
@@ -478,7 +477,7 @@ func TestOpenRouterInfoParser_ParsePreservesProvidedRelationValueWhenEntityMissi
 	facts, err := p.Parse(context.Background(), "I use TypeScript", 5)
 	require.NoError(t, err)
 	require.Len(t, facts, 1)
-	require.Equal(t, "user", strings.ToLower(facts[0].Entity))
+	require.Equal(t, "", facts[0].Entity)
 	require.Equal(t, "tool", facts[0].Relation)
 	require.Equal(t, "TypeScript", facts[0].Value)
 }

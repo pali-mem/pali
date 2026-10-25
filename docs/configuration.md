@@ -151,7 +151,7 @@ parser:
   openrouter_model: openai/gpt-oss-120b:nitro
   ollama_timeout_ms: 20000
   store_raw_turn: true
-  max_facts: 4
+  max_facts: 0
   answer_span_retention_enabled: false
 
 profile_layer:
@@ -295,7 +295,7 @@ Useful flags:
 
 - `postprocess.*` timing and batch fields must be positive
 - `retrieval.search.*` window and threshold fields must remain within their documented bounds
-- `parser.max_facts` must be positive
+- `parser.max_facts` must be >= 0; `0` keeps the provider default (heuristic parser: one parsed fact beside the raw turn, two when `store_raw_turn` is false; LLM parsers: up to 4), a positive value is the number of parsed facts kept per turn
 - parser thresholds must stay in `[0,1]`
 - `structured_memory.max_observations` must be positive when dual-write modes are enabled
 - OpenRouter settings are required when OpenRouter-backed embedding, parsing, or scoring is enabled

@@ -113,10 +113,11 @@ type MultiHopOptions struct {
 
 // ParserOptions configures memory fact extraction from content.
 type ParserOptions struct {
-	Enabled                    bool
-	Provider                   string
-	Model                      string
-	StoreRawTurn               bool
+	Enabled      bool
+	Provider     string
+	Model        string
+	StoreRawTurn bool
+	// MaxFacts caps parsed facts kept per turn; 0 keeps the provider default.
 	MaxFacts                   int
 	AnswerSpanRetentionEnabled bool
 }
@@ -341,7 +342,7 @@ func defaultParserOptions() ParserOptions {
 		Provider:                   "heuristic",
 		Model:                      "",
 		StoreRawTurn:               true,
-		MaxFacts:                   4,
+		MaxFacts:                   0,
 		AnswerSpanRetentionEnabled: false,
 	}
 }
