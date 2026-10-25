@@ -11,8 +11,10 @@ var (
 	temporalPattern         = regexp.MustCompile(`\b(when|what time|date|day|month|year|before|after|first|last|earlier|later|yesterday|today|tomorrow)\b`)
 	personPattern           = regexp.MustCompile(`\b(who|name|which person|whose)\b`)
 	multiHopPattern         = regexp.MustCompile(`\b(before|after|first|last|both|either|then|and|while|followed|prior|previously)\b`)
+	multiHopStrongPattern   = regexp.MustCompile(`\b(before|after|first|last|then|while|followed|prior|previously)\b`)
+	multiHopClausePattern   = regexp.MustCompile(`\b(what|who|whom|whose|where|when|why|how|which|did|does|do|is|are|was|were|has|have|had|will|would|can|could|should|went|moved?|met|meets?|lived?|lives|worked?|works|started?|starts|visited|visits|got|get|gets|made|makes?|took|takes?|became|becomes?|joined|joins|left|leaves|bought|buys)\b`)
 	entityNamePattern       = regexp.MustCompile(`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b`)
-	timeTagPattern          = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
+	timeTagPattern          = regexp.MustCompile(`(?i)\[time:[^\]]+\]|\b(?:19|20)\d{2}\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b\d{1,2}(?:st|nd|rd|th)?\s+may\b|\bmay\s+\d`)
 	booleanQueryPattern     = regexp.MustCompile(`^(?:is|are|was|were|do|does|did|can|could|would|should|has|have|had|will)\b`)
 	quoteQueryPattern       = regexp.MustCompile(`\b(?:quote|quoted|say|said|poster|posters|sign|signs|slogan|written|wrote|exact words?)\b`)
 	listQueryPattern        = regexp.MustCompile(`\b(?:what all|list|which activities|which events|which places|which books|which hobbies|which interests)\b`)
@@ -182,7 +184,20 @@ func isLikelyMultiHopQuery(q string) bool {
 			informativeParts++
 		}
 	}
-	return informativeParts >= 2
+	if informativeParts < 2 {
+		return false
+	}
+	// A bare "and" joining two noun phrases ("Mel and her husband", "black
+	// and white") is not a second hop. Require the text after the last
+	// conjunction to read as its own clause: a wh-word, auxiliary, or verb.
+	if !multiHopStrongPattern.MatchString(q) {
+		idx := strings.LastIndex(q, " and ")
+		if idx < 0 {
+			return false
+		}
+		return multiHopClausePattern.MatchString(q[idx+5:])
+	}
+	return true
 }
 
 func extractMultiHopRouteEntities(query string) []string {

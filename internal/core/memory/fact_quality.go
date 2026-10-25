@@ -239,11 +239,9 @@ func hasResolvedFactSubject(sourceContent, content, entity string) bool {
 	if entity == "" {
 		return false
 	}
-	if !subjectPronounPattern.MatchString(strings.ToLower(entity)) {
-		return true
-	}
-	_, annotated := parseAnnotatedTurn(sourceContent)
-	return !annotated
+	// A pronoun is never a resolved subject; storing "she"/"it" as an entity
+	// node lets multi-hop bridging link unrelated facts.
+	return !subjectPronounPattern.MatchString(strings.ToLower(entity))
 }
 
 func inferSpecificValueCandidate(content string) string {

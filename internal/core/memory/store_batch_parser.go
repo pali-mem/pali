@@ -30,8 +30,6 @@ type parserPendingWrite struct {
 	memory           domain.Memory
 	embedding        []float32
 	relationTupleKey string
-	dropped          bool
-	replacedBy       int
 }
 
 type parserBatchResultRef struct {
@@ -183,9 +181,8 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 			return -1, fmt.Errorf("missing precomputed embedding for parser batch content")
 		}
 		pending = append(pending, parserPendingWrite{
-			memory:     memory,
-			embedding:  append([]float32{}, embedding...),
-			replacedBy: -1,
+			memory:    memory,
+			embedding: append([]float32{}, embedding...),
 		})
 		return len(pending) - 1, nil
 	}
@@ -302,9 +299,6 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	pendingContents := make([]string, 0, len(pending))
 	pendingIdxOrder := make([]int, 0, len(pending))
 	for i := range pending {
-		if pending[i].dropped {
-			continue
-		}
 		pendingContents = append(pendingContents, pending[i].memory.Content)
 		pendingIdxOrder = append(pendingIdxOrder, i)
 	}
@@ -350,7 +344,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 		var memory domain.Memory
 		hasMemory := false
 		if pendingFact.pendingIdx >= 0 {
-			resolved := resolveParserPendingIndex(pending, pendingFact.pendingIdx)
+			resolved := pendingFact.pendingIdx
 			if resolved >= 0 {
 				if stored, ok := pendingToStored[resolved]; ok {
 					memory = stored
@@ -375,7 +369,7 @@ func (s *Service) storeBatchWithParser(ctx context.Context, items []preparedStor
 	out := make([]domain.Memory, len(items))
 	for i := range resultRefs {
 		if resultRefs[i].pendingIdx >= 0 {
-			resolved := resolveParserPendingIndex(pending, resultRefs[i].pendingIdx)
+			resolved := resultRefs[i].pendingIdx
 			if resolved >= 0 {
 				if memory, ok := pendingToStored[resolved]; ok {
 					out[i] = memory
@@ -483,7 +477,6 @@ func (s *Service) applyParsedFactWithPending(
 		}, identity),
 		embedding:        append([]float32{}, embedding...),
 		relationTupleKey: tupleKey,
-		replacedBy:       -1,
 	})
 	newPendingIdx := len(*pending) - 1
 	staged := (*pending)[newPendingIdx].memory
@@ -498,9 +491,6 @@ func findPendingMemoryByCanonicalKey(
 		return nil, -1
 	}
 	for i := len(pending) - 1; i >= 0; i-- {
-		if pending[i].dropped {
-			continue
-		}
 		if pending[i].memory.TenantID != tenantID || pending[i].memory.CanonicalKey != canonicalKey {
 			continue
 		}
@@ -518,9 +508,6 @@ func findPendingMemoryByRelationTuple(
 		return nil, -1
 	}
 	for i := len(pending) - 1; i >= 0; i-- {
-		if pending[i].dropped {
-			continue
-		}
 		if pending[i].memory.TenantID != tenantID || pending[i].relationTupleKey != tupleKey {
 			continue
 		}
@@ -528,17 +515,4 @@ func findPendingMemoryByRelationTuple(
 		return &memory, i
 	}
 	return nil, -1
-}
-
-func resolveParserPendingIndex(pending []parserPendingWrite, idx int) int {
-	for idx >= 0 && idx < len(pending) {
-		if !pending[idx].dropped {
-			return idx
-		}
-		if pending[idx].replacedBy < 0 {
-			return -1
-		}
-		idx = pending[idx].replacedBy
-	}
-	return -1
 }

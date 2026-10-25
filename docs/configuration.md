@@ -98,8 +98,6 @@ structured_memory:
 retrieval:
   answer_type_routing_enabled: true
   early_rank_rerank_enabled: true
-  temporal_resolver_enabled: true
-  open_domain_alternative_resolver_enabled: false
   scoring:
     algorithm: wal
     wal:
@@ -154,8 +152,6 @@ parser:
   ollama_timeout_ms: 20000
   store_raw_turn: true
   max_facts: 4
-  dedupe_threshold: 0.88
-  update_threshold: 0.94
   answer_span_retention_enabled: false
 
 profile_layer:
@@ -230,9 +226,7 @@ logging:
 - `retrieval.multi_hop.llm_decomposition_enabled` is off by default.
 - `retrieval.answer_type_routing_enabled` is on by default.
 - `retrieval.early_rank_rerank_enabled` is on by default and is intended to lift relevant hits from ranks `11-25` into `1-10` before increasing retrieval depth.
-- `retrieval.temporal_resolver_enabled` is deprecated and currently has no runtime effect in server retrieval paths.
 - `retrieval.search.*` controls adaptive query variants, candidate overfetch windows, and rerank window depth.
-- `retrieval.open_domain_alternative_resolver_enabled` is deprecated and currently has no runtime effect in server retrieval paths.
 - `parser.answer_span_retention_enabled` stores extra answer-bearing metadata on parsed memories without replacing existing canonical memory content.
 - `profile_layer.support_links_enabled` stores source-support lines on summary/profile memories so retrieval can surface the summary and its backing evidence together.
 - `retrieval.multi_hop.decomposition_provider: none` is only valid when LLM decomposition is disabled.
@@ -240,9 +234,6 @@ logging:
 ## Category Improvement Rollout
 
 These flags were originally added for the single-hop / temporal / open-domain improvement slice.
-Two legacy toggles remain in config for backward compatibility but are deprecated no-ops in runtime:
-- `retrieval.temporal_resolver_enabled`
-- `retrieval.open_domain_alternative_resolver_enabled`
 
 - For baseline-only comparison runs, disable these explicitly:
   - `retrieval.answer_type_routing_enabled: false`

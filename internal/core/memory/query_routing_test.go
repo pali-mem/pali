@@ -75,3 +75,19 @@ func TestClassifyAggregationQuery_RequiresExplicitSetIntent(t *testing.T) {
 	_, ok := classifyAggregationQuery("When did Caroline attend a support group?")
 	require.False(t, ok)
 }
+
+// A bare "and" joining noun phrases is not a second hop.
+func TestClassifyQueryNounPhraseAndIsNotMultiHop(t *testing.T) {
+	for _, q := range []string{
+		"How long have Mel and her husband been married?",
+		"Did Melanie make the black and white bowl in the photo?",
+		"What did Caroline say about her job and her family?",
+		"Why did Melanie choose to use colors and patterns in her pottery project?",
+	} {
+		require.False(t, classifyQuery(q).MultiHop, q)
+	}
+}
+
+func TestClassifyQueryTwoQuestionClausesIsMultiHop(t *testing.T) {
+	require.True(t, classifyQuery("who did Melanie meet and where did she move?").MultiHop)
+}

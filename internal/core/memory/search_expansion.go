@@ -238,7 +238,7 @@ func buildIterativeMultiHopQueries(query string, lexical []lexicalCandidate, max
 			bestScore = candidate.Score
 		}
 	}
-	minCandidateScore := maxFloat64(multiHopExpansionMinCandidateScore, bestScore*0.80)
+	minCandidateScore := max(multiHopExpansionMinCandidateScore, bestScore*0.80)
 
 	queries := make([]string, 0, maxQueries)
 	seen := make(map[string]struct{}, maxQueries)
@@ -434,11 +434,4 @@ func isAllDigits(token string) bool {
 		}
 	}
 	return true
-}
-
-func maxFloat64(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }

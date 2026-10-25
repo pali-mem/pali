@@ -26,7 +26,6 @@ structured_memory:
 retrieval:
   answer_type_routing_enabled: true
   early_rank_rerank_enabled: true
-  temporal_resolver_enabled: true
   scoring:
     algorithm: wal
     wal:
@@ -49,8 +48,6 @@ parser:
   ollama_timeout_ms: 20000
   store_raw_turn: true
   max_facts: 4
-  dedupe_threshold: 0.88
-  update_threshold: 0.94
 
 database:
   sqlite_dsn: file:pali.db?cache=shared

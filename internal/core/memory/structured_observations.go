@@ -82,6 +82,11 @@ func deriveTurnObservations(turn parsedTurn, max int) []string {
 	}
 
 	sentences := splitObservationSentences(turn.Utterance)
+	if len(sentences) <= 1 {
+		// A single sentence is already covered by the whole-utterance form;
+		// emitting it again only produces a near-duplicate observation.
+		sentences = nil
+	}
 	for _, s := range sentences {
 		switch {
 		case turn.Speaker != "" && turn.Time != "":
@@ -400,25 +405,24 @@ func normalizeTurnTimeAnchor(raw string) (string, bool) {
 	}
 
 	type timeLayout struct {
-		layout   string
-		hasClock bool
+		layout string
 	}
 
 	layouts := []timeLayout{
-		{layout: "3:04 pm on 2 Jan, 2006", hasClock: true},
-		{layout: "3:04 pm on 2 Jan 2006", hasClock: true},
-		{layout: "3:04 pm on 2 January, 2006", hasClock: true},
-		{layout: "3:04 pm on 2 January 2006", hasClock: true},
-		{layout: "3:04pm on 2 Jan, 2006", hasClock: true},
-		{layout: "3:04pm on 2 January, 2006", hasClock: true},
-		{layout: "2 Jan, 2006", hasClock: false},
-		{layout: "2 Jan 2006", hasClock: false},
-		{layout: "2 January, 2006", hasClock: false},
-		{layout: "2 January 2006", hasClock: false},
-		{layout: "Jan 2, 2006", hasClock: false},
-		{layout: "January 2, 2006", hasClock: false},
-		{layout: "2006-01-02 15:04", hasClock: true},
-		{layout: "2006-01-02", hasClock: false},
+		{layout: "3:04 pm on 2 Jan, 2006"},
+		{layout: "3:04 pm on 2 Jan 2006"},
+		{layout: "3:04 pm on 2 January, 2006"},
+		{layout: "3:04 pm on 2 January 2006"},
+		{layout: "3:04pm on 2 Jan, 2006"},
+		{layout: "3:04pm on 2 January, 2006"},
+		{layout: "2 Jan, 2006"},
+		{layout: "2 Jan 2006"},
+		{layout: "2 January, 2006"},
+		{layout: "2 January 2006"},
+		{layout: "Jan 2, 2006"},
+		{layout: "January 2, 2006"},
+		{layout: "2006-01-02 15:04"},
+		{layout: "2006-01-02"},
 	}
 
 	for _, candidate := range layouts {

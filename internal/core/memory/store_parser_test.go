@@ -108,11 +108,9 @@ func TestStoreWithParserCanSkipRawTurn(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -147,11 +145,9 @@ func TestStoreWithParserWritesEntityFacts(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -190,13 +186,11 @@ func TestStoreWithParserPersistsSourceGroundedIdentity(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			Provider:        "ollama",
-			Model:           "qwen3:4b",
-			StoreRawTurn:    true,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			Provider:     "ollama",
+			Model:        "qwen3:4b",
+			StoreRawTurn: true,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -245,11 +239,9 @@ func TestStoreBatchWithParserWritesEntityFacts(t *testing.T) {
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -288,8 +280,6 @@ func TestStoreBatchWithParserRetainsAnswerMetadata(t *testing.T) {
 			Enabled:                    true,
 			StoreRawTurn:               false,
 			MaxFacts:                   4,
-			DedupeThreshold:            0.88,
-			UpdateThreshold:            0.94,
 			AnswerSpanRetentionEnabled: true,
 		},
 		WithInfoParser(parserStub{
@@ -328,11 +318,9 @@ func TestStoreWithParserDedupesExistingFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.60,
-			UpdateThreshold: 0.90,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -368,13 +356,11 @@ func TestStoreWithParserUsesCanonicalLookupBeforeSecondLexicalDedupe(t *testing.
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			Provider:        "ollama",
-			Model:           "qwen3:4b",
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.60,
-			UpdateThreshold: 0.90,
+			Enabled:      true,
+			Provider:     "ollama",
+			Model:        "qwen3:4b",
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -419,11 +405,9 @@ func TestStoreWithParserSkipsLegacyStructuredDualWrite(t *testing.T) {
 			MaxObservations:       3,
 		},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -464,11 +448,9 @@ func TestStoreWithParserFallsBackToHeuristicOnPrimaryFailure(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			err: errors.New("ollama parser timeout"),
@@ -497,11 +479,9 @@ func TestStoreWithParserUsesBatchEmbeddingWhenAvailable(t *testing.T) {
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        5,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     5,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -534,11 +514,9 @@ func TestStoreWithParserFallsBackToSequentialEmbedWhenBatchFails(t *testing.T) {
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        5,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     5,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -597,11 +575,9 @@ func TestStoreBatchMixedParserAndNonParser(t *testing.T) {
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        5,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     5,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -633,11 +609,9 @@ func TestStoreBatchWithParserUsesSingleBatchEmbedAcrossTurns(t *testing.T) {
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        5,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     5,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -674,11 +648,9 @@ func TestStoreWithParserDedupesByRelationTupleWithoutLexicalSearch(t *testing.T)
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        5,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     5,
 		},
 		WithInfoParser(parserFuncStub(func(_ context.Context, content string, maxFacts int) ([]ParsedFact, error) {
 			if strings.Contains(content, "relocated") {
@@ -728,11 +700,9 @@ func TestStoreBatchWithParserDedupesByRelationTupleWithinPendingBatch(t *testing
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        5,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     5,
 		},
 		WithInfoParser(parserFuncStub(func(_ context.Context, content string, maxFacts int) ([]ParsedFact, error) {
 			if strings.Contains(content, "relocated") {
@@ -775,11 +745,9 @@ func TestStoreWithParserInjectsNormalizedTimeAnchorIntoParsedFacts(t *testing.T)
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -813,11 +781,9 @@ func TestStoreWithHeuristicParserCanonicalizesAnnotatedTurnFacts(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(NewHeuristicInfoParser()),
 	)
@@ -847,11 +813,9 @@ func TestStoreWithHeuristicParserSkipsLowSignalAnnotatedObservation(t *testing.T
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    true,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: true,
+			MaxFacts:     4,
 		},
 		WithInfoParser(NewHeuristicInfoParser()),
 	)
@@ -875,11 +839,9 @@ func TestStoreWithParserRejectsShortLowSignalFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -911,11 +873,9 @@ func TestStoreWithParserRejectsVagueAnchoredFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -947,11 +907,9 @@ func TestStoreWithParserRejectsBareEmotionFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -983,11 +941,9 @@ func TestStoreWithParserKeepsEmotionFactWithConcreteTarget(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -1022,11 +978,9 @@ func TestStoreWithParserRejectsSpeechReactionFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -1058,11 +1012,9 @@ func TestStoreWithParserRejectsVisualCommentaryFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -1094,11 +1046,9 @@ func TestStoreWithParserAllowsSelfContainedHighSignalFact(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -1131,11 +1081,9 @@ func TestStoreBatchWithParserRejectsShortFactsInBatchPath(t *testing.T) {
 		embedder,
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			StoreRawTurn:    false,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			StoreRawTurn: false,
+			MaxFacts:     4,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{

@@ -19,7 +19,6 @@ const (
 
 	dualWriteLexicalSafetyThreshold = 0.50
 	dualWriteCandidateTopK          = 12
-	minParsedFactContentLength      = 25
 )
 
 var factCompoundSplitPattern = regexp.MustCompile(`(?i)\s+and\s+`)
@@ -192,18 +191,6 @@ func (s *Service) storeWithParser(
 ) (domain.Memory, error) {
 	parsed, err := s.parseFactsWithFallback(ctx, in.Content, 1)
 	if err != nil {
-		if s.parser.StoreRawTurn {
-			return s.storeOne(ctx, domain.Memory{
-				TenantID:       in.TenantID,
-				Content:        in.Content,
-				Tier:           resolvedTier,
-				Kind:           resolvedKind,
-				Tags:           in.Tags,
-				Source:         in.Source,
-				CreatedBy:      in.CreatedBy,
-				AnswerMetadata: in.AnswerMetadata,
-			})
-		}
 		// Parser errors should not drop writes; fallback to raw turn store.
 		return s.storeOne(ctx, domain.Memory{
 			TenantID:       in.TenantID,
@@ -890,20 +877,19 @@ func dedupePreparedFacts(facts []ParsedFact) []ParsedFact {
 }
 
 func preparedFactDedupeKey(fact ParsedFact) string {
+	// Identical content within the same memory kind is a duplicate regardless
+	// of the inferred entity/relation/value triple; keying on the triple let
+	// near-identical facts through when only the heuristic Value differed.
+	// Kind stays in the key because the structured layer deliberately stores
+	// the same text as both an event and an observation.
 	content := strings.ToLower(strings.Trim(strings.TrimSpace(fact.Content), " \t\r\n.,;:!?\"'"))
-	if tupleKey, ok := normalizedRelationTupleKey(fact); ok {
-		return content + "|" + tupleKey
-	}
-	return content
+	return content + "|" + string(fact.Kind)
 }
 
 func shouldStoreParsedFactContent(content string) bool {
 	content = normalizeFactContent(content)
 	if content == "" {
 		return false
-	}
-	if len([]rune(content)) >= minParsedFactContentLength {
-		return true
 	}
 	return isInformativeFact(content)
 }

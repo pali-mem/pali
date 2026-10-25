@@ -225,13 +225,6 @@ func TestValidate_ParserOptions(t *testing.T) {
 	err = Validate(cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "parser.ollama_model")
-
-	cfg = Defaults()
-	cfg.Parser.DedupeThreshold = 0.95
-	cfg.Parser.UpdateThreshold = 0.90
-	err = Validate(cfg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "parser.dedupe_threshold")
 }
 
 func TestValidate_PostprocessOptions(t *testing.T) {
@@ -318,8 +311,6 @@ func TestValidate_CategoryImprovementFlagsAreAdditive(t *testing.T) {
 	cfg := Defaults()
 	cfg.Retrieval.AnswerTypeRoutingEnabled = true
 	cfg.Retrieval.EarlyRankRerankEnabled = true
-	cfg.Retrieval.TemporalResolverEnabled = true
-	cfg.Retrieval.OpenDomainAlternativeResolverEnabled = true
 	cfg.Parser.AnswerSpanRetentionEnabled = true
 	cfg.ProfileLayer.SupportLinksEnabled = true
 	require.NoError(t, Validate(cfg))

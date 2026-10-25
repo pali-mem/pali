@@ -384,18 +384,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		return []domain.Memory{}, nil
 	}
 
-	rankingProfile := profile
-	scored := rankMemories(memories, signalByID, candidateTopK, query, rankingProfile, plan, s.ranking, s.retrieval)
-	slices.SortFunc(scored, func(a, b scoredMemory) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return 0
-		}
-	})
+	scored := sortScoredByScore(rankMemories(memories, signalByID, candidateTopK, query, profile, plan, s.ranking, s.retrieval))
 	if shouldApplyPairwiseRerank(profile, s.multiHop) {
 		scored = s.rerankScoredCandidates(scored, query, topK)
 	}

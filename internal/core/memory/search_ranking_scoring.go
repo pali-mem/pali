@@ -273,7 +273,7 @@ func rankMemories(
 				signalWeights.Route,
 			},
 		)
-		rel := scoring.Relevance(rawRel)
+		rel := clamp01(rawRel)
 		imp := m.Importance
 		if imp < 0 {
 			imp = 0
@@ -361,10 +361,11 @@ func rankMemories(
 				total = applyLowEvidencePenalty(total, rawRelevance[i], overlap, signalByID[m.ID].RRFScore)
 			}
 			if profile.Temporal || profile.Person || profile.MultiHop {
-				if total == 0 {
-					total = 1
-				}
-				total = clamp01(total * routeBoost(m, profile, plan, behavior))
+				// Blend the kind/route preference in as a bounded additive
+				// term. Multiplying and clamping saturated the head of the
+				// ranking to 1.0 and destroyed relevance order.
+				route := normalizedRouteBoost(routeBoost(m, profile, plan, behavior))
+				total = clamp01((0.85 * total) + (0.15 * route))
 			}
 		}
 		scored = append(scored, scoredMemory{Memory: m, Score: total})
