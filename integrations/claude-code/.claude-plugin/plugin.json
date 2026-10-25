@@ -1,0 +1,11 @@
+{
+  "name": "pali-memory",
+  "displayName": "Pali Memory",
+  "version": "0.1.0",
+  "description": "Persistent per-project memory for Claude Code, backed by a local Pali MCP server.",
+  "author": { "name": "pali-mem" },
+  "homepage": "https://pali-mem.github.io/pali/coding-agents/",
+  "repository": "https://github.com/pali-mem/pali",
+  "license": "MIT",
+  "keywords": ["memory", "mcp"]
+}
