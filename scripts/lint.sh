@@ -3,19 +3,19 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [[ -x "${HOME}/go/bin/golangci-lint" ]]; then
-  LINTER="${HOME}/go/bin/golangci-lint"
-elif command -v golangci-lint >/dev/null 2>&1; then
-  LINTER="$(command -v golangci-lint)"
-else
-  cat >&2 <<'EOF'
-ERROR: golangci-lint is not installed.
+# Single source of truth for the linter version (local and CI).
+# The linter must be built with a Go version >= the one in go.mod, so it is
+# installed with the local toolchain into bin/tools rather than taken from PATH.
+GOLANGCI_LINT_VERSION="v2.11.4"
+TOOLS_DIR="${ROOT}/bin/tools"
+LINTER="${TOOLS_DIR}/golangci-lint-${GOLANGCI_LINT_VERSION}"
 
-Install with:
-  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-EOF
-  exit 1
+if [[ ! -x "${LINTER}" ]]; then
+  echo "Installing golangci-lint ${GOLANGCI_LINT_VERSION} into ${TOOLS_DIR}" >&2
+  mkdir -p "${TOOLS_DIR}"
+  GOBIN="${TOOLS_DIR}" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
+  mv "${TOOLS_DIR}/golangci-lint" "${LINTER}"
 fi
 
 cd "${ROOT}"
-exec "${LINTER}" run
+exec "${LINTER}" run "$@"

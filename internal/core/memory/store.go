@@ -16,9 +16,6 @@ const (
 	// DualWriteDedupeThreshold is the semantic similarity cutoff used to suppress
 	// near-duplicate legacy structured dual-write entries.
 	DualWriteDedupeThreshold = 0.92
-
-	dualWriteLexicalSafetyThreshold = 0.50
-	dualWriteCandidateTopK          = 12
 )
 
 var factCompoundSplitPattern = regexp.MustCompile(`(?i)\s+and\s+`)
