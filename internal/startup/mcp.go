@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/pali-mem/pali/internal/config"
@@ -20,6 +21,31 @@ import (
 type MCPRuntime struct {
 	Server  *palimcp.Server
 	Cleanup func()
+
+	tenants *coretenant.Service
+}
+
+// EnsureTenant creates the tenant when it does not exist yet. An empty name
+// falls back to the ID.
+func (r *MCPRuntime) EnsureTenant(ctx context.Context, id, name string) error {
+	exists, err := r.tenants.Exists(ctx, id)
+	if err != nil {
+		return fmt.Errorf("check tenant %q: %w", id, err)
+	}
+	if exists {
+		return nil
+	}
+	if strings.TrimSpace(name) == "" {
+		name = id
+	}
+	if _, err := r.tenants.Create(ctx, coretenant.Tenant{ID: id, Name: name}); err != nil {
+		// Another process may have created it between the check and the insert.
+		if again, existsErr := r.tenants.Exists(ctx, id); existsErr == nil && again {
+			return nil
+		}
+		return fmt.Errorf("create tenant %q: %w", id, err)
+	}
+	return nil
 }
 
 // NewMCPRuntime constructs a runnable MCP runtime from config.
@@ -116,6 +142,7 @@ func NewMCPRuntime(cfg config.Config) (*MCPRuntime, error) {
 	return &MCPRuntime{
 		Server:  server,
 		Cleanup: cleanup,
+		tenants: tenantService,
 	}, nil
 }
 
