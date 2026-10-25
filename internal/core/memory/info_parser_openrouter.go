@@ -31,6 +31,7 @@ func NewOpenRouterInfoParser(client *openrouterclient.Client, logger *log.Logger
 	}
 }
 
+// Parse extracts up to maxFacts facts from content using an OpenRouter model.
 func (p *openRouterInfoParser) Parse(ctx context.Context, content string, maxFacts int) ([]ParsedFact, error) {
 	if p == nil || p.client == nil {
 		return nil, fmt.Errorf("openrouter parser client is nil")

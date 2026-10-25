@@ -12,6 +12,7 @@ type store struct{}
 // NewStore returns a no-op vector store used in tests.
 func NewStore() *store { return &store{} }
 
+// Upsert discards the embedding.
 func (s *store) Upsert(ctx context.Context, tenantID, memoryID string, embedding []float32) error {
 	_ = ctx
 	_ = tenantID
@@ -20,6 +21,7 @@ func (s *store) Upsert(ctx context.Context, tenantID, memoryID string, embedding
 	return nil
 }
 
+// Delete is a no-op.
 func (s *store) Delete(ctx context.Context, tenantID, memoryID string) error {
 	_ = ctx
 	_ = tenantID
@@ -27,6 +29,7 @@ func (s *store) Delete(ctx context.Context, tenantID, memoryID string) error {
 	return nil
 }
 
+// Search always returns no candidates.
 func (s *store) Search(ctx context.Context, tenantID string, embedding []float32, topK int) ([]domain.VectorstoreCandidate, error) {
 	_ = ctx
 	_ = tenantID

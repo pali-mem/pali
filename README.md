@@ -108,6 +108,7 @@ Requests come in through REST, MCP, or the dashboard. The memory service handles
 - [Deployment](https://pali-mem.github.io/pali/deployment/)
 - [API reference](https://pali-mem.github.io/pali/api/)
 - [Architecture](https://pali-mem.github.io/pali/architecture/)
+- [Benchmarks](https://pali-mem.github.io/pali/benchmarks/)
 
 ---
 

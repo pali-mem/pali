@@ -31,6 +31,7 @@ DOC_FILES = [
     "docs/README.md",
     "docs/api.md",
     "docs/architecture.md",
+    "docs/benchmarks.md",
     "docs/configuration.md",
     "docs/deployment.md",
     "docs/mcp.md",
