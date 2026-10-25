@@ -88,18 +88,18 @@ func Run(opts Options) error {
 	}
 
 	if !changed {
-		fmt.Fprintf(opts.Out, "already configured: %s (no changes)\n", path)
+		_, _ = fmt.Fprintf(opts.Out, "already configured: %s (no changes)\n", path)
 		return nil
 	}
 	if opts.DryRun {
-		fmt.Fprintf(opts.Out, "dry run: would update %s (tenant: %s)\n", path, tenantNote)
+		_, _ = fmt.Fprintf(opts.Out, "dry run: would update %s (tenant: %s)\n", path, tenantNote)
 		writeDiff(opts.Out, path, existing, updated)
 		return nil
 	}
 	if err := writeFileAtomic(path, updated); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	fmt.Fprintf(opts.Out, "updated %s (tenant: %s)\n", path, tenantNote)
+	_, _ = fmt.Fprintf(opts.Out, "updated %s (tenant: %s)\n", path, tenantNote)
 	return nil
 }
 

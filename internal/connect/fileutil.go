@@ -53,7 +53,7 @@ func writeFileAtomic(path string, data []byte) error {
 func writeDiff(w io.Writer, path string, oldData, newData []byte) {
 	a := splitLines(string(oldData))
 	b := splitLines(string(newData))
-	fmt.Fprintf(w, "--- %s\n+++ %s\n", path, path)
+	_, _ = fmt.Fprintf(w, "--- %s\n+++ %s\n", path, path)
 
 	lcs := make([][]int, len(a)+1)
 	for i := range lcs {
@@ -75,10 +75,10 @@ func writeDiff(w io.Writer, path string, oldData, newData []byte) {
 			i++
 			j++
 		case i < len(a) && (j == len(b) || lcs[i+1][j] >= lcs[i][j+1]):
-			fmt.Fprintf(w, "-%s\n", a[i])
+			_, _ = fmt.Fprintf(w, "-%s\n", a[i])
 			i++
 		default:
-			fmt.Fprintf(w, "+%s\n", b[j])
+			_, _ = fmt.Fprintf(w, "+%s\n", b[j])
 			j++
 		}
 	}
