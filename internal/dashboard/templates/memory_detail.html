@@ -40,6 +40,29 @@
   <article class="panel">
     <div class="panel-head">
       <div>
+        <p class="eyebrow">Recall</p>
+        <h3>Recall activity</h3>
+      </div>
+    </div>
+    <dl class="detail-grid">
+      <div class="detail-card">
+        <dt>Recall count</dt>
+        <dd>{{ .Memory.RecallCount }}</dd>
+      </div>
+      <div class="detail-card">
+        <dt>Last recalled</dt>
+        <dd>{{ .Memory.LastRecalledAt }}</dd>
+      </div>
+      <div class="detail-card">
+        <dt>Last accessed</dt>
+        <dd>{{ .Memory.AccessedAt }}</dd>
+      </div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <div>
         <p class="eyebrow">Metadata</p>
         <h3>Record fields</h3>
       </div>
@@ -56,14 +79,6 @@
       <div class="detail-card">
         <dt>Updated</dt>
         <dd>{{ .Memory.UpdatedAt }}</dd>
-      </div>
-      <div class="detail-card">
-        <dt>Last accessed</dt>
-        <dd>{{ .Memory.AccessedAt }}</dd>
-      </div>
-      <div class="detail-card">
-        <dt>Last recalled</dt>
-        <dd>{{ .Memory.LastRecalledAt }}</dd>
       </div>
       <div class="detail-card">
         <dt>Source</dt>
@@ -95,6 +110,45 @@
       {{ end }}
     </dl>
   </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Edit</p>
+      <h3>Edit memory</h3>
+    </div>
+  </div>
+  {{ if .Edit.Error }}<p class="alert alert-error" role="alert">{{ .Edit.Error }}</p>{{ end }}
+  <form method="post" action="/dashboard/memories/{{ .Memory.ID }}/edit" class="form-grid">
+    <input type="hidden" name="tenant_id" value="{{ .Memory.TenantID }}" />
+    <input type="hidden" name="filter_q" value="{{ .Filters.Query }}" />
+    <input type="hidden" name="filter_tier" value="{{ .Filters.SelectedTier }}" />
+    <input type="hidden" name="filter_kind" value="{{ .Filters.SelectedKind }}" />
+    <input type="hidden" name="filter_retrieval_kind" value="{{ .Filters.SelectedRetrievalKind }}" />
+    <label>
+      <span>Stored tier</span>
+      <select name="tier">
+        <option value="auto" {{ if eq .Edit.Tier "auto" }}selected{{ end }}>auto</option>
+        <option value="semantic" {{ if eq .Edit.Tier "semantic" }}selected{{ end }}>semantic</option>
+        <option value="episodic" {{ if eq .Edit.Tier "episodic" }}selected{{ end }}>episodic</option>
+        <option value="working" {{ if eq .Edit.Tier "working" }}selected{{ end }}>working</option>
+      </select>
+    </label>
+    <label>
+      <span>Importance (0 to 1)</span>
+      <input type="text" name="importance" value="{{ .Edit.Importance }}" inputmode="decimal" />
+    </label>
+    <label class="full">
+      <span>Content</span>
+      <textarea name="content" rows="5" required>{{ .Edit.Content }}</textarea>
+    </label>
+    <label class="full">
+      <span>Tags (comma-separated)</span>
+      <input type="text" name="tags" value="{{ .Edit.Tags }}" />
+    </label>
+    <button type="submit">Save changes</button>
+  </form>
 </section>
 
 {{ if or .Memory.AnswerKind .Memory.SourceSentence .Memory.SurfaceSpan .Memory.TemporalAnchor .Memory.TimeRange .Memory.SupportLines .Memory.SupportMemoryIDs }}
