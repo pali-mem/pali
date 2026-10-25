@@ -192,20 +192,11 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	if topK <= 0 {
 		topK = 10
 	}
-	profile := classifyQuery(query)
-	plan := buildQueryPlan(query, profile)
-	searchTuning := normalizeRetrievalSearchTuningOptions(s.retrieval.SearchTuning)
-	candidateTopK := candidateWindow(topK, profile, plan, len(opts.Kinds) > 0 || len(opts.Tiers) > 0, searchTuning)
-	searchQueries := buildSearchQueries(query, profile)
-	var (
-		embedDur  time.Duration
-		bm25Dur   time.Duration
-		vectorDur time.Duration
-		fuseDur   time.Duration
-	)
+	req := s.planSearch(tenantID, query, topK, opts, tierFilter, kindFilter, retrievalKind)
+	var timings searchStageTimings
 
 	if s.entityRepo != nil && retrievalKind != SearchRetrievalKindVector {
-		aggregated, handled, err := s.searchByEntityFacts(ctx, tenantID, query, topK, opts, tierFilter, kindFilter, plan)
+		aggregated, handled, err := s.searchByEntityFacts(ctx, tenantID, query, topK, opts, tierFilter, kindFilter, req.plan)
 		if err != nil {
 			return nil, err
 		}
@@ -213,6 +204,107 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			return aggregated, nil
 		}
 	}
+
+	lexicalCandidates, plannedQueries, err := s.collectLexicalSearchCandidates(ctx, req, &timings)
+	if err != nil {
+		return nil, err
+	}
+	denseCandidates, err := s.collectDenseSearchCandidates(ctx, req, plannedQueries, &timings)
+	if err != nil {
+		return nil, err
+	}
+	if len(lexicalCandidates) == 0 && len(denseCandidates) == 0 {
+		return []domain.Memory{}, nil
+	}
+
+	ids, signalByID := fuseSearchCandidates(req, lexicalCandidates, denseCandidates, &timings)
+	if len(ids) == 0 {
+		return []domain.Memory{}, nil
+	}
+
+	scored, loaded, err := s.rankSearchCandidates(ctx, req, ids, signalByID)
+	if err != nil {
+		return nil, err
+	}
+	if !loaded {
+		return []domain.Memory{}, nil
+	}
+
+	out, err := s.postFilterSearchResults(ctx, req, scored)
+	if err != nil {
+		return nil, err
+	}
+	s.finishSearch(ctx, req, out, timings)
+	return out, nil
+}
+
+// searchRequest is the validated input and query plan shared by the
+// SearchWithFilters stages.
+type searchRequest struct {
+	tenantID      string
+	query         string
+	topK          int
+	opts          SearchOptions
+	tierFilter    map[domain.MemoryTier]struct{}
+	kindFilter    map[domain.MemoryKind]struct{}
+	retrievalKind SearchRetrievalKind
+	profile       queryProfile
+	plan          queryPlan
+	searchTuning  RetrievalSearchTuningOptions
+	candidateTopK int
+	searchQueries []string
+}
+
+// searchStageTimings records per-stage latency for the search log line.
+type searchStageTimings struct {
+	embed  time.Duration
+	bm25   time.Duration
+	vector time.Duration
+	fuse   time.Duration
+}
+
+// planSearch classifies the query and derives the candidate window and the
+// initial lexical query variants.
+func (s *Service) planSearch(
+	tenantID, query string,
+	topK int,
+	opts SearchOptions,
+	tierFilter map[domain.MemoryTier]struct{},
+	kindFilter map[domain.MemoryKind]struct{},
+	retrievalKind SearchRetrievalKind,
+) searchRequest {
+	profile := classifyQuery(query)
+	plan := buildQueryPlan(query, profile)
+	searchTuning := normalizeRetrievalSearchTuningOptions(s.retrieval.SearchTuning)
+	return searchRequest{
+		tenantID:      tenantID,
+		query:         query,
+		topK:          topK,
+		opts:          opts,
+		tierFilter:    tierFilter,
+		kindFilter:    kindFilter,
+		retrievalKind: retrievalKind,
+		profile:       profile,
+		plan:          plan,
+		searchTuning:  searchTuning,
+		candidateTopK: candidateWindow(topK, profile, plan, len(opts.Kinds) > 0 || len(opts.Tiers) > 0, searchTuning),
+		searchQueries: buildSearchQueries(query, profile),
+	}
+}
+
+// collectLexicalSearchCandidates gathers entity-hint, BM25 (initial, adaptive,
+// multi-hop) and graph-bridge candidates. It also returns every query
+// variant that was run, for dense retrieval.
+func (s *Service) collectLexicalSearchCandidates(
+	ctx context.Context,
+	req searchRequest,
+	timings *searchStageTimings,
+) ([]lexicalCandidate, []string, error) {
+	tenantID, query := req.tenantID, req.query
+	profile, plan := req.profile, req.plan
+	candidateTopK := req.candidateTopK
+	opts, tierFilter, kindFilter := req.opts, req.tierFilter, req.kindFilter
+	searchQueries := req.searchQueries
 
 	lexicalCandidates := make([]lexicalCandidate, 0, len(searchQueries)*candidateTopK)
 	plannedQueries := append([]string{}, searchQueries...)
@@ -228,7 +320,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 				kindFilter,
 			)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			lexicalCandidates = append(lexicalCandidates, hintCandidates...)
 		}
@@ -244,10 +336,10 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		kindFilter,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lexicalCandidates = append(lexicalCandidates, initialLexical...)
-	adaptiveQueries := buildAdaptiveSearchQueries(query, profile, plan, initialLexical, searchTuning)
+	adaptiveQueries := buildAdaptiveSearchQueries(query, profile, plan, initialLexical, req.searchTuning)
 	if len(adaptiveQueries) > 0 {
 		plannedQueries = appendUniqueSearchQueries(plannedQueries, adaptiveQueries)
 		adaptiveLexical, err := s.collectLexicalCandidates(
@@ -260,7 +352,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			kindFilter,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		lexicalCandidates = append(lexicalCandidates, adaptiveLexical...)
 		s.logDebugf(
@@ -270,7 +362,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			clamp01(plan.Confidence),
 		)
 	}
-	enableGraphEntityBridge := s.entityRepo != nil && s.multiHop.EntityFactBridgeEnabled && (profile.MultiHop || retrievalKind == SearchRetrievalKindEntity)
+	enableGraphEntityBridge := s.entityRepo != nil && s.multiHop.EntityFactBridgeEnabled && (profile.MultiHop || req.retrievalKind == SearchRetrievalKindEntity)
 	if profile.MultiHop {
 		decomposedQueries, err := s.buildLLMMultiHopQueries(ctx, query)
 		if err != nil {
@@ -288,7 +380,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 				kindFilter,
 			)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			lexicalCandidates = append(lexicalCandidates, decomposedLexical...)
 		}
@@ -306,7 +398,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 					kindFilter,
 				)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				lexicalCandidates = append(lexicalCandidates, iterativeLexical...)
 			}
@@ -322,89 +414,125 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 			candidateTopK,
 			tierFilter,
 			kindFilter,
-			retrievalKind == SearchRetrievalKindEntity,
+			req.retrievalKind == SearchRetrievalKindEntity,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		lexicalCandidates = append(lexicalCandidates, bridgeCandidates...)
 	}
-	bm25Dur = time.Since(bm25Start)
+	timings.bm25 = time.Since(bm25Start)
+	return lexicalCandidates, plannedQueries, nil
+}
 
+// collectDenseSearchCandidates embeds every planned query and gathers vector
+// candidates, applying kind/tier filters when set.
+func (s *Service) collectDenseSearchCandidates(
+	ctx context.Context,
+	req searchRequest,
+	plannedQueries []string,
+	timings *searchStageTimings,
+) ([]domain.VectorstoreCandidate, error) {
 	var denseCandidates []domain.VectorstoreCandidate
-	if retrievalKind != SearchRetrievalKindEntity && s.vector != nil && s.embedder != nil {
-		embedStart := time.Now()
-		embeddings, err := s.embedSearchQueries(ctx, plannedQueries)
+	if req.retrievalKind == SearchRetrievalKindEntity || s.vector == nil || s.embedder == nil {
+		return denseCandidates, nil
+	}
+	tierFilter, kindFilter := req.tierFilter, req.kindFilter
+	embedStart := time.Now()
+	embeddings, err := s.embedSearchQueries(ctx, plannedQueries)
+	if err != nil {
+		return nil, err
+	}
+	timings.embed = time.Since(embedStart)
+	vectorStart := time.Now()
+	vectorCandidateTopK := req.candidateTopK
+	if len(kindFilter) > 0 || len(tierFilter) > 0 {
+		vectorCandidateTopK = req.candidateTopK * 3
+		if vectorCandidateTopK > 600 {
+			vectorCandidateTopK = 600
+		}
+	}
+	for _, queryEmbedding := range embeddings {
+		candidates, err := s.vector.Search(ctx, req.tenantID, queryEmbedding, vectorCandidateTopK)
 		if err != nil {
 			return nil, err
 		}
-		embedDur = time.Since(embedStart)
-		vectorStart := time.Now()
-		vectorCandidateTopK := candidateTopK
 		if len(kindFilter) > 0 || len(tierFilter) > 0 {
-			vectorCandidateTopK = candidateTopK * 3
-			if vectorCandidateTopK > 600 {
-				vectorCandidateTopK = 600
-			}
-		}
-		for _, queryEmbedding := range embeddings {
-			candidates, err := s.vector.Search(ctx, tenantID, queryEmbedding, vectorCandidateTopK)
+			candidates, err = s.filterDenseCandidatesByMetadata(ctx, req.tenantID, candidates, tierFilter, kindFilter)
 			if err != nil {
 				return nil, err
 			}
-			if len(kindFilter) > 0 || len(tierFilter) > 0 {
-				candidates, err = s.filterDenseCandidatesByMetadata(ctx, tenantID, candidates, tierFilter, kindFilter)
-				if err != nil {
-					return nil, err
-				}
-			}
-			denseCandidates = append(denseCandidates, candidates...)
 		}
-		vectorDur = time.Since(vectorStart)
+		denseCandidates = append(denseCandidates, candidates...)
 	}
+	timings.vector = time.Since(vectorStart)
+	return denseCandidates, nil
+}
 
-	if len(lexicalCandidates) == 0 && len(denseCandidates) == 0 {
-		return []domain.Memory{}, nil
-	}
+// fuseSearchCandidates orders both candidate lists and fuses them with
+// reciprocal rank fusion into at most candidateTopK memory IDs.
+func fuseSearchCandidates(
+	req searchRequest,
+	lexicalCandidates []lexicalCandidate,
+	denseCandidates []domain.VectorstoreCandidate,
+	timings *searchStageTimings,
+) ([]string, map[string]candidateSignal) {
 	slices.SortFunc(lexicalCandidates, compareLexicalCandidates)
 	slices.SortFunc(denseCandidates, func(a, b domain.VectorstoreCandidate) int {
 		return compareScoreDescThenID(a.Similarity, b.Similarity, a.MemoryID, b.MemoryID)
 	})
 
 	fuseStart := time.Now()
-	ids, signalByID := fuseCandidatesByRRF(denseCandidates, lexicalCandidates, candidateTopK)
-	fuseDur = time.Since(fuseStart)
-	if len(ids) == 0 {
-		return []domain.Memory{}, nil
-	}
+	ids, signalByID := fuseCandidatesByRRF(denseCandidates, lexicalCandidates, req.candidateTopK)
+	timings.fuse = time.Since(fuseStart)
+	return ids, signalByID
+}
 
-	memories, err := s.repo.GetByIDs(ctx, tenantID, ids)
+// rankSearchCandidates loads the fused memories, scores them, and applies the
+// pairwise and early-rank rerank stages. loaded is false when none of the
+// fused IDs could be loaded.
+func (s *Service) rankSearchCandidates(
+	ctx context.Context,
+	req searchRequest,
+	ids []string,
+	signalByID map[string]candidateSignal,
+) ([]scoredMemory, bool, error) {
+	memories, err := s.repo.GetByIDs(ctx, req.tenantID, ids)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(memories) == 0 {
-		return []domain.Memory{}, nil
+		return nil, false, nil
 	}
 
-	scored := sortScoredByScore(rankMemories(memories, signalByID, candidateTopK, query, profile, plan, s.ranking, s.retrieval))
-	if shouldApplyPairwiseRerank(profile, s.multiHop) {
-		scored = s.rerankScoredCandidates(scored, query, topK)
+	scored := sortScoredByScore(rankMemories(memories, signalByID, req.candidateTopK, req.query, req.profile, req.plan, s.ranking, s.retrieval))
+	if shouldApplyPairwiseRerank(req.profile, s.multiHop) {
+		scored = s.rerankScoredCandidates(scored, req.query, req.topK)
 	}
-	if s.retrieval.EarlyRankRerankEnabled && !profile.MultiHop {
-		scored = s.applyEarlyRankRerank(scored, query, plan, topK, profile)
+	if s.retrieval.EarlyRankRerankEnabled && !req.profile.MultiHop {
+		scored = s.applyEarlyRankRerank(scored, req.query, req.plan, req.topK, req.profile)
 	}
+	return scored, true, nil
+}
 
+// postFilterSearchResults applies kind/tier/min-score filters, canonical-unit
+// ordering and grounded-context expansion, then truncates to topK.
+func (s *Service) postFilterSearchResults(
+	ctx context.Context,
+	req searchRequest,
+	scored []scoredMemory,
+) ([]domain.Memory, error) {
 	filtered := make([]scoredMemory, 0, len(scored))
 	for _, item := range scored {
-		if !passesFilters(item.Memory, kindFilter, tierFilter) {
+		if !passesFilters(item.Memory, req.kindFilter, req.tierFilter) {
 			continue
 		}
-		if item.Score < opts.MinScore {
+		if item.Score < req.opts.MinScore {
 			continue
 		}
 		filtered = append(filtered, item)
 	}
-	if len(kindFilter) == 0 {
+	if len(req.kindFilter) == 0 {
 		filtered = preferCanonicalUnits(filtered)
 	}
 
@@ -412,38 +540,43 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 	for _, item := range filtered {
 		out = append(out, item.Memory)
 	}
-	if len(kindFilter) == 0 && shouldExpandGroundedContext(profile) {
-		out, err = s.expandGroundedContextMemories(ctx, tenantID, out, topK)
+	if len(req.kindFilter) == 0 && shouldExpandGroundedContext(req.profile) {
+		var err error
+		out, err = s.expandGroundedContextMemories(ctx, req.tenantID, out, req.topK)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if len(out) > topK {
-		out = out[:topK]
+	if len(out) > req.topK {
+		out = out[:req.topK]
 	}
+	return out, nil
+}
+
+// finishSearch records recalls for the returned memories and logs timings.
+func (s *Service) finishSearch(ctx context.Context, req searchRequest, out []domain.Memory, timings searchStageTimings) {
+	tenantID := req.tenantID
 	orderedIDs := make([]string, 0, len(out))
 	for _, memory := range out {
 		orderedIDs = append(orderedIDs, memory.ID)
 	}
-	if !opts.DisableTouch && len(orderedIDs) > 0 {
+	if !req.opts.DisableTouch && len(orderedIDs) > 0 {
 		_ = s.repo.Touch(ctx, tenantID, orderedIDs)
 	}
 	s.logInfof(
 		"[pali-search] tenant=%s retrieval_kind=%s embed_ms=%d bm25_ms=%d vector_ms=%d fuse_ms=%d queried_k=%d returned=%d",
 		tenantID,
-		retrievalKind,
-		embedDur.Milliseconds(),
-		bm25Dur.Milliseconds(),
-		vectorDur.Milliseconds(),
-		fuseDur.Milliseconds(),
-		candidateTopK,
+		req.retrievalKind,
+		timings.embed.Milliseconds(),
+		timings.bm25.Milliseconds(),
+		timings.vector.Milliseconds(),
+		timings.fuse.Milliseconds(),
+		req.candidateTopK,
 		len(out),
 	)
 	if memoryCount, err := s.tenantRepo.MemoryCount(ctx, tenantID); err == nil {
-		s.logInfof("[pali-search] tenant=%s memories=%d queried_k=%d", tenantID, memoryCount, candidateTopK)
+		s.logInfof("[pali-search] tenant=%s memories=%d queried_k=%d", tenantID, memoryCount, req.candidateTopK)
 	} else {
 		s.logDebugf("[pali-search] tenant=%s memory_count_error=%v", tenantID, err)
 	}
-
-	return out, nil
 }
