@@ -38,6 +38,27 @@ type MemoryFilteredSearchRepository interface {
 	) ([]Memory, error)
 }
 
+// LexicalHit is a lexical search result with a per-query normalized relevance
+// score in [0,1], where the best hit for the query scores 1.0. Relevance is 0
+// when the backend could not produce a score (for example an empty query that
+// fell back to a recency listing).
+type LexicalHit struct {
+	Memory    Memory
+	Relevance float64
+}
+
+// MemoryScoredSearchRepository is an optional extension for repositories that
+// can expose the underlying lexical ranking score (BM25) rather than only the
+// ranked order.
+type MemoryScoredSearchRepository interface {
+	SearchScored(
+		ctx context.Context,
+		tenantID, query string,
+		topK int,
+		filters MemorySearchFilters,
+	) ([]LexicalHit, error)
+}
+
 // MemoryBatchRepository is an optional extension for repositories that can
 // persist multiple memories in one transaction.
 type MemoryBatchRepository interface {

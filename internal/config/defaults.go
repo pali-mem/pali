@@ -28,10 +28,8 @@ func Defaults() Config {
 			MaxObservations:       3,
 		},
 		Retrieval: RetrievalConfig{
-			AnswerTypeRoutingEnabled:             true,
-			EarlyRankRerankEnabled:               true,
-			TemporalResolverEnabled:              true,
-			OpenDomainAlternativeResolverEnabled: false,
+			AnswerTypeRoutingEnabled: true,
+			EarlyRankRerankEnabled:   true,
 			Scoring: RetrievalScoringConfig{
 				Algorithm: "wal",
 				WAL: ScoringWeightsConfig{
@@ -91,8 +89,6 @@ func Defaults() Config {
 			OllamaTimeoutMS:            20000,
 			StoreRawTurn:               true,
 			MaxFacts:                   4,
-			DedupeThreshold:            0.88,
-			UpdateThreshold:            0.94,
 			AnswerSpanRetentionEnabled: false,
 		},
 		ProfileLayer: ProfileLayerConfig{

@@ -14,24 +14,27 @@ The repository layer remains the source of truth for persisted memory rows and t
 
 ## Embeddings
 
-- `embedding.provider: lexical` (default): zero-dependency lexical fallback provider for first boot, CI, and smoke runs.
+- `embedding.provider: lexical` (default, legacy alias `mock`): pure-Go hashed bag-of-words vector. Zero dependencies, for first boot, CI, and smoke runs. It does not match synonyms or paraphrases.
 - `embedding.provider: ollama`: offline HTTP embedder via local Ollama server (`/api/embed`).
 - `embedding.provider: onnx`: advanced local inference path; validates model/tokenizer paths and runs ONNX Runtime inference.
 - `embedding.provider: openrouter`: remote embeddings via OpenRouter (`/api/v1/embeddings`).
-- `embedding.provider: lexical` (legacy alias: `mock`): pure-Go lexical fallback provider.
 - `embedding.fallback_provider: lexical` (default): used automatically when primary provider initialization fails.
 
 ## Retrieval Pipeline
 
 Memory search uses hybrid retrieval + reranking:
 
-1. **Candidate generation**
-   - lexical BM25 ranking from SQLite FTS5 (`memory_fts`)
-   - vector ranking from configured embedder + vectorstore when available
-2. **Fusion**
-   - Reciprocal Rank Fusion (RRF, `k=60`) merges lexical + dense ranks without score-scale tuning
-3. **Configurable reranking** (`internal/core/memory/search.go`)
-   - candidate window is clamped to **50..200** (`topK * 5`)
+1. **Query planning**
+   - the query is classified (temporal, person, multi-hop, and so on) and may be expanded into extra query variants
+   - the candidate window is `topK * 5` (minimum 50), plus a boost for temporal, multi-hop, and filtered queries; it is capped at 200, or 320 for multi-hop and filtered queries (`retrieval.search.candidate_window_*`)
+2. **Candidate generation**
+   - lexical candidates from SQLite FTS5 (`memory_fts`), carrying the BM25 score normalized per query
+   - vector candidates from the configured embedder + vector store
+   - entity-fact candidates for multi-hop queries when entity facts exist
+3. **Fusion**
+   - Reciprocal Rank Fusion (RRF, `k=60`) merges lexical + dense ranks
+4. **Configurable reranking** (`internal/core/memory/search_ranking_scoring.go`)
+   - relevance is a weighted blend of dense score and rank, lexical score and rank, RRF score, entity match, and query-route fit
    - `retrieval.scoring.algorithm=wal`:
      `score = weighted(recency, relevance, importance)`
    - `retrieval.scoring.algorithm=match`:

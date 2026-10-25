@@ -382,13 +382,6 @@ func rrfToNormalized(rrf float64) float64 {
 	return clamp01(rrf / (rrf + base))
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func sortScoredByScore(items []scoredMemory) []scoredMemory {
 	slices.SortFunc(items, func(a, b scoredMemory) int {
 		switch {

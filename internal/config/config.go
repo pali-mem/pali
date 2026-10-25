@@ -125,13 +125,11 @@ type PostprocessConfig struct {
 
 // RetrievalConfig configures retrieval scoring and search behavior.
 type RetrievalConfig struct {
-	Scoring                              RetrievalScoringConfig  `yaml:"scoring"`
-	Search                               RetrievalSearchConfig   `yaml:"search"`
-	MultiHop                             RetrievalMultiHopConfig `yaml:"multi_hop"`
-	AnswerTypeRoutingEnabled             bool                    `yaml:"answer_type_routing_enabled"`
-	EarlyRankRerankEnabled               bool                    `yaml:"early_rank_rerank_enabled"`
-	TemporalResolverEnabled              bool                    `yaml:"temporal_resolver_enabled"`
-	OpenDomainAlternativeResolverEnabled bool                    `yaml:"open_domain_alternative_resolver_enabled"`
+	Scoring                  RetrievalScoringConfig  `yaml:"scoring"`
+	Search                   RetrievalSearchConfig   `yaml:"search"`
+	MultiHop                 RetrievalMultiHopConfig `yaml:"multi_hop"`
+	AnswerTypeRoutingEnabled bool                    `yaml:"answer_type_routing_enabled"`
+	EarlyRankRerankEnabled   bool                    `yaml:"early_rank_rerank_enabled"`
 }
 
 // RetrievalSearchConfig configures search-window tuning.
@@ -197,17 +195,15 @@ type MatchScoringWeightsConfig struct {
 
 // ParserConfig configures the structured-memory parser.
 type ParserConfig struct {
-	Enabled                    bool    `yaml:"enabled"`
-	Provider                   string  `yaml:"provider"`
-	OllamaBaseURL              string  `yaml:"ollama_base_url"`
-	OllamaModel                string  `yaml:"ollama_model"`
-	OpenRouterModel            string  `yaml:"openrouter_model"`
-	OllamaTimeoutMS            int     `yaml:"ollama_timeout_ms"`
-	StoreRawTurn               bool    `yaml:"store_raw_turn"`
-	MaxFacts                   int     `yaml:"max_facts"`
-	DedupeThreshold            float64 `yaml:"dedupe_threshold"`
-	UpdateThreshold            float64 `yaml:"update_threshold"`
-	AnswerSpanRetentionEnabled bool    `yaml:"answer_span_retention_enabled"`
+	Enabled                    bool   `yaml:"enabled"`
+	Provider                   string `yaml:"provider"`
+	OllamaBaseURL              string `yaml:"ollama_base_url"`
+	OllamaModel                string `yaml:"ollama_model"`
+	OpenRouterModel            string `yaml:"openrouter_model"`
+	OllamaTimeoutMS            int    `yaml:"ollama_timeout_ms"`
+	StoreRawTurn               bool   `yaml:"store_raw_turn"`
+	MaxFacts                   int    `yaml:"max_facts"`
+	AnswerSpanRetentionEnabled bool   `yaml:"answer_span_retention_enabled"`
 }
 
 // ProfileLayerConfig configures profile-layer features.

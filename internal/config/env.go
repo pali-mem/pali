@@ -40,8 +40,6 @@ func applyEnvironment(cfg *Config) error {
 
 	overrides.bool("PALI_RETRIEVAL_ANSWER_TYPE_ROUTING_ENABLED", &cfg.Retrieval.AnswerTypeRoutingEnabled)
 	overrides.bool("PALI_RETRIEVAL_EARLY_RANK_RERANK_ENABLED", &cfg.Retrieval.EarlyRankRerankEnabled)
-	overrides.bool("PALI_RETRIEVAL_TEMPORAL_RESOLVER_ENABLED", &cfg.Retrieval.TemporalResolverEnabled)
-	overrides.bool("PALI_RETRIEVAL_OPEN_DOMAIN_ALTERNATIVE_RESOLVER_ENABLED", &cfg.Retrieval.OpenDomainAlternativeResolverEnabled)
 	overrides.string("PALI_RETRIEVAL_SCORING_ALGORITHM", &cfg.Retrieval.Scoring.Algorithm)
 	overrides.float64("PALI_RETRIEVAL_SCORING_WAL_RECENCY", &cfg.Retrieval.Scoring.WAL.Recency)
 	overrides.float64("PALI_RETRIEVAL_SCORING_WAL_RELEVANCE", &cfg.Retrieval.Scoring.WAL.Relevance)
@@ -79,8 +77,6 @@ func applyEnvironment(cfg *Config) error {
 	overrides.int("PALI_PARSER_OLLAMA_TIMEOUT_MS", &cfg.Parser.OllamaTimeoutMS)
 	overrides.bool("PALI_PARSER_STORE_RAW_TURN", &cfg.Parser.StoreRawTurn)
 	overrides.int("PALI_PARSER_MAX_FACTS", &cfg.Parser.MaxFacts)
-	overrides.float64("PALI_PARSER_DEDUPE_THRESHOLD", &cfg.Parser.DedupeThreshold)
-	overrides.float64("PALI_PARSER_UPDATE_THRESHOLD", &cfg.Parser.UpdateThreshold)
 	overrides.bool("PALI_PARSER_ANSWER_SPAN_RETENTION_ENABLED", &cfg.Parser.AnswerSpanRetentionEnabled)
 
 	overrides.bool("PALI_PROFILE_LAYER_SUPPORT_LINKS_ENABLED", &cfg.ProfileLayer.SupportLinksEnabled)

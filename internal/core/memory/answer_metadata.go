@@ -14,7 +14,7 @@ var (
 	answerRelativeTimePattern = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+\w+|next\s+\w+|\d+\s+(?:years?|months?|weeks?|days?)\s+ago|week before|month before|year before)\b`)
 	answerDurationPattern     = regexp.MustCompile(`(?i)\b\d+\s+(?:years?|months?|weeks?|days?)\b`)
 	answerYearPattern         = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
-	answerMonthPattern        = regexp.MustCompile(`(?i)\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`)
+	answerMonthPattern        = regexp.MustCompile(`(?i)\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b\d{1,2}(?:st|nd|rd|th)?\s+may\b|\bmay\s+\d`)
 )
 
 func inferAnswerMetadata(sourceContent string, fact ParsedFact) domain.MemoryAnswerMetadata {

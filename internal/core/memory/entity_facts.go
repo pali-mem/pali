@@ -224,12 +224,12 @@ func normalizeEntityFactRelation(value string) string {
 		return "relationship"
 	case relationHasAny(relation, "role", "job", "profession", "career", "occupation", "works as"):
 		return "role"
-	case relationHasAny(relation,
-		"plan", "goal", "intention", "intent", "purpose", "aim", "hopes",
-		"hope", "will ", "going to"):
-		return "plan"
 	case relationHasAny(relation, "goal", "dream", "aspiration", "milestone"):
 		return "goal"
+	case relationHasAny(relation,
+		"plan", "intention", "intent", "purpose", "aim", "hopes",
+		"hope", "will ", "going to"):
+		return "plan"
 	case relationHasAny(relation,
 		"preference", "favorite", "likes", "like ", "prefers", "prefer",
 		"loves", "love", "enjoys", "enjoy"):
@@ -246,7 +246,7 @@ func normalizeEntityFactRelation(value string) string {
 	case relationHasAny(relation, "trait", "personality", "character", "tendency", "temperament"):
 		return "trait"
 	case relationHasAny(relation,
-		"identity", "name", "belief", "opinion", "value", "emotion", "feeling",
+		"identity", "name", "emotion", "feeling",
 		"feels", "state", "characteristic", "quality", "attribute", "description",
 		"assessment", "evaluation", "sentiment", "perception", "support",
 		"appearance", "gender", "orientation"):

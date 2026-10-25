@@ -425,3 +425,48 @@ func TestMemoryRepositoryPostprocessClaimAndFailureLifecycle(t *testing.T) {
 	require.Equal(t, domain.PostprocessJobStatusSucceeded, job.Status)
 	require.Equal(t, "", job.LastError)
 }
+
+func TestTouchDoesNotRewriteUpdatedAt(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer closeDB(db)
+	_, err = NewTenantRepository(db).Create(ctx, domain.Tenant{ID: "tenant_1", Name: "Tenant One"})
+	require.NoError(t, err)
+	memRepo := NewMemoryRepository(db)
+	stored, err := memRepo.Store(ctx, domain.Memory{TenantID: "tenant_1", Content: "touch me", Tier: domain.MemoryTierSemantic})
+	require.NoError(t, err)
+	time.Sleep(5 * time.Millisecond)
+	require.NoError(t, memRepo.Touch(ctx, "tenant_1", []string{stored.ID}))
+	after, err := memRepo.GetByIDs(ctx, "tenant_1", []string{stored.ID})
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	require.True(t, after[0].UpdatedAt.Equal(stored.UpdatedAt), "updated_at must track content mutation only: before=%s after=%s", stored.UpdatedAt, after[0].UpdatedAt)
+	require.True(t, after[0].LastAccessedAt.After(stored.UpdatedAt))
+}
+
+func TestSearchScoredReturnsNormalizedBM25(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, testutil.InMemoryDBDSN())
+	require.NoError(t, err)
+	defer closeDB(db)
+	_, err = NewTenantRepository(db).Create(ctx, domain.Tenant{ID: "tenant_1", Name: "Tenant One"})
+	require.NoError(t, err)
+	memRepo := NewMemoryRepository(db)
+	for _, content := range []string{
+		"Caroline adopted a dog named Biscuit in Boston",
+		"Caroline visited Boston for a conference",
+		"The weather report mentioned rain",
+	} {
+		_, err := memRepo.Store(ctx, domain.Memory{TenantID: "tenant_1", Content: content, Tier: domain.MemoryTierSemantic})
+		require.NoError(t, err)
+	}
+
+	hits, err := memRepo.SearchScored(ctx, "tenant_1", "Caroline dog Boston", 10, domain.MemorySearchFilters{})
+	require.NoError(t, err)
+	require.Len(t, hits, 2)
+	require.Contains(t, hits[0].Memory.Content, "Biscuit")
+	require.InDelta(t, 1.0, hits[0].Relevance, 1e-9, "best hit normalizes to 1.0")
+	require.Greater(t, hits[1].Relevance, 0.0)
+	require.Less(t, hits[1].Relevance, 1.0)
+}

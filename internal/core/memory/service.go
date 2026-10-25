@@ -42,12 +42,10 @@ type StructuredMemoryOptions struct {
 
 // RetrievalBehaviorOptions configures retrieval-time feature flags.
 type RetrievalBehaviorOptions struct {
-	AnswerTypeRoutingEnabled             bool
-	EarlyRankRerankEnabled               bool
-	TemporalResolverEnabled              bool
-	OpenDomainAlternativeResolverEnabled bool
-	ProfileSupportLinksEnabled           bool
-	SearchTuning                         RetrievalSearchTuningOptions
+	AnswerTypeRoutingEnabled   bool
+	EarlyRankRerankEnabled     bool
+	ProfileSupportLinksEnabled bool
+	SearchTuning               RetrievalSearchTuningOptions
 }
 
 // RetrievalSearchTuningOptions configures search window and expansion tuning.
@@ -120,8 +118,6 @@ type ParserOptions struct {
 	Model                      string
 	StoreRawTurn               bool
 	MaxFacts                   int
-	DedupeThreshold            float64
-	UpdateThreshold            float64
 	AnswerSpanRetentionEnabled bool
 }
 
@@ -315,12 +311,10 @@ func defaultRankingOptions() RankingOptions {
 
 func defaultRetrievalBehaviorOptions() RetrievalBehaviorOptions {
 	return RetrievalBehaviorOptions{
-		AnswerTypeRoutingEnabled:             true,
-		EarlyRankRerankEnabled:               true,
-		TemporalResolverEnabled:              true,
-		OpenDomainAlternativeResolverEnabled: false,
-		ProfileSupportLinksEnabled:           false,
-		SearchTuning:                         defaultRetrievalSearchTuningOptions(),
+		AnswerTypeRoutingEnabled:   true,
+		EarlyRankRerankEnabled:     true,
+		ProfileSupportLinksEnabled: false,
+		SearchTuning:               defaultRetrievalSearchTuningOptions(),
 	}
 }
 
@@ -348,8 +342,6 @@ func defaultParserOptions() ParserOptions {
 		Model:                      "",
 		StoreRawTurn:               true,
 		MaxFacts:                   4,
-		DedupeThreshold:            0.88,
-		UpdateThreshold:            0.94,
 		AnswerSpanRetentionEnabled: false,
 	}
 }
@@ -458,21 +450,6 @@ func normalizeParserOptions(in ParserOptions) ParserOptions {
 	out.Model = strings.TrimSpace(out.Model)
 	if out.MaxFacts <= 0 {
 		out.MaxFacts = defaultParserOptions().MaxFacts
-	}
-	if out.DedupeThreshold < 0 {
-		out.DedupeThreshold = 0
-	}
-	if out.DedupeThreshold > 1 {
-		out.DedupeThreshold = 1
-	}
-	if out.UpdateThreshold < 0 {
-		out.UpdateThreshold = 0
-	}
-	if out.UpdateThreshold > 1 {
-		out.UpdateThreshold = 1
-	}
-	if out.DedupeThreshold > out.UpdateThreshold {
-		out.DedupeThreshold = out.UpdateThreshold
 	}
 	return out
 }

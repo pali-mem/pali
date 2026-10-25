@@ -99,7 +99,7 @@ func (s *Service) searchByEntityFacts(
 		}
 	}
 	profile := classifyQuery(query)
-	scored := rankMemories(filtered, signalByID, maxInt(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval)
+	scored := rankMemories(filtered, signalByID, max(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval)
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -168,24 +168,31 @@ func (s *Service) collectLexicalCandidates(
 	kindFilter map[domain.MemoryKind]struct{},
 ) ([]lexicalCandidate, error) {
 	candidates := make([]lexicalCandidate, 0, len(searchQueries)*topK)
+	filters := domain.MemorySearchFilters{Tiers: opts.Tiers, Kinds: opts.Kinds}
+	scoredRepo, hasScoredRepo := s.repo.(domain.MemoryScoredSearchRepository)
 	filteredRepo, hasFilteredRepo := s.repo.(domain.MemoryFilteredSearchRepository)
 	for _, searchQuery := range searchQueries {
 		var (
-			memories []domain.Memory
-			err      error
+			hits []domain.LexicalHit
+			err  error
 		)
-		if hasFilteredRepo {
-			memories, err = filteredRepo.SearchWithFilters(ctx, tenantID, searchQuery, topK, domain.MemorySearchFilters{
-				Tiers: opts.Tiers,
-				Kinds: opts.Kinds,
-			})
-		} else {
+		switch {
+		case hasScoredRepo:
+			hits, err = scoredRepo.SearchScored(ctx, tenantID, searchQuery, topK, filters)
+		case hasFilteredRepo:
+			var memories []domain.Memory
+			memories, err = filteredRepo.SearchWithFilters(ctx, tenantID, searchQuery, topK, filters)
+			hits = lexicalHitsWithoutScores(memories)
+		default:
+			var memories []domain.Memory
 			memories, err = s.repo.Search(ctx, tenantID, searchQuery, topK)
+			hits = lexicalHitsWithoutScores(memories)
 		}
 		if err != nil {
 			return nil, err
 		}
-		for idx, memory := range memories {
+		for idx, hit := range hits {
+			memory := hit.Memory
 			if len(kindFilter) > 0 {
 				if _, ok := kindFilter[memory.Kind]; !ok {
 					continue
@@ -196,13 +203,18 @@ func (s *Service) collectLexicalCandidates(
 					continue
 				}
 			}
-			// Repository lexical results are already BM25-ranked (SQLite FTS5),
-			// so use rank-derived score as the primary lexical confidence signal.
-			bm25RankScore := rankToNormalized(idx+1, topK)
+			// Prefer the backend's real BM25 strength (normalized so the best hit
+			// for this query is 1.0). Fall back to rank position only when the
+			// backend cannot expose a score; rank position alone gave every
+			// query variant's top hit a near-1.0 score regardless of match quality.
+			lexicalStrength := hit.Relevance
+			if lexicalStrength <= 0 {
+				lexicalStrength = rankToNormalized(idx+1, topK)
+			}
 			bowScore := lexicalContentScore(searchQuery, memory.Content)
 			candidates = append(candidates, lexicalCandidate{
 				Memory: memory,
-				Score:  clamp01((0.8 * bm25RankScore) + (0.2 * bowScore)),
+				Score:  clamp01((0.8 * lexicalStrength) + (0.2 * bowScore)),
 			})
 		}
 	}
@@ -350,4 +362,12 @@ func (s *Service) collectEntityHintCandidates(
 		candidates = candidates[:maxHintCandidates]
 	}
 	return candidates, nil
+}
+
+func lexicalHitsWithoutScores(memories []domain.Memory) []domain.LexicalHit {
+	hits := make([]domain.LexicalHit, 0, len(memories))
+	for _, m := range memories {
+		hits = append(hits, domain.LexicalHit{Memory: m})
+	}
+	return hits
 }

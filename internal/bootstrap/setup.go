@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pali-mem/pali"
 	"github.com/pali-mem/pali/internal/config"
 )
 
@@ -149,7 +150,7 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 
 	_, _ = fmt.Fprintln(stdout, "Pali setup completed.")
 	_, _ = fmt.Fprintln(stdout, "- ensured directories under models/ and web/static/")
-	_, _ = fmt.Fprintf(stdout, "- ensured config file %s (copied from pali.yaml.example when missing)\n", configPath)
+	_, _ = fmt.Fprintf(stdout, "- ensured config file %s (copied from pali.yaml.example, or the built-in copy, when missing)\n", configPath)
 	_, _ = fmt.Fprintf(stdout, "- %s\n", dlMessage)
 	_, _ = fmt.Fprintf(stdout, "- %s\n", runtimeMessage)
 	_, _ = fmt.Fprintf(stdout, "- %s\n", ollamaMessage)
@@ -182,7 +183,9 @@ func EnsureConfig(cfg string) error {
 	}
 
 	src, err := os.ReadFile("pali.yaml.example")
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
+		src = pali.ExampleConfig
+	} else if err != nil {
 		return err
 	}
 

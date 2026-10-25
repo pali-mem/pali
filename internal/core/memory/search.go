@@ -355,6 +355,11 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		case a.Score < b.Score:
 			return 1
 		default:
+			// BM25 ties (e.g. identical content) keep the repository's
+			// newest-first order instead of falling to random IDs.
+			if c := b.Memory.UpdatedAt.Compare(a.Memory.UpdatedAt); c != 0 {
+				return c
+			}
 			return strings.Compare(a.Memory.ID, b.Memory.ID)
 		}
 	})
@@ -384,18 +389,7 @@ func (s *Service) SearchWithFilters(ctx context.Context, tenantID, query string,
 		return []domain.Memory{}, nil
 	}
 
-	rankingProfile := profile
-	scored := rankMemories(memories, signalByID, candidateTopK, query, rankingProfile, plan, s.ranking, s.retrieval)
-	slices.SortFunc(scored, func(a, b scoredMemory) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return 0
-		}
-	})
+	scored := sortScoredByScore(rankMemories(memories, signalByID, candidateTopK, query, profile, plan, s.ranking, s.retrieval))
 	if shouldApplyPairwiseRerank(profile, s.multiHop) {
 		scored = s.rerankScoredCandidates(scored, query, topK)
 	}

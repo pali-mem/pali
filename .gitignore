@@ -75,3 +75,7 @@ TODO.md
 # Test files
 
 test/fixtures/
+
+# Local planning notes (untracked)
+/scope/
+/handoff/

@@ -211,6 +211,76 @@ func (r *MemoryRepository) SearchWithFilters(
 	return memories, nil
 }
 
+// SearchScored performs lexical memory search and returns the FTS5 BM25 score
+// normalized per query so the best hit is 1.0. FTS5 bm25() is negative with
+// lower meaning better, so the score is -bm25 divided by the best -bm25.
+func (r *MemoryRepository) SearchScored(
+	ctx context.Context,
+	tenantID, query string,
+	topK int,
+	filters domain.MemorySearchFilters,
+) ([]domain.LexicalHit, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if topK <= 0 {
+		topK = 20
+	}
+	ftsQuery := toFTSQuery(query)
+	if ftsQuery == "" {
+		memories, err := r.SearchWithFilters(ctx, tenantID, query, topK, filters)
+		if err != nil {
+			return nil, err
+		}
+		hits := make([]domain.LexicalHit, 0, len(memories))
+		for _, m := range memories {
+			hits = append(hits, domain.LexicalHit{Memory: m})
+		}
+		return hits, nil
+	}
+
+	sqlQuery, filterArgs := appendMemoryFilterClause(SearchMemoriesScoredSQL, "m", filters)
+	args := make([]any, 0, len(filterArgs)+3)
+	args = append(args, tenantID, ftsQuery)
+	args = append(args, filterArgs...)
+	args = append(args, topK)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search memories scored: %w", err)
+	}
+	defer closeRows(rows)
+
+	hits := make([]domain.LexicalHit, 0, topK)
+	best := 0.0
+	for rows.Next() {
+		var bm25 float64
+		m, err := scanMemory(func(dest ...any) error {
+			return rows.Scan(append(dest, &bm25)...)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("scan scored memory row: %w", err)
+		}
+		strength := -bm25
+		if strength < 0 {
+			strength = 0
+		}
+		if strength > best {
+			best = strength
+		}
+		hits = append(hits, domain.LexicalHit{Memory: m, Relevance: strength})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate scored memory rows: %w", err)
+	}
+	if best > 0 {
+		for i := range hits {
+			hits[i].Relevance = hits[i].Relevance / best
+		}
+	}
+	return hits, nil
+}
+
 // GetByIDs returns memories by ID for a tenant.
 func (r *MemoryRepository) GetByIDs(ctx context.Context, tenantID string, ids []string) ([]domain.Memory, error) {
 	if strings.TrimSpace(tenantID) == "" {
@@ -362,10 +432,10 @@ func (r *MemoryRepository) Touch(ctx context.Context, tenantID string, ids []str
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(uniqueIDs)), ",")
-	query := "UPDATE memories SET last_accessed_at = ?, last_recalled_at = ?, recall_count = recall_count + 1, updated_at = ? WHERE tenant_id = ? AND id IN (" + placeholders + ")"
+	query := "UPDATE memories SET last_accessed_at = ?, last_recalled_at = ?, recall_count = recall_count + 1 WHERE tenant_id = ? AND id IN (" + placeholders + ")"
 
-	args := make([]any, 0, len(uniqueIDs)+4)
-	args = append(args, now, now, now, tenantID)
+	args := make([]any, 0, len(uniqueIDs)+3)
+	args = append(args, now, now, tenantID)
 	for _, id := range uniqueIDs {
 		args = append(args, id)
 	}

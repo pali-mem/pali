@@ -10,9 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/stretchr/testify/require"
 	"github.com/pali-mem/pali/internal/auth"
 	"github.com/pali-mem/pali/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAuthMiddlewareAndTenantEnforcement(t *testing.T) {

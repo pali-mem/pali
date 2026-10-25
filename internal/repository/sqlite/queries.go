@@ -59,6 +59,18 @@ ORDER BY bm25(memory_fts), m.updated_at DESC
 LIMIT ?
 `
 
+	SearchMemoriesScoredSQL = `
+SELECT m.id, m.tenant_id, m.content, m.query_view_text, m.tier, m.tags_json, m.source, m.created_by, m.kind, m.canonical_key, m.source_turn_hash, m.source_fact_index, m.extractor, m.extractor_version, m.importance_score, m.recall_count, m.metadata_json, m.created_at, m.updated_at, m.last_accessed_at, m.last_recalled_at, bm25(memory_fts) AS rank
+FROM memory_fts f
+JOIN memories m
+  ON m.id = f.memory_id
+ AND m.tenant_id = f.tenant_id
+WHERE f.tenant_id = ?
+  AND f.content MATCH ?
+ORDER BY bm25(memory_fts), m.updated_at DESC
+LIMIT ?
+`
+
 	ListMemoriesRecentSQL = `
 SELECT id, tenant_id, content, query_view_text, tier, tags_json, source, created_by, kind, canonical_key, source_turn_hash, source_fact_index, extractor, extractor_version, importance_score, recall_count, metadata_json, created_at, updated_at, last_accessed_at, last_recalled_at
 FROM memories

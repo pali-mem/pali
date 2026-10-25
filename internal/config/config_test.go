@@ -30,8 +30,6 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, "wal", cfg.Retrieval.Scoring.Algorithm)
 	require.True(t, cfg.Retrieval.AnswerTypeRoutingEnabled)
 	require.True(t, cfg.Retrieval.EarlyRankRerankEnabled)
-	require.True(t, cfg.Retrieval.TemporalResolverEnabled)
-	require.False(t, cfg.Retrieval.OpenDomainAlternativeResolverEnabled)
 	require.Equal(t, 0.1, cfg.Retrieval.Scoring.WAL.Recency)
 	require.Equal(t, 0.8, cfg.Retrieval.Scoring.WAL.Relevance)
 	require.Equal(t, 0.1, cfg.Retrieval.Scoring.WAL.Importance)

@@ -263,15 +263,6 @@ func Validate(cfg Config) error {
 	if cfg.Parser.OllamaTimeoutMS < 0 {
 		return fmt.Errorf("parser.ollama_timeout_ms must be >= 0")
 	}
-	if cfg.Parser.DedupeThreshold < 0 || cfg.Parser.DedupeThreshold > 1 {
-		return fmt.Errorf("parser.dedupe_threshold must be in [0,1]")
-	}
-	if cfg.Parser.UpdateThreshold < 0 || cfg.Parser.UpdateThreshold > 1 {
-		return fmt.Errorf("parser.update_threshold must be in [0,1]")
-	}
-	if cfg.Parser.DedupeThreshold > cfg.Parser.UpdateThreshold {
-		return fmt.Errorf("parser.dedupe_threshold must be <= parser.update_threshold")
-	}
 	if cfg.Parser.Enabled {
 		parserProvider := normalizeParserProvider(cfg.Parser.Provider)
 		if !isSupportedParserProvider(parserProvider) {

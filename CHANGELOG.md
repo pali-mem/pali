@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.2.1 - 2026-10-25
+
+Full notes and benchmark deltas: [`changelog/v0.2.1.md`](changelog/v0.2.1.md).
+
+### Fixed
+
+- ranking: routed (temporal / person / multi-hop) queries no longer saturate top scores to `1.0`; final sort is deterministic
+- retrieval: lexical candidates carry real FTS5 BM25 scores (SQLite) instead of rank position; equal BM25 scores keep newest-first order instead of falling to random IDs
+- retrieval: a bare `and` between noun phrases no longer classifies a query as multi-hop
+- parser: dedupe on normalized content + kind; month/time tags no longer match ordinary words; single-sentence utterances are not stored twice; pronouns are not graph entities; long low-signal text is filtered
+- heuristic importance scorer: replaced a TF-IDF term that scored `"ok"` at 1.0
+- repository: reading a memory no longer rewrites `updated_at`
+- `pali init` works after a release install: it falls back to a built-in copy of `pali.yaml.example` when the file is not in the working directory
+
+### Removed
+
+- no-op config keys `retrieval.temporal_resolver_enabled`, `retrieval.open_domain_alternative_resolver_enabled`, `parser.dedupe_threshold`, `parser.update_threshold` (old YAML still loads)
+- dead retrieval package (no importers) and unused scoring helpers
+
+### Changed
+
+- docs: new support matrix page (supported, not live-tested, experimental); README and architecture docs corrected about the default `lexical` embedder, pgvector support, and the retrieval pipeline
+- `make lint` pins golangci-lint `v2.11.4` and installs it into `bin/tools`; CI uses the same script
+
 ## v0.2.0 - 2026-03-22
 
 ### Added

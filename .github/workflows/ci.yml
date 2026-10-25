@@ -23,8 +23,6 @@ jobs:
         with:
           go-version: '1.25'
           cache: true
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
       - name: Run lint
         run: make lint
 
@@ -98,8 +96,6 @@ jobs:
         with:
           go-version: '1.25'
           cache: true
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
       - name: Run lint
         run: make lint
       - name: Sweep repo artifacts

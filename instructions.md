@@ -94,7 +94,7 @@ Runtime notes:
 - `importance_scorer=ollama` calls local Ollama for score generation.
 - `importance_scorer=openrouter` calls OpenRouter chat completions for score generation.
 - `postprocess.enabled=true` runs in-process workers for async ingest queue jobs (`parser_extract`, `vector_upsert`).
-- default embedding provider is `ollama` with `lexical` fallback.
+- default embedding provider is `lexical` (hashed bag-of-words, no model) with `lexical` fallback.
 - `embedding.provider=openrouter` calls OpenRouter embeddings API.
 - ONNX embedding path is implemented and requires ONNX Runtime shared library.
 - benchmark/eval scripts render runtime config from `test/config/providers/*.yaml` via `cmd/configrender` and copy the rendered config into each result directory.

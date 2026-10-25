@@ -11,6 +11,7 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
+COPY pali.go pali.yaml.example ./
 COPY cmd/ ./cmd/
 COPY deploy/ ./deploy/
 COPY internal/ ./internal/

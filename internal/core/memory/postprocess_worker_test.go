@@ -113,13 +113,11 @@ func TestPostprocessWorkerParserJobCreatesDerivedMemories(t *testing.T) {
 		embedderStub{},
 		scorerStub{},
 		ParserOptions{
-			Enabled:         true,
-			Provider:        "heuristic",
-			Model:           "",
-			StoreRawTurn:    true,
-			MaxFacts:        4,
-			DedupeThreshold: 0.88,
-			UpdateThreshold: 0.94,
+			Enabled:      true,
+			Provider:     "heuristic",
+			Model:        "",
+			StoreRawTurn: true,
+			MaxFacts:     4,
 		},
 		WithInfoParser(NewHeuristicInfoParser()),
 	)
@@ -197,8 +195,6 @@ func TestPostprocessWorkerParserJobRetainsAnswerMetadataAndDropsScaffolds(t *tes
 			Model:                      "test",
 			StoreRawTurn:               true,
 			MaxFacts:                   4,
-			DedupeThreshold:            0.88,
-			UpdateThreshold:            0.94,
 			AnswerSpanRetentionEnabled: true,
 		},
 		WithInfoParser(parserFuncStub(func(_ context.Context, _ string, _ int) ([]ParsedFact, error) {

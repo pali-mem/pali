@@ -248,11 +248,9 @@ func BuildMemoryServiceOptions(
 			},
 		},
 		corememory.RetrievalBehaviorOptions{
-			AnswerTypeRoutingEnabled:             cfg.Retrieval.AnswerTypeRoutingEnabled,
-			EarlyRankRerankEnabled:               cfg.Retrieval.EarlyRankRerankEnabled,
-			TemporalResolverEnabled:              cfg.Retrieval.TemporalResolverEnabled,
-			OpenDomainAlternativeResolverEnabled: cfg.Retrieval.OpenDomainAlternativeResolverEnabled,
-			ProfileSupportLinksEnabled:           cfg.ProfileLayer.SupportLinksEnabled,
+			AnswerTypeRoutingEnabled:   cfg.Retrieval.AnswerTypeRoutingEnabled,
+			EarlyRankRerankEnabled:     cfg.Retrieval.EarlyRankRerankEnabled,
+			ProfileSupportLinksEnabled: cfg.ProfileLayer.SupportLinksEnabled,
 			SearchTuning: corememory.RetrievalSearchTuningOptions{
 				AdaptiveQueryExpansionEnabled:        cfg.Retrieval.Search.AdaptiveQueryExpansionEnabled,
 				AdaptiveQueryMaxExtraQueries:         cfg.Retrieval.Search.AdaptiveQueryMaxExtraQueries,
@@ -274,8 +272,6 @@ func BuildMemoryServiceOptions(
 			Model:                      parserModel(cfg),
 			StoreRawTurn:               cfg.Parser.StoreRawTurn,
 			MaxFacts:                   cfg.Parser.MaxFacts,
-			DedupeThreshold:            cfg.Parser.DedupeThreshold,
-			UpdateThreshold:            cfg.Parser.UpdateThreshold,
 			AnswerSpanRetentionEnabled: cfg.Parser.AnswerSpanRetentionEnabled,
 		},
 		corememory.MultiHopOptions{
