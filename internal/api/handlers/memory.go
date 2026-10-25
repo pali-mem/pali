@@ -249,28 +249,7 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 		return
 	}
 
-	out := make([]dto.MemoryResponse, 0, len(items))
-	for _, m := range items {
-		answerMetadata := toAnswerMetadataDTO(m.AnswerMetadata)
-		out = append(out, dto.MemoryResponse{
-			ID:             m.ID,
-			TenantID:       m.TenantID,
-			Content:        m.Content,
-			Tier:           string(m.Tier),
-			Tags:           m.Tags,
-			Source:         m.Source,
-			CreatedBy:      string(m.CreatedBy),
-			Kind:           string(m.Kind),
-			RecallCount:    m.RecallCount,
-			AnswerMetadata: answerMetadata,
-			CreatedAt:      m.CreatedAt,
-			UpdatedAt:      m.UpdatedAt,
-			LastAccessedAt: m.LastAccessedAt,
-			LastRecalledAt: m.LastRecalledAt,
-		})
-	}
-
-	response := dto.SearchMemoryResponse{Items: out}
+	response := dto.SearchMemoryResponse{Items: toMemoryResponses(items)}
 	if debug != nil {
 		response.Debug = &dto.SearchMemoryDebugDTO{
 			Plan: dto.SearchPlanDebugDTO{
@@ -299,6 +278,141 @@ func (h *MemoryHandler) Search(c *gin.Context) {
 
 	status = http.StatusOK
 	c.JSON(http.StatusOK, response)
+}
+
+// Get returns a single memory by ID for the requested tenant.
+func (h *MemoryHandler) Get(c *gin.Context) {
+	tenantID := strings.TrimSpace(c.Query("tenant_id"))
+	if err := enforceTenantAccess(c, tenantID); err != nil {
+		writeError(c, err)
+		return
+	}
+
+	memory, err := h.service.Get(c.Request.Context(), tenantID, c.Param("id"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if memory == nil {
+		writeError(c, domain.ErrNotFound)
+		return
+	}
+	c.JSON(http.StatusOK, toMemoryResponse(*memory))
+}
+
+// List returns one page of memories for the requested tenant, newest first.
+func (h *MemoryHandler) List(c *gin.Context) {
+	tenantID := strings.TrimSpace(c.Query("tenant_id"))
+	if err := enforceTenantAccess(c, tenantID); err != nil {
+		writeError(c, err)
+		return
+	}
+
+	var opts corememory.ListPageOptions
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		opts.Limit = limit
+	}
+	if rawOffset := strings.TrimSpace(c.Query("offset")); rawOffset != "" {
+		offset, err := strconv.Atoi(rawOffset)
+		if err != nil || offset < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset"})
+			return
+		}
+		opts.Offset = offset
+	}
+	var err error
+	opts.Tiers, err = parseSearchTiers(flattenCSVQuery(c.QueryArray("tier"), ""))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	opts.Kinds, err = parseSearchKinds(flattenCSVQuery(c.QueryArray("kind"), ""))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	page, err := h.service.ListPage(c.Request.Context(), tenantID, opts)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.ListMemoryResponse{
+		Items:      toMemoryResponses(page.Items),
+		NextOffset: page.NextOffset,
+	})
+}
+
+// Update applies a partial update to a memory for the requested tenant.
+func (h *MemoryHandler) Update(c *gin.Context) {
+	tenantID := strings.TrimSpace(c.Query("tenant_id"))
+	if err := enforceTenantAccess(c, tenantID); err != nil {
+		writeError(c, err)
+		return
+	}
+
+	var req dto.UpdateMemoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errInvalidJSONBody.Error()})
+		return
+	}
+	in := corememory.UpdateInput{
+		Content:    req.Content,
+		Tags:       req.Tags,
+		Importance: req.Importance,
+	}
+	if req.Tier != nil {
+		if strings.TrimSpace(*req.Tier) == "" {
+			writeError(c, domain.ErrInvalidInput)
+			return
+		}
+		tier, err := parseTier(*req.Tier)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		in.Tier = &tier
+	}
+
+	updated, err := h.service.Update(c.Request.Context(), tenantID, c.Param("id"), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toMemoryResponse(*updated))
+}
+
+func toMemoryResponse(m domain.Memory) dto.MemoryResponse {
+	return dto.MemoryResponse{
+		ID:             m.ID,
+		TenantID:       m.TenantID,
+		Content:        m.Content,
+		Tier:           string(m.Tier),
+		Tags:           m.Tags,
+		Source:         m.Source,
+		CreatedBy:      string(m.CreatedBy),
+		Kind:           string(m.Kind),
+		Importance:     m.Importance,
+		RecallCount:    m.RecallCount,
+		AnswerMetadata: toAnswerMetadataDTO(m.AnswerMetadata),
+		CreatedAt:      m.CreatedAt,
+		UpdatedAt:      m.UpdatedAt,
+		LastAccessedAt: m.LastAccessedAt,
+		LastRecalledAt: m.LastRecalledAt,
+	}
+}
+
+func toMemoryResponses(items []domain.Memory) []dto.MemoryResponse {
+	out := make([]dto.MemoryResponse, 0, len(items))
+	for _, m := range items {
+		out = append(out, toMemoryResponse(m))
+	}
+	return out
 }
 
 // Delete removes a memory by ID for the requested tenant.

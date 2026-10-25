@@ -62,12 +62,28 @@ type MemoryResponse struct {
 	Source         string             `json:"source"`
 	CreatedBy      string             `json:"created_by"`
 	Kind           string             `json:"kind"`
+	Importance     float64            `json:"importance"`
 	RecallCount    int                `json:"recall_count"`
 	AnswerMetadata *AnswerMetadataDTO `json:"answer_metadata,omitempty"`
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 	LastAccessedAt time.Time          `json:"last_accessed_at"`
 	LastRecalledAt time.Time          `json:"last_recalled_at"`
+}
+
+// ListMemoryResponse is one page of memories, newest first. NextOffset is
+// omitted when there are no further pages.
+type ListMemoryResponse struct {
+	Items      []MemoryResponse `json:"items"`
+	NextOffset *int             `json:"next_offset,omitempty"`
+}
+
+// UpdateMemoryRequest is a partial update; omitted fields are left unchanged.
+type UpdateMemoryRequest struct {
+	Content    *string   `json:"content,omitempty"`
+	Tags       *[]string `json:"tags,omitempty"`
+	Tier       *string   `json:"tier,omitempty"`
+	Importance *float64  `json:"importance,omitempty"`
 }
 
 // SearchMemoryResponse wraps search results and optional debug information.
