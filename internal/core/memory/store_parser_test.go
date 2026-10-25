@@ -481,7 +481,7 @@ func TestStoreWithParserUsesBatchEmbeddingWhenAvailable(t *testing.T) {
 		ParserOptions{
 			Enabled:      true,
 			StoreRawTurn: true,
-			MaxFacts:     5,
+			MaxFacts:     1,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -516,7 +516,7 @@ func TestStoreWithParserFallsBackToSequentialEmbedWhenBatchFails(t *testing.T) {
 		ParserOptions{
 			Enabled:      true,
 			StoreRawTurn: true,
-			MaxFacts:     5,
+			MaxFacts:     1,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{
@@ -611,7 +611,7 @@ func TestStoreBatchWithParserUsesSingleBatchEmbedAcrossTurns(t *testing.T) {
 		ParserOptions{
 			Enabled:      true,
 			StoreRawTurn: true,
-			MaxFacts:     5,
+			MaxFacts:     1,
 		},
 		WithInfoParser(parserStub{
 			facts: []ParsedFact{

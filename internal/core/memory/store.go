@@ -282,16 +282,46 @@ func (s *Service) storeWithParser(
 	}, embeddingByContent)
 }
 
+// Parser fact budgets. parser.max_facts > 0 is the number of parsed facts kept
+// per turn. Zero (the default) keeps the pre-existing effective behaviour: the
+// heuristic parser keeps one fact beside the raw turn (two when the raw turn is
+// not stored) and LLM parsers are asked for up to defaultParserFactBudget.
+const defaultParserFactBudget = 4
+
+func (s *Service) heuristicFactCap() int {
+	if s.parser.MaxFacts > 0 {
+		return s.parser.MaxFacts
+	}
+	if s.parser.StoreRawTurn {
+		return 1
+	}
+	return 2
+}
+
+// heuristicParseBudget is how many candidates the heuristic parser emits before
+// confidence ranking trims them to heuristicFactCap.
+func (s *Service) heuristicParseBudget() int {
+	return max(s.parser.MaxFacts, defaultParserFactBudget)
+}
+
+func (s *Service) llmParseBudget() int {
+	if s.parser.MaxFacts > 0 {
+		return s.parser.MaxFacts
+	}
+	return defaultParserFactBudget
+}
+
 func (s *Service) parseFactsWithFallback(ctx context.Context, content string, turn int) (parserParseResult, error) {
 	parserStart := time.Now()
-	primaryFacts, primaryErr := s.infoParser.Parse(ctx, content, s.parser.MaxFacts)
+	primaryIsHeuristic := strings.EqualFold(strings.TrimSpace(s.parser.Provider), heuristicExtractorName)
+	primaryBudget := s.llmParseBudget()
+	if primaryIsHeuristic {
+		primaryBudget = s.heuristicParseBudget()
+	}
+	primaryFacts, primaryErr := s.infoParser.Parse(ctx, content, primaryBudget)
 	if primaryErr == nil && len(primaryFacts) > 0 {
 		prepared := prepareParsedFactsForStore(content, primaryFacts, s.parser.AnswerSpanRetentionEnabled)
-		maxPreparedFacts := s.parser.MaxFacts
-		if strings.EqualFold(strings.TrimSpace(s.parser.Provider), heuristicExtractorName) && s.parser.StoreRawTurn && maxPreparedFacts > 1 {
-			maxPreparedFacts = 1
-		}
-		prepared = optimizePreparedFactsForParser(content, prepared, s.parser.Provider, maxPreparedFacts)
+		prepared = optimizePreparedFactsForParser(content, prepared, s.parser.Provider, s.heuristicFactCap())
 		if len(prepared) > 0 {
 			s.logDebugf(
 				"[pali-parser] turn=%d provider=%s model=%s status=ok ms=%d facts=%d",
@@ -310,14 +340,10 @@ func (s *Service) parseFactsWithFallback(ctx context.Context, content string, tu
 	}
 
 	fallback := NewHeuristicInfoParser()
-	fallbackFacts, fallbackErr := fallback.Parse(ctx, content, s.parser.MaxFacts)
+	fallbackFacts, fallbackErr := fallback.Parse(ctx, content, s.heuristicParseBudget())
 	if fallbackErr == nil && len(fallbackFacts) > 0 {
 		prepared := prepareParsedFactsForStore(content, fallbackFacts, s.parser.AnswerSpanRetentionEnabled)
-		maxPreparedFacts := s.parser.MaxFacts
-		if s.parser.StoreRawTurn && maxPreparedFacts > 1 {
-			maxPreparedFacts = 1
-		}
-		prepared = optimizePreparedFactsForParser(content, prepared, heuristicExtractorName, maxPreparedFacts)
+		prepared = optimizePreparedFactsForParser(content, prepared, heuristicExtractorName, s.heuristicFactCap())
 		if len(prepared) > 0 {
 			s.logDebugf(
 				"[pali-parser] turn=%d provider=%s model=%s status=fallback_heuristic ms=%d facts=%d",
@@ -708,14 +734,10 @@ func optimizePreparedFactsForParser(sourceContent string, facts []ParsedFact, pr
 		return len(filtered[i].Content) < len(filtered[j].Content)
 	})
 
-	limit := 2
-	if maxFacts > 0 && maxFacts < limit {
-		limit = maxFacts
-	}
-	if limit <= 0 || len(filtered) <= limit {
+	if maxFacts <= 0 || len(filtered) <= maxFacts {
 		return filtered
 	}
-	return filtered[:limit]
+	return filtered[:maxFacts]
 }
 
 func shouldDropHeuristicSpeechFact(fact ParsedFact) bool {

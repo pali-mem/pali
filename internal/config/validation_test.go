@@ -213,7 +213,7 @@ func TestValidate_RetrievalScoringAlgorithm(t *testing.T) {
 
 func TestValidate_ParserOptions(t *testing.T) {
 	cfg := Defaults()
-	cfg.Parser.MaxFacts = 0
+	cfg.Parser.MaxFacts = -1
 	err := Validate(cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "parser.max_facts")
