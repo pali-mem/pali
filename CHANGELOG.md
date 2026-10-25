@@ -12,6 +12,7 @@ Full notes and benchmark deltas: [`changelog/v0.2.1.md`](changelog/v0.2.1.md).
 - parser: dedupe on normalized content + kind; month/time tags no longer match ordinary words; single-sentence utterances are not stored twice; pronouns are not graph entities; long low-signal text is filtered
 - heuristic importance scorer: replaced a TF-IDF term that scored `"ok"` at 1.0
 - repository: reading a memory no longer rewrites `updated_at`
+- `pali init` works after a release install: it falls back to a built-in copy of `pali.yaml.example` when the file is not in the working directory
 
 ### Removed
 
@@ -20,6 +21,7 @@ Full notes and benchmark deltas: [`changelog/v0.2.1.md`](changelog/v0.2.1.md).
 
 ### Changed
 
+- docs: new support matrix page (supported, not live-tested, experimental); README and architecture docs corrected about the default `lexical` embedder, pgvector support, and the retrieval pipeline
 - `make lint` pins golangci-lint `v2.11.4` and installs it into `bin/tools`; CI uses the same script
 
 ## v0.2.0 - 2026-03-22

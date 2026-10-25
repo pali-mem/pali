@@ -18,7 +18,9 @@
 
 Most LLM memory solutions are either SaaS black boxes or bolted-on afterthoughts. Whereas Pali is a runtime you run yourself, with a dashboard you can actually look at, and retrieval you can tune without rewriting your app. Or even change the code in this repo ;D
 
-It stores memories, retrieves the right ones (hybrid search: lexical + vector + reranking), keeps tenants isolated, and exposes everything over REST, MCP, or the Go/Python/JS SDKs. SQLite by default, Qdrant or Neo4j when you need them.
+It stores memories, retrieves them with hybrid search (SQLite FTS5 keyword search + vector search, then reranking), keeps tenants isolated, and exposes everything over REST, MCP, or the Go/Python/JS SDKs. SQLite by default, Qdrant or pgvector when you need a separate vector store.
+
+The default config uses a zero-dependency `lexical` embedder, which is a hashed bag-of-words vector, not a semantic model. For semantic search, set `embedding.provider` to `ollama`, `onnx`, or `openrouter`.
 
 ![Pali dashboard demo](https://raw.githubusercontent.com/pali-mem/.github/main/dashboard.gif)
 
@@ -73,13 +75,13 @@ pali mcp serve     # MCP server mode for agent hosts
 
 ## Backends and extensions
 
-Everything is swappable through config:
+Everything is swappable through config. See the [support matrix](https://pali-mem.github.io/pali/support-matrix/) for what is tested and what is experimental.
 
 | Layer | Options |
 |---|---|
-| Vector store | `sqlite`, `qdrant` |
-| Graph store | `sqlite`, `neo4j` |
-| Embeddings | `ollama`, `onnx`, `openrouter`, `lexical` |
+| Vector store | `sqlite`, `qdrant`, `pgvector` |
+| Entity-fact store | `sqlite`, `neo4j` (experimental) |
+| Embeddings | `lexical` (default), `ollama`, `onnx`, `openrouter` |
 | Importance scoring | `heuristic`, `ollama`, `openrouter` |
 
 ---
@@ -89,7 +91,7 @@ Everything is swappable through config:
 <details>
 <summary>How it fits together</summary>
 
-Requests come in through REST, MCP, or the dashboard. The memory service handles tenant isolation, then passes work to the retrieval pipeline — lexical + vector candidate fusion via RRF, then WMR reranking. Post-processing (parsing, embedding, scoring) runs async. Storage is SQLite by default with optional Qdrant/Neo4j.
+Requests come in through REST, MCP, or the dashboard. The memory service handles tenant isolation, then passes work to the retrieval pipeline: lexical + vector candidates fused with RRF, then weighted reranking on relevance, recency, and importance. Post-processing (embedding, and parsing when enabled) runs async. Storage is SQLite by default with optional Qdrant/Neo4j.
 
 ![Pali runtime design](design.png)
 
@@ -101,6 +103,7 @@ Requests come in through REST, MCP, or the dashboard. The memory service handles
 
 - [Getting started](https://pali-mem.github.io/pali/getting-started/)
 - [Configuration](https://pali-mem.github.io/pali/configuration/)
+- [Support matrix](https://pali-mem.github.io/pali/support-matrix/)
 - [MCP integration](https://pali-mem.github.io/pali/mcp/)
 - [Deployment](https://pali-mem.github.io/pali/deployment/)
 - [API reference](https://pali-mem.github.io/pali/api/)

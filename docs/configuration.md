@@ -31,7 +31,7 @@ The container profile at `deploy/docker/pali.container.yaml` keeps the same zero
 - service-name URLs for `qdrant`, `neo4j`, and `ollama`
 - a `pgvector` section is present for Compose/env-driven PostgreSQL overlays
 
-`pali init` will create the target config file from `pali.yaml.example` when it is missing:
+`pali init` will create the target config file when it is missing. It copies `pali.yaml.example` from the working directory if present, otherwise the copy built into the binary:
 
 ```bash
 pali init -config /etc/pali/pali.yaml
