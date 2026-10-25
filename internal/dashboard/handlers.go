@@ -3,10 +3,12 @@ package dashboard
 
 import (
 	"embed"
+	"errors"
 	"html/template"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,7 +27,10 @@ import (
 //go:embed templates/*.html
 var templatesFS embed.FS
 
-const dashboardSearchMinScore = 0.25
+const (
+	dashboardSearchMinScore = 0.25
+	dashboardPageSize       = 50
+)
 
 // Handlers wires dashboard pages to the underlying services.
 type Handlers struct {
@@ -99,6 +104,10 @@ type MemoriesPageData struct {
 	ResultCount  int
 	SearchDebug  *SearchDebugView
 	ComposerOpen bool
+	PrevURL      string
+	NextURL      string
+	PageStart    int
+	PageEnd      int
 }
 
 // SearchDebugView renders search debug information in the dashboard.
@@ -122,6 +131,16 @@ type MemoryDetailPageData struct {
 	Filters MemoryFilterState
 	BackURL string
 	Memory  MemoryView
+	Edit    MemoryEditForm
+}
+
+// MemoryEditForm holds the edit form values and any inline validation error.
+type MemoryEditForm struct {
+	Content    string
+	Tags       string
+	Tier       string
+	Importance string
+	Error      string
 }
 
 // TenantFilterState captures the active tenant list filters.
@@ -153,6 +172,24 @@ type StatsPageData struct {
 	Tenants        []TenantView
 	HasMoreTenants bool
 	ConfigPath     string
+	Breakdown      []TenantBreakdownView
+}
+
+// CountView is one labelled count in a stats breakdown.
+type CountView struct {
+	Label string
+	Count int64
+}
+
+// TenantBreakdownView is the per-tenant stats breakdown shown on the stats page.
+type TenantBreakdownView struct {
+	ID           string
+	Name         string
+	MemoryCount  int64
+	ByTier       []CountView
+	ByKind       []CountView
+	TotalRecalls int64
+	NewestAt     string
 }
 
 // ConfigPageData is the template data for the config page.
@@ -204,6 +241,8 @@ func (h *Handlers) Memories(c *gin.Context) {
 
 	memories := []MemoryView{}
 	var debugView *SearchDebugView
+	var prevURL, nextURL string
+	offset := parsePageOffset(c.Query("offset"))
 	loadErr := filterErr
 	if filters.SelectedTenantID != "" && loadErr == "" {
 		var (
@@ -233,9 +272,21 @@ func (h *Handlers) Memories(c *gin.Context) {
 				}
 			}
 		} else {
-			items, err = h.memoryService.List(c.Request.Context(), filters.SelectedTenantID, 200)
+			var page corememory.ListPageResult
+			page, err = h.memoryService.ListPage(c.Request.Context(), filters.SelectedTenantID, corememory.ListPageOptions{
+				Limit:  dashboardPageSize,
+				Offset: offset,
+				Tiers:  filterTierSelection(filters.SelectedTier),
+				Kinds:  filterKindSelection(filters.SelectedKind),
+			})
 			if err == nil {
-				items = filterMemoryItems(items, filters.SelectedTier, filters.SelectedKind)
+				items = page.Items
+				if offset > 0 {
+					prevURL = buildMemoriesPageURL(filters, max(offset-dashboardPageSize, 0))
+				}
+				if page.NextOffset != nil {
+					nextURL = buildMemoriesPageURL(filters, *page.NextOffset)
+				}
 			}
 		}
 		if err != nil {
@@ -249,6 +300,11 @@ func (h *Handlers) Memories(c *gin.Context) {
 		}
 	}
 
+	pageStart, pageEnd := 0, 0
+	if len(memories) > 0 && filters.Query == "" {
+		pageStart, pageEnd = offset+1, offset+len(memories)
+	}
+
 	h.render(c, "memories.html", MemoriesPageData{
 		Page:         "memories",
 		Error:        firstNonEmpty(c.Query("error"), loadErr),
@@ -260,6 +316,10 @@ func (h *Handlers) Memories(c *gin.Context) {
 		ResultCount:  len(memories),
 		SearchDebug:  debugView,
 		ComposerOpen: c.Query("compose") == "1",
+		PrevURL:      prevURL,
+		NextURL:      nextURL,
+		PageStart:    pageStart,
+		PageEnd:      pageEnd,
 	})
 }
 
@@ -329,14 +389,104 @@ func (h *Handlers) ViewMemory(c *gin.Context) {
 		return
 	}
 
+	h.renderMemoryDetail(c, http.StatusOK, filters, filterErr, c.Query("info"), *item, newMemoryEditForm(*item))
+}
+
+func (h *Handlers) renderMemoryDetail(c *gin.Context, status int, filters MemoryFilterState, errMsg, info string, item domain.Memory, edit MemoryEditForm) {
+	c.Status(status)
 	h.render(c, "memory_detail.html", MemoryDetailPageData{
 		Page:    "memories",
-		Error:   filterErr,
-		Info:    c.Query("info"),
+		Error:   errMsg,
+		Info:    info,
 		Filters: filters,
 		BackURL: buildMemoriesURL(filters),
-		Memory:  mapMemoryView(*item),
+		Memory:  mapMemoryView(item),
+		Edit:    edit,
 	})
+}
+
+func newMemoryEditForm(m domain.Memory) MemoryEditForm {
+	return MemoryEditForm{
+		Content:    m.Content,
+		Tags:       strings.Join(m.Tags, ", "),
+		Tier:       string(m.Tier),
+		Importance: strconv.FormatFloat(m.Importance, 'f', 2, 64),
+	}
+}
+
+// EditMemory handles dashboard memory edits.
+func (h *Handlers) EditMemory(c *gin.Context) {
+	filters, _ := readMemoryFiltersFromPrefixedValues(c.PostForm, "filter_")
+	memoryID := strings.TrimSpace(c.Param("id"))
+	tenantID := strings.TrimSpace(c.PostForm("tenant_id"))
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(c.Query("tenant_id"))
+	}
+	filters.SelectedTenantID = tenantID
+
+	ctx := c.Request.Context()
+	existing, err := h.memoryService.Get(ctx, tenantID, memoryID)
+	if err != nil || existing == nil {
+		msg := "memory not found"
+		if err != nil {
+			msg = err.Error()
+		}
+		h.redirectMemories(c, filters, "", msg, false)
+		return
+	}
+
+	form := MemoryEditForm{
+		Content:    c.PostForm("content"),
+		Tags:       c.PostForm("tags"),
+		Tier:       strings.TrimSpace(c.PostForm("tier")),
+		Importance: strings.TrimSpace(c.PostForm("importance")),
+	}
+	fail := func(msg string) {
+		form.Error = msg
+		h.renderMemoryDetail(c, http.StatusUnprocessableEntity, filters, "", "", *existing, form)
+	}
+
+	input := corememory.UpdateInput{}
+	if content := strings.TrimSpace(form.Content); content == "" {
+		fail("content must not be empty")
+		return
+	} else if content != existing.Content {
+		input.Content = &content
+	}
+	tier, err := parseTier(form.Tier)
+	if err != nil || form.Tier == "" {
+		fail("invalid tier")
+		return
+	}
+	if tier != existing.Tier {
+		input.Tier = &tier
+	}
+	importance, err := strconv.ParseFloat(form.Importance, 64)
+	if err != nil || importance < 0 || importance > 1 {
+		fail("importance must be a number between 0 and 1")
+		return
+	}
+	// The form shows importance rounded to two decimals; only send it when the
+	// user changed the displayed value so unrelated edits do not round it.
+	if form.Importance != strconv.FormatFloat(existing.Importance, 'f', 2, 64) {
+		input.Importance = &importance
+	}
+	if tags := parseCommaList(form.Tags); !slices.Equal(tags, existing.Tags) {
+		input.Tags = &tags
+	}
+
+	info := "memory updated"
+	if input == (corememory.UpdateInput{}) {
+		info = "no changes to save"
+	} else if _, err := h.memoryService.Update(ctx, tenantID, memoryID, input); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			h.redirectMemories(c, filters, "", err.Error(), false)
+			return
+		}
+		fail(err.Error())
+		return
+	}
+	c.Redirect(http.StatusSeeOther, buildMemoryDetailURL(memoryID, filters, info))
 }
 
 // Tenants renders the tenants listing page.
@@ -401,6 +551,27 @@ func (h *Handlers) Stats(c *gin.Context) {
 		}
 	}
 	topTenants := topTenantsByMemory(tenants, 10)
+	breakdown := make([]TenantBreakdownView, 0, len(topTenants))
+	for _, t := range topTenants {
+		stats, err := h.tenantService.Stats(c.Request.Context(), t.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "load stats failed"})
+			return
+		}
+		view := TenantBreakdownView{
+			ID:           t.ID,
+			Name:         t.Name,
+			MemoryCount:  stats.MemoryCount,
+			ByTier:       sortedCounts(stats.ByTier),
+			ByKind:       sortedCounts(stats.ByKind),
+			TotalRecalls: stats.TotalRecalls,
+			NewestAt:     "None",
+		}
+		if stats.NewestMemoryAt != nil {
+			view.NewestAt = formatDashboardTime(*stats.NewestMemoryAt)
+		}
+		breakdown = append(breakdown, view)
+	}
 
 	h.render(c, "stats.html", StatsPageData{
 		Page:           "stats",
@@ -413,7 +584,42 @@ func (h *Handlers) Stats(c *gin.Context) {
 		Tenants:        topTenants,
 		HasMoreTenants: len(tenants) > len(topTenants),
 		ConfigPath:     h.configPage.ConfigPath,
+		Breakdown:      breakdown,
 	})
+}
+
+func sortedCounts(m map[string]int64) []CountView {
+	out := make([]CountView, 0, len(m))
+	for label, count := range m {
+		out = append(out, CountView{Label: label, Count: count})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Label < out[j].Label
+	})
+	return out
+}
+
+func parsePageOffset(raw string) int {
+	offset, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || offset < 0 {
+		return 0
+	}
+	return offset
+}
+
+func buildMemoriesPageURL(filters MemoryFilterState, offset int) string {
+	location := buildMemoriesURL(filters)
+	if offset <= 0 {
+		return location
+	}
+	sep := "?"
+	if strings.Contains(location, "?") {
+		sep = "&"
+	}
+	return location + sep + "offset=" + strconv.Itoa(offset)
 }
 
 // Config renders the configuration page.
@@ -664,23 +870,6 @@ func filterRetrievalKindSelection(selected string) corememory.SearchRetrievalKin
 	return corememory.SearchRetrievalKind(selected)
 }
 
-func filterMemoryItems(items []domain.Memory, tier, kind string) []domain.Memory {
-	if tier == "" && kind == "" {
-		return items
-	}
-	out := make([]domain.Memory, 0, len(items))
-	for _, item := range items {
-		if tier != "" && string(item.Tier) != tier {
-			continue
-		}
-		if kind != "" && string(item.Kind) != kind {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
 func filterMemoriesByLiteralQuery(items []domain.Memory, query string) []domain.Memory {
 	query = strings.TrimSpace(strings.ToLower(query))
 	if query == "" {
@@ -843,8 +1032,10 @@ func formatDashboardTime(ts time.Time) string {
 	return ts.Format("2006-01-02 15:04")
 }
 
+// formatOptionalDashboardTime renders the zero time and the Unix epoch (what the
+// repository returns for an unset timestamp) as "Never".
 func formatOptionalDashboardTime(ts time.Time) string {
-	if ts.IsZero() {
+	if ts.IsZero() || ts.Unix() <= 0 {
 		return "Never"
 	}
 	return ts.Format("2006-01-02 15:04")

@@ -109,4 +109,52 @@
     {{ end }}
   </article>
 </section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Breakdown</p>
+      <h3>Per-tenant breakdown (top 10)</h3>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th>Memories</th>
+          <th>By tier</th>
+          <th>By kind</th>
+          <th>Total recalls</th>
+          <th>Newest memory</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Breakdown }}
+        <tr>
+          <td>
+            <strong>{{ .Name }}</strong>
+            <div class="table-meta"><code>{{ .ID }}</code></div>
+          </td>
+          <td>{{ .MemoryCount }}</td>
+          <td>
+            <div class="pill-group">
+              {{ range .ByTier }}<span class="pill">{{ .Label }} {{ .Count }}</span>{{ else }}<span class="meta-inline">None</span>{{ end }}
+            </div>
+          </td>
+          <td>
+            <div class="pill-group">
+              {{ range .ByKind }}<span class="pill">{{ .Label }} {{ .Count }}</span>{{ else }}<span class="meta-inline">None</span>{{ end }}
+            </div>
+          </td>
+          <td>{{ .TotalRecalls }}</td>
+          <td>{{ .NewestAt }}</td>
+        </tr>
+        {{ else }}
+        <tr><td colspan="6" class="empty-cell">No tenants yet.</td></tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
+</section>
 {{ end }}

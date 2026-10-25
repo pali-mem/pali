@@ -201,7 +201,7 @@
       <p class="eyebrow">Results</p>
       <h3>Memory table</h3>
     </div>
-    <p class="results-summary">{{ .ResultCount }} record{{ if ne .ResultCount 1 }}s{{ end }}</p>
+    <p class="results-summary">{{ if .PageEnd }}Showing {{ .PageStart }}-{{ .PageEnd }}{{ else }}{{ .ResultCount }} record{{ if ne .ResultCount 1 }}s{{ end }}{{ end }}</p>
   </div>
   <div class="table-wrap">
     <table>
@@ -277,5 +277,11 @@
       </tbody>
     </table>
   </div>
+  {{ if or .PrevURL .NextURL }}
+  <div class="toolbar-actions pagination">
+    {{ if .PrevURL }}<a href="{{ .PrevURL }}" rel="prev" class="button-link">Newer</a>{{ end }}
+    {{ if .NextURL }}<a href="{{ .NextURL }}" rel="next" class="button-link">Older</a>{{ end }}
+  </div>
+  {{ end }}
 </section>
 {{ end }}

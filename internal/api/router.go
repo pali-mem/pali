@@ -155,6 +155,7 @@ func NewRouterWithConfigPath(cfg config.Config, configPath string) (*gin.Engine,
 	r.GET("/dashboard/memories/view/:id", dashboardHandlers.ViewMemory)
 	r.POST("/dashboard/memories", dashboardHandlers.CreateMemory)
 	r.POST("/dashboard/memories/:id/delete", dashboardHandlers.DeleteMemory)
+	r.POST("/dashboard/memories/:id/edit", dashboardHandlers.EditMemory)
 	r.GET("/dashboard/tenants", dashboardHandlers.Tenants)
 	r.POST("/dashboard/tenants", dashboardHandlers.CreateTenant)
 	r.GET("/dashboard/stats", dashboardHandlers.Stats)

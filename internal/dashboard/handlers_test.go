@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"testing"
+	"time"
 
 	"github.com/pali-mem/pali/internal/domain"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,24 @@ func TestTopTenantsByMemory_LimitsAndSorts(t *testing.T) {
 
 	require.Len(t, items, 4)
 	require.Equal(t, "tenant_c", items[0].ID)
+}
+
+func TestFormatOptionalDashboardTime_NeverForUnsetTimes(t *testing.T) {
+	require.Equal(t, "Never", formatOptionalDashboardTime(time.Time{}))
+	require.Equal(t, "Never", formatOptionalDashboardTime(time.Unix(0, 0)))
+	require.Equal(t, "2026-10-25 12:30", formatOptionalDashboardTime(time.Date(2026, 10, 25, 12, 30, 0, 0, time.UTC)))
+}
+
+func TestSortedCounts_OrdersByCountThenLabel(t *testing.T) {
+	got := sortedCounts(map[string]int64{"b": 2, "a": 2, "c": 5})
+	require.Equal(t, []CountView{{"c", 5}, {"a", 2}, {"b", 2}}, got)
+	require.Empty(t, sortedCounts(nil))
+}
+
+func TestBuildMemoriesPageURL_PreservesFilters(t *testing.T) {
+	filters := MemoryFilterState{SelectedTenantID: "t1", SelectedTier: "semantic", SelectedKind: "event"}
+	require.Equal(t, "/dashboard/memories?kind=event&tenant_id=t1&tier=semantic", buildMemoriesPageURL(filters, 0))
+	require.Equal(t, "/dashboard/memories?kind=event&tenant_id=t1&tier=semantic&offset=50", buildMemoriesPageURL(filters, 50))
 }
 
 func TestFilterMemoriesByLiteralQuery(t *testing.T) {
