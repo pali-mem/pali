@@ -21,6 +21,11 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
 - Docs: coding-agent setup guide, benchmarks methodology page, design proposals for observational memory,
   a LongMemEval-S protocol, and per-tenant scoring weights (`docs/internal/`).
 - Test that fails when a `Config` field is never read outside `internal/config`.
+- Dashboard: memories page is paginated (50 per page, newest first) and keeps tier/kind filters across pages.
+- Dashboard: memory detail page can edit content, tags, tier, and importance (`POST /dashboard/memories/:id/edit`),
+  and shows recall count, last recalled, and last accessed. Like the existing create/delete routes, the dashboard has
+  no auth or CSRF protection; it binds to `127.0.0.1` by default.
+- Dashboard: stats page shows a per-tenant breakdown by tier and kind with total recalls and newest memory time.
 
 ## Changed
 
@@ -42,6 +47,8 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
   contain those fragments. Side effect: unresolved first-person facts get no query view.
 - Rerank: an explicit `RerankOptions.Blend` of 0 is no longer replaced by the 0.40 default; values are clamped to
   [0, 1]. Defaults are unchanged.
+
+- Dashboard: never-recalled memories show "Never" instead of 1970-01-01.
 
 ## Removed
 
