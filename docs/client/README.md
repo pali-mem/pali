@@ -93,6 +93,7 @@ The message is parsed from server JSON errors (`{"error":"..."}`) when available
 
 - `Health(ctx)`
 - `CreateTenant(ctx, req)`
+- `ListTenants(ctx, limit)`
 - `TenantStats(ctx, tenantID)`
 - `StoreMemory(ctx, req)`
 - `StoreMemoryBatch(ctx, req)`
@@ -101,7 +102,48 @@ The message is parsed from server JSON errors (`{"error":"..."}`) when available
 - `SearchMemory(ctx, req)`
 - `ListPostprocessJobs(ctx, req)`
 - `GetPostprocessJob(ctx, jobID)`
+- `GetMemory(ctx, tenantID, memoryID)`
+- `ListMemory(ctx, req)`
+- `UpdateMemory(ctx, tenantID, memoryID, req)`
 - `DeleteMemory(ctx, tenantID, memoryID)`
+
+## Get, List, And Update
+
+```go
+// Page through a tenant's memories, newest first.
+req := client.ListMemoryRequest{TenantID: "tenant_1", Limit: 100}
+for {
+    page, err := c.ListMemory(ctx, req)
+    if err != nil {
+        return err
+    }
+    for _, m := range page.Items {
+        fmt.Println(m.ID, m.Content)
+    }
+    if page.NextOffset == nil {
+        break
+    }
+    req.Offset = *page.NextOffset
+}
+
+// Fetch one memory. Unknown IDs and IDs from another tenant return client.ErrNotFound.
+m, err := c.GetMemory(ctx, "tenant_1", "mem_abc123")
+
+// Update any subset of content, tags, tier, and importance. Nil fields are unchanged.
+content := "User prefers green tea."
+tags := []string{"preferences"}
+updated, err := c.UpdateMemory(ctx, "tenant_1", m.ID, client.UpdateMemoryRequest{
+    Content: &content,
+    Tags:    &tags,
+})
+```
+
+Notes:
+- `ListMemoryRequest` supports `Limit` (default 50, max 200), `Offset`, `Tiers`, and `Kinds`. `ListMemoryResponse.NextOffset` is nil on the last page.
+- `UpdateMemoryRequest` with no fields set returns a `400` `*APIError`. A non-nil empty `Tags` slice clears the tags.
+- `ListTenants` returns each tenant with `MemoryCount`; a tenant-scoped token only sees its own tenant.
+- `TenantStatsResponse` carries `MemoryCount` plus `ByTier`, `ByKind`, `TotalRecalls`, and `NewestMemoryAt` (nil for an empty tenant).
+- `GetMemory`, `ListMemory`, and `UpdateMemory` are methods on `*Client` and are not part of the `MemoryClient` interface, so existing mocks of that interface keep compiling.
 
 ## Memory Payload Notes
 
@@ -120,6 +162,7 @@ The message is parsed from server JSON errors (`{"error":"..."}`) when available
 - `source`
 - `created_by`
 - `kind`
+- `importance`
 - `recall_count`
 - `last_accessed_at`
 - `last_recalled_at`
