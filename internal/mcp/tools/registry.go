@@ -100,6 +100,27 @@ func (t *Toolset) Register(s *sdkmcp.Server) error {
 	}
 	sdkmcp.AddTool(s, memoryList, t.handleMemoryList)
 
+	memoryGet := &sdkmcp.Tool{
+		Name:        "memory_get",
+		Description: "Fetch one memory by ID. Required: memory_id (string). Optional: tenant_id (string). Returns an error when the memory does not exist for the tenant. Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Annotations: &sdkmcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: boolPtr(false),
+		},
+	}
+	sdkmcp.AddTool(s, memoryGet, t.handleMemoryGet)
+
+	memoryUpdate := &sdkmcp.Tool{
+		Name:        "memory_update",
+		Description: "Correct or refine an existing memory instead of storing a duplicate. Required: memory_id (string) and at least one of content (string), tags ([]string, empty list clears), tier (auto|working|episodic|semantic), importance (0..1). Optional: tenant_id (string). Changing content re-indexes search and embeddings. Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
+		Annotations: &sdkmcp.ToolAnnotations{
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(false),
+		},
+	}
+	sdkmcp.AddTool(s, memoryUpdate, t.handleMemoryUpdate)
+
 	memoryDelete := &sdkmcp.Tool{
 		Name:        "memory_delete",
 		Description: "Delete a memory by ID. Required fields: memory_id (string). Optional: tenant_id (string). Tenant fallback order: tenant_id input -> JWT claim -> MCP session default -> config default_tenant_id.",
@@ -200,6 +221,22 @@ type MemoryListInput struct {
 	Limit    int    `json:"limit,omitempty" jsonschema:"List limit"`
 }
 
+// MemoryGetInput is the input for fetching one memory.
+type MemoryGetInput struct {
+	TenantID string `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
+	MemoryID string `json:"memory_id" jsonschema:"Memory ID to fetch"`
+}
+
+// MemoryUpdateInput is the input for a partial memory update.
+type MemoryUpdateInput struct {
+	TenantID   string    `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
+	MemoryID   string    `json:"memory_id" jsonschema:"Memory ID to update"`
+	Content    *string   `json:"content,omitempty" jsonschema:"New memory content"`
+	Tags       *[]string `json:"tags,omitempty" jsonschema:"Replacement tags; an empty list clears them"`
+	Tier       string    `json:"tier,omitempty" jsonschema:"New tier: auto|working|episodic|semantic"`
+	Importance *float64  `json:"importance,omitempty" jsonschema:"New importance score, 0..1"`
+}
+
 // MemoryDeleteInput is the input for deleting a memory.
 type MemoryDeleteInput struct {
 	TenantID string `json:"tenant_id,omitempty" jsonschema:"Tenant ID (optional if default resolution is configured)"`
@@ -271,6 +308,16 @@ type MemorySearchOutput struct {
 // MemoryListOutput is the response from memory listing.
 type MemoryListOutput struct {
 	Items []MemoryItem `json:"items"`
+}
+
+// MemoryGetOutput is the response from fetching one memory.
+type MemoryGetOutput struct {
+	Memory MemoryItem `json:"memory"`
+}
+
+// MemoryUpdateOutput is the response from updating a memory.
+type MemoryUpdateOutput struct {
+	Memory MemoryItem `json:"memory"`
 }
 
 // MemoryDeleteOutput is the response from memory deletion.
@@ -437,6 +484,47 @@ func (t *Toolset) handleMemoryList(ctx context.Context, req *sdkmcp.CallToolRequ
 	return toolOK(fmt.Sprintf("%d memories listed", len(items))), MemoryListOutput{Items: mapMemoryItems(items)}, nil
 }
 
+func (t *Toolset) handleMemoryGet(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryGetInput) (*sdkmcp.CallToolResult, MemoryGetOutput, error) {
+	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
+	if err != nil {
+		return nil, MemoryGetOutput{}, err
+	}
+
+	memory, err := t.memory.Get(ctx, tenantID, args.MemoryID)
+	if err != nil {
+		return nil, MemoryGetOutput{}, err
+	}
+	if memory == nil {
+		return nil, MemoryGetOutput{}, domain.ErrNotFound
+	}
+	return toolOK("memory loaded"), MemoryGetOutput{Memory: mapMemoryItems([]domain.Memory{*memory})[0]}, nil
+}
+
+func (t *Toolset) handleMemoryUpdate(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryUpdateInput) (*sdkmcp.CallToolResult, MemoryUpdateOutput, error) {
+	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
+	if err != nil {
+		return nil, MemoryUpdateOutput{}, err
+	}
+
+	in := corememory.UpdateInput{
+		Content:    args.Content,
+		Tags:       args.Tags,
+		Importance: args.Importance,
+	}
+	if strings.TrimSpace(args.Tier) != "" {
+		tier, err := parseTier(args.Tier)
+		if err != nil {
+			return nil, MemoryUpdateOutput{}, err
+		}
+		in.Tier = &tier
+	}
+	updated, err := t.memory.Update(ctx, tenantID, args.MemoryID, in)
+	if err != nil {
+		return nil, MemoryUpdateOutput{}, err
+	}
+	return toolOK("memory updated"), MemoryUpdateOutput{Memory: mapMemoryItems([]domain.Memory{*updated})[0]}, nil
+}
+
 func (t *Toolset) handleMemoryDelete(ctx context.Context, req *sdkmcp.CallToolRequest, args MemoryDeleteInput) (*sdkmcp.CallToolResult, MemoryDeleteOutput, error) {
 	tenantID, err := t.resolveTenant(ctx, req, args.TenantID)
 	if err != nil {
@@ -522,6 +610,8 @@ func (t *Toolset) handleCapabilitiesHelp(ctx context.Context, req *sdkmcp.CallTo
 			"memory_store_preference",
 			"memory_search",
 			"memory_list",
+			"memory_get",
+			"memory_update",
 			"memory_delete",
 			"tenant_create",
 			"tenant_list",
@@ -551,6 +641,13 @@ func (t *Toolset) handleCapabilitiesHelp(ctx context.Context, req *sdkmcp.CallTo
 				Arguments: map[string]any{
 					"query": "When does Jane graduate?",
 					"top_k": 5,
+				},
+			},
+			{
+				Name: "memory_update",
+				Arguments: map[string]any{
+					"memory_id": "mem_123",
+					"content":   "Jane graduates on May 29, 2027",
 				},
 			},
 			{
