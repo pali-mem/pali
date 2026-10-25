@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pali-mem/pali"
 	"github.com/pali-mem/pali/internal/bootstrap"
+	"github.com/pali-mem/pali/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,4 +39,23 @@ func TestEnsureConfigCopiesExampleToCustomPath(t *testing.T) {
 	got, err := os.ReadFile(target)
 	require.NoError(t, err)
 	require.Equal(t, string(example), string(got))
+}
+
+func TestEnsureConfigUsesBuiltInExampleWhenMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	prevWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(prevWD))
+	})
+
+	require.NoError(t, bootstrap.EnsureConfig("pali.yaml"))
+
+	got, err := os.ReadFile("pali.yaml")
+	require.NoError(t, err)
+	require.Equal(t, string(pali.ExampleConfig), string(got))
+
+	_, err = config.Load("pali.yaml")
+	require.NoError(t, err)
 }
