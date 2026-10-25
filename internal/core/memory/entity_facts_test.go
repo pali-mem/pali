@@ -66,8 +66,12 @@ func TestInferRelationFromFact_DetectsRelationshipStatusAndPreference(t *testing
 }
 
 func TestInferValueFromFact_NormalizesPrefixes(t *testing.T) {
-	value := inferValueFromFact("Alice is a vegetarian", "activity", "Alice")
-	require.Equal(t, "a vegetarian", value)
+	value := inferValueFromFact("Alice enjoys the hiking trails", "activity", "Alice")
+	require.Equal(t, "hiking trails", value)
+}
+
+func TestInferValueFromFact_NoSelectorMatchLeavesValueEmpty(t *testing.T) {
+	require.Equal(t, "", inferValueFromFact("Alice is a vegetarian", "activity", "Alice"))
 }
 
 func TestInferEntityRelationValue_FirstPersonTechPreference(t *testing.T) {

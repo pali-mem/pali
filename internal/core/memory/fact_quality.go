@@ -305,10 +305,9 @@ func buildFactQuestionView(fact ParsedFact) string {
 		return ""
 	}
 	relation := normalizeEntityFactRelation(fact.Relation)
+	// An empty value yields only the value-free templates; never reuse the
+	// sentence as a value here.
 	value := normalizeEntityFactValue(fact.Value)
-	if value == "" {
-		value = inferSpecificValueCandidate(fact.Content)
-	}
 	parts := make([]string, 0, 6)
 	add := func(text string) {
 		text = normalizeFactContent(text)
