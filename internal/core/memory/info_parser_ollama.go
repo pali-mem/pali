@@ -56,6 +56,7 @@ func NewOllamaInfoParser(baseURL, model string, timeout time.Duration, logger *l
 	return p, nil
 }
 
+// Parse extracts up to maxFacts facts from content using an Ollama model.
 func (p *ollamaInfoParser) Parse(ctx context.Context, content string, maxFacts int) ([]ParsedFact, error) {
 	if maxFacts <= 0 {
 		return nil, fmt.Errorf("max facts must be > 0")

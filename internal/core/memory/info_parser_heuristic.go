@@ -52,6 +52,7 @@ func NewHeuristicInfoParser() InfoParser {
 	return heuristicInfoParser{}
 }
 
+// Parse extracts up to maxFacts facts from content using rule-based heuristics.
 func (heuristicInfoParser) Parse(_ context.Context, content string, maxFacts int) ([]ParsedFact, error) {
 	if maxFacts <= 0 {
 		return nil, fmt.Errorf("max facts must be > 0")

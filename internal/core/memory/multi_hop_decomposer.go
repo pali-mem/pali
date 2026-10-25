@@ -41,6 +41,7 @@ func NewLLMMultiHopQueryDecomposer(
 	}
 }
 
+// Decompose asks the LLM to split query into at most maxQueries sub-queries.
 func (d *llmMultiHopQueryDecomposer) Decompose(ctx context.Context, query string, maxQueries int) ([]string, error) {
 	if d == nil || d.generator == nil {
 		return nil, fmt.Errorf("multi-hop decomposer is not configured")
