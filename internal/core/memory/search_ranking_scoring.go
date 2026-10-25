@@ -9,15 +9,13 @@ import (
 )
 
 func (s *Service) rerankScoredCandidates(items []scoredMemory, query string, topK int) []scoredMemory {
+	// s.rerank is normalized by NewService/RerankOptions.apply.
 	opts := s.rerank
-	if !opts.Enabled || len(items) < 2 {
+	if !opts.Enabled || opts.Blend <= 0 || len(items) < 2 {
 		return items
 	}
 
 	window := opts.Window
-	if window <= 0 {
-		window = defaultRerankOptions().Window
-	}
 	if topK > window {
 		window = topK
 	}
@@ -25,15 +23,6 @@ func (s *Service) rerankScoredCandidates(items []scoredMemory, query string, top
 		window = len(items)
 	}
 	blend := opts.Blend
-	if blend < 0 {
-		blend = 0
-	}
-	if blend > 1 {
-		blend = 1
-	}
-	if blend == 0 {
-		blend = defaultRerankOptions().Blend
-	}
 
 	head := append([]scoredMemory{}, items[:window]...)
 	tail := append([]scoredMemory{}, items[window:]...)

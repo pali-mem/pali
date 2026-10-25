@@ -238,6 +238,16 @@ type EntityFactBatchRepository interface {
 	StoreBatch(ctx context.Context, facts []EntityFact) ([]EntityFact, error)
 }
 
+// EntityFactBatchLookupRepository is an optional extension for repositories
+// that can look up many entity/relation pairs in one round trip.
+type EntityFactBatchLookupRepository interface {
+	// ListByEntityRelations returns what calling ListByEntityRelation for every
+	// entity (outer loop) and relation (inner loop) would return, concatenated
+	// in that order: per-pair limit, per-pair ordering, and the same
+	// ErrInvalidInput rules.
+	ListByEntityRelations(ctx context.Context, tenantID string, entities, relations []string, limit int) ([]EntityFact, error)
+}
+
 // EntityFactInvalidationRepository is an optional extension for repositories
 // that can close out older singleton facts when a newer canonical fact wins.
 // EntityFactInvalidationRepository can invalidate older singleton facts.

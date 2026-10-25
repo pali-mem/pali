@@ -33,16 +33,9 @@ func (s *Service) searchByEntityFacts(
 	if lookupLimit < 20 {
 		lookupLimit = 20
 	}
-	facts := make([]domain.EntityFact, 0, lookupLimit*len(relations))
-	for _, relation := range relations {
-		relationFacts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
-		if err != nil {
-			return nil, false, err
-		}
-		if s.multiHop.GraphSingletonInvalidation {
-			relationFacts = filterActiveEntityFacts(relationFacts)
-		}
-		facts = append(facts, relationFacts...)
+	facts, err := s.listEntityFactsByRelations(ctx, tenantID, []string{entity}, relations, lookupLimit)
+	if err != nil {
+		return nil, false, err
 	}
 	if len(facts) == 0 {
 		return nil, false, nil
@@ -75,15 +68,8 @@ func (s *Service) searchByEntityFacts(
 
 	filtered := make([]domain.Memory, 0, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		filtered = append(filtered, memory)
 	}
@@ -100,6 +86,8 @@ func (s *Service) searchByEntityFacts(
 	}
 	profile := classifyQuery(query)
 	scored := rankMemories(filtered, signalByID, max(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval)
+	// Unlike sortScoredByScore this has no ID tie-break; adding one would
+	// reorder tied aggregation results.
 	slices.SortFunc(scored, func(a, b scoredMemory) int {
 		switch {
 		case a.Score > b.Score:
@@ -193,15 +181,8 @@ func (s *Service) collectLexicalCandidates(
 		}
 		for idx, hit := range hits {
 			memory := hit.Memory
-			if len(kindFilter) > 0 {
-				if _, ok := kindFilter[memory.Kind]; !ok {
-					continue
-				}
-			}
-			if len(tierFilter) > 0 {
-				if _, ok := tierFilter[memory.Tier]; !ok {
-					continue
-				}
+			if !passesFilters(memory, kindFilter, tierFilter) {
+				continue
 			}
 			// Prefer the backend's real BM25 strength (normalized so the best hit
 			// for this query is 1.0). Fall back to rank position only when the
@@ -253,15 +234,8 @@ func (s *Service) filterDenseCandidatesByMetadata(
 	}
 	allowed := make(map[string]struct{}, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		allowed[memory.ID] = struct{}{}
 	}
@@ -287,34 +261,22 @@ func (s *Service) collectEntityHintCandidates(
 		return []lexicalCandidate{}, nil
 	}
 	relations := []string{"activity", "preference", "event", "plan", "goal", "identity", "role", "relationship", "relationship status", "belief", "value", "trait", "place", "book"}
-	lookupLimit := topK / 10
-	if lookupLimit < 8 {
-		lookupLimit = 8
+	facts, err := s.listEntityFactsByRelations(ctx, tenantID, []string{entity}, relations, entityLookupLimit(topK))
+	if err != nil {
+		return nil, err
 	}
-	if lookupLimit > 24 {
-		lookupLimit = 24
-	}
-	ids := make([]string, 0, lookupLimit*len(relations))
-	seen := make(map[string]struct{}, lookupLimit*len(relations))
-	for _, relation := range relations {
-		facts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, lookupLimit)
-		if err != nil {
-			return nil, err
+	ids := make([]string, 0, len(facts))
+	seen := make(map[string]struct{}, len(facts))
+	for _, fact := range facts {
+		memoryID := strings.TrimSpace(fact.MemoryID)
+		if memoryID == "" {
+			continue
 		}
-		if s.multiHop.GraphSingletonInvalidation {
-			facts = filterActiveEntityFacts(facts)
+		if _, ok := seen[memoryID]; ok {
+			continue
 		}
-		for _, fact := range facts {
-			memoryID := strings.TrimSpace(fact.MemoryID)
-			if memoryID == "" {
-				continue
-			}
-			if _, ok := seen[memoryID]; ok {
-				continue
-			}
-			seen[memoryID] = struct{}{}
-			ids = append(ids, memoryID)
-		}
+		seen[memoryID] = struct{}{}
+		ids = append(ids, memoryID)
 	}
 	if len(ids) == 0 {
 		return []lexicalCandidate{}, nil
@@ -325,15 +287,8 @@ func (s *Service) collectEntityHintCandidates(
 	}
 	candidates := make([]lexicalCandidate, 0, len(memories))
 	for _, memory := range memories {
-		if len(kindFilter) > 0 {
-			if _, ok := kindFilter[memory.Kind]; !ok {
-				continue
-			}
-		}
-		if len(tierFilter) > 0 {
-			if _, ok := tierFilter[memory.Tier]; !ok {
-				continue
-			}
+		if !passesFilters(memory, kindFilter, tierFilter) {
+			continue
 		}
 		score := lexicalContentScore(query, memory.Content)
 		if score < 0.12 {
@@ -344,16 +299,7 @@ func (s *Service) collectEntityHintCandidates(
 			Score:  score,
 		})
 	}
-	slices.SortFunc(candidates, func(a, b lexicalCandidate) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return strings.Compare(a.Memory.ID, b.Memory.ID)
-		}
-	})
+	sortLexicalByScore(candidates)
 	maxHintCandidates := topK / 2
 	if maxHintCandidates < 8 {
 		maxHintCandidates = 8
@@ -362,6 +308,44 @@ func (s *Service) collectEntityHintCandidates(
 		candidates = candidates[:maxHintCandidates]
 	}
 	return candidates, nil
+}
+
+// listEntityFactsByRelations returns the facts for every entity (outer) and
+// relation (inner) pair in that order, using the repository's batch lookup
+// when available and one ListByEntityRelation call per pair otherwise. With
+// GraphSingletonInvalidation, invalidated facts are dropped.
+func (s *Service) listEntityFactsByRelations(
+	ctx context.Context,
+	tenantID string,
+	entities, relations []string,
+	limit int,
+) ([]domain.EntityFact, error) {
+	if len(entities) == 0 || len(relations) == 0 {
+		return []domain.EntityFact{}, nil
+	}
+	var facts []domain.EntityFact
+	if batchRepo, ok := s.entityRepo.(domain.EntityFactBatchLookupRepository); ok && batchRepo != nil {
+		batch, err := batchRepo.ListByEntityRelations(ctx, tenantID, entities, relations, limit)
+		if err != nil {
+			return nil, err
+		}
+		facts = batch
+	} else {
+		facts = make([]domain.EntityFact, 0, len(entities)*len(relations))
+		for _, entity := range entities {
+			for _, relation := range relations {
+				pairFacts, err := s.entityRepo.ListByEntityRelation(ctx, tenantID, entity, relation, limit)
+				if err != nil {
+					return nil, err
+				}
+				facts = append(facts, pairFacts...)
+			}
+		}
+	}
+	if s.multiHop.GraphSingletonInvalidation {
+		facts = filterActiveEntityFacts(facts)
+	}
+	return facts, nil
 }
 
 func lexicalHitsWithoutScores(memories []domain.Memory) []domain.LexicalHit {

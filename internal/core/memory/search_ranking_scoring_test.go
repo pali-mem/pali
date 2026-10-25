@@ -74,3 +74,37 @@ func TestRankMemoriesRoutedQueryDoesNotPromoteZeroRelevance(t *testing.T) {
 	}
 	require.Greater(t, byID["good"], byID["decoy"])
 }
+
+func rerankTestCandidates() []scoredMemory {
+	return []scoredMemory{
+		{Memory: domain.Memory{ID: "generic", Content: "General life update and weekend plans."}, Score: 0.9},
+		{Memory: domain.Memory{ID: "support_group", Content: "Caroline joined an LGBTQ support group yesterday.", QueryViewText: "caroline joined support group"}, Score: 0.5},
+	}
+}
+
+func TestRerankScoredCandidatesHonoursEnabled(t *testing.T) {
+	query := "which group did caroline join"
+
+	enabled := NewService(nil, nil, nil, nil, nil, RerankOptions{Enabled: true, Window: 50, Blend: 1})
+	reranked := enabled.rerankScoredCandidates(rerankTestCandidates(), query, 5)
+	require.Equal(t, "support_group", reranked[0].Memory.ID)
+
+	disabled := NewService(nil, nil, nil, nil, nil, RerankOptions{Enabled: false, Window: 50, Blend: 1})
+	require.Equal(t, rerankTestCandidates(), disabled.rerankScoredCandidates(rerankTestCandidates(), query, 5))
+}
+
+func TestRerankScoredCandidatesZeroBlendKeepsFirstStageScores(t *testing.T) {
+	svc := NewService(nil, nil, nil, nil, nil, RerankOptions{Enabled: true, Window: 50, Blend: 0})
+	require.Equal(t, rerankTestCandidates(), svc.rerankScoredCandidates(rerankTestCandidates(), "which group did caroline join", 5))
+}
+
+func TestNormalizeRerankOptionsKeepsExplicitValues(t *testing.T) {
+	def := defaultRerankOptions()
+	require.True(t, def.Enabled, "reranking stays on by default")
+	require.Equal(t, def, NewService(nil, nil, nil, nil, nil).rerank)
+
+	require.Equal(t, RerankOptions{Enabled: false, Window: 7, Blend: 0}, normalizeRerankOptions(RerankOptions{Enabled: false, Window: 7, Blend: 0}))
+	require.Equal(t, RerankOptions{Enabled: true, Window: def.Window, Blend: 0.25}, normalizeRerankOptions(RerankOptions{Enabled: true, Blend: 0.25}))
+	require.Equal(t, 0.0, normalizeRerankOptions(RerankOptions{Blend: -0.5}).Blend)
+	require.Equal(t, 1.0, normalizeRerankOptions(RerankOptions{Blend: 1.5}).Blend)
+}

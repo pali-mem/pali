@@ -117,40 +117,9 @@ func (r *EntityFactRepository) ListByEntityRelation(
 
 	out := make([]domain.EntityFact, 0, limit)
 	for rows.Next() {
-		var (
-			fact         domain.EntityFact
-			createdAtRaw string
-			memoryIDRaw  sql.NullString
-			observedAt   string
-			validFrom    string
-			validTo      string
-		)
-		if err := rows.Scan(
-			&fact.ID,
-			&fact.TenantID,
-			&fact.Entity,
-			&fact.Relation,
-			&fact.RelationRaw,
-			&fact.Value,
-			&memoryIDRaw,
-			&observedAt,
-			&validFrom,
-			&validTo,
-			&fact.InvalidatedByFactID,
-			&createdAtRaw,
-		); err != nil {
-			return nil, fmt.Errorf("scan entity fact row: %w", err)
-		}
-		fact.MemoryID = strings.TrimSpace(memoryIDRaw.String)
-		parsedTime, err := time.Parse(time.RFC3339Nano, createdAtRaw)
+		fact, err := scanEntityFactRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("parse entity fact created_at: %w", err)
-		}
-		fact.CreatedAt = parsedTime
-		fact.ObservedAt = parseTimeOrZero(observedAt)
-		fact.ValidFrom = parseTimeOrZero(validFrom)
-		if parsedValidTo := parseTimeOrZero(validTo); !parsedValidTo.IsZero() {
-			fact.ValidTo = &parsedValidTo
+			return nil, err
 		}
 		out = append(out, fact)
 	}
@@ -158,6 +127,147 @@ func (r *EntityFactRepository) ListByEntityRelation(
 		return nil, fmt.Errorf("iterate entity fact rows: %w", err)
 	}
 	return out, nil
+}
+
+// entityFactLookupPairsPerQuery keeps each compound SELECT well under
+// SQLite's default SQLITE_MAX_COMPOUND_SELECT (500).
+const entityFactLookupPairsPerQuery = 100
+
+type entityRelationPair struct{ entity, relation string }
+
+// ListByEntityRelations returns the facts ListByEntityRelation would return
+// for every entity (outer) and relation (inner) pair, concatenated in that
+// order. Each distinct pair runs the single-pair query as one arm of a
+// UNION ALL, so per-pair limits and ordering are unchanged while a lookup
+// costs one round trip per 100 pairs instead of one per pair.
+func (r *EntityFactRepository) ListByEntityRelations(
+	ctx context.Context,
+	tenantID string,
+	entities, relations []string,
+	limit int,
+) ([]domain.EntityFact, error) {
+	if len(entities) == 0 || len(relations) == 0 {
+		return []domain.EntityFact{}, nil
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+
+	requested := make([]entityRelationPair, 0, len(entities)*len(relations))
+	unique := make([]entityRelationPair, 0, len(entities)*len(relations))
+	indexByPair := make(map[entityRelationPair]int, len(entities)*len(relations))
+	for _, entity := range entities {
+		entity = normalizeEntityFactKey(entity)
+		for _, relation := range relations {
+			relation = normalizeEntityFactKey(relation)
+			if entity == "" || relation == "" {
+				return nil, domain.ErrInvalidInput
+			}
+			key := entityRelationPair{entity: entity, relation: relation}
+			requested = append(requested, key)
+			if _, ok := indexByPair[key]; !ok {
+				indexByPair[key] = len(unique)
+				unique = append(unique, key)
+			}
+		}
+	}
+
+	factsByPair := make([][]domain.EntityFact, len(unique))
+	for start := 0; start < len(unique); start += entityFactLookupPairsPerQuery {
+		end := min(start+entityFactLookupPairsPerQuery, len(unique))
+		if err := r.listEntityFactPairs(ctx, tenantID, limit, start, unique[start:end], factsByPair); err != nil {
+			return nil, err
+		}
+	}
+
+	out := make([]domain.EntityFact, 0, len(requested))
+	for _, key := range requested {
+		out = append(out, factsByPair[indexByPair[key]]...)
+	}
+	return out, nil
+}
+
+// listEntityFactPairs runs one UNION ALL query for pairs and stores each
+// pair's facts at factsByPair[offset+i].
+func (r *EntityFactRepository) listEntityFactPairs(
+	ctx context.Context,
+	tenantID string,
+	limit, offset int,
+	pairs []entityRelationPair,
+	factsByPair [][]domain.EntityFact,
+) error {
+	arms := make([]string, 0, len(pairs))
+	args := make([]any, 0, len(pairs)*4)
+	for i, pair := range pairs {
+		arms = append(arms, fmt.Sprintf("SELECT %d AS pair_idx, * FROM (%s)", offset+i, ListEntityFactsByEntityRelationSQL))
+		args = append(args, tenantID, pair.entity, pair.relation, limit)
+	}
+	rows, err := r.db.QueryContext(ctx, strings.Join(arms, " UNION ALL "), args...)
+	if err != nil {
+		return fmt.Errorf("list entity facts by relations: %w", err)
+	}
+	defer closeRows(rows)
+	for rows.Next() {
+		var pairIdx int
+		fact, err := scanEntityFactRow(rows, &pairIdx)
+		if err != nil {
+			return err
+		}
+		if pairIdx < offset || pairIdx >= offset+len(pairs) {
+			return fmt.Errorf("list entity facts by relations: unexpected pair index %d", pairIdx)
+		}
+		factsByPair[pairIdx] = append(factsByPair[pairIdx], fact)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate entity fact rows: %w", err)
+	}
+	return nil
+}
+
+// scanEntityFactRow scans one entity_facts row. leading receives any columns
+// selected before the standard entity fact columns.
+func scanEntityFactRow(rows *sql.Rows, leading ...any) (domain.EntityFact, error) {
+	var (
+		fact         domain.EntityFact
+		createdAtRaw string
+		memoryIDRaw  sql.NullString
+		observedAt   string
+		validFrom    string
+		validTo      string
+	)
+	dest := append(leading,
+		&fact.ID,
+		&fact.TenantID,
+		&fact.Entity,
+		&fact.Relation,
+		&fact.RelationRaw,
+		&fact.Value,
+		&memoryIDRaw,
+		&observedAt,
+		&validFrom,
+		&validTo,
+		&fact.InvalidatedByFactID,
+		&createdAtRaw,
+	)
+	if err := rows.Scan(dest...); err != nil {
+		return domain.EntityFact{}, fmt.Errorf("scan entity fact row: %w", err)
+	}
+	fact.MemoryID = strings.TrimSpace(memoryIDRaw.String)
+	parsedTime, err := time.Parse(time.RFC3339Nano, createdAtRaw)
+	if err != nil {
+		return domain.EntityFact{}, fmt.Errorf("parse entity fact created_at: %w", err)
+	}
+	fact.CreatedAt = parsedTime
+	fact.ObservedAt = parseTimeOrZero(observedAt)
+	fact.ValidFrom = parseTimeOrZero(validFrom)
+	if parsedValidTo := parseTimeOrZero(validTo); !parsedValidTo.IsZero() {
+		fact.ValidTo = &parsedValidTo
+	}
+	return fact, nil
 }
 
 func prepareEntityFactForStore(fact *domain.EntityFact, now time.Time) error {
