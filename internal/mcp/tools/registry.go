@@ -279,7 +279,7 @@ type MemoryItem struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	LastAccessedAt time.Time `json:"last_accessed_at"`
-	LastRecalledAt time.Time `json:"last_recalled_at"`
+	LastRecalledAt *time.Time `json:"last_recalled_at,omitempty"`
 }
 
 // TenantItem is the tool-layer projection of a tenant.
@@ -339,8 +339,12 @@ type TenantListOutput struct {
 
 // TenantStatsOutput is the response from tenant statistics.
 type TenantStatsOutput struct {
-	TenantID    string `json:"tenant_id"`
-	MemoryCount int64  `json:"memory_count"`
+	TenantID       string           `json:"tenant_id"`
+	MemoryCount    int64            `json:"memory_count"`
+	ByTier         map[string]int64 `json:"by_tier"`
+	ByKind         map[string]int64 `json:"by_kind"`
+	TotalRecalls   int64            `json:"total_recalls"`
+	NewestMemoryAt *time.Time       `json:"newest_memory_at"`
 }
 
 // TenantExistsOutput is the response from tenant existence checks.
@@ -574,9 +578,20 @@ func (t *Toolset) handleTenantStats(ctx context.Context, req *sdkmcp.CallToolReq
 	if err != nil {
 		return nil, TenantStatsOutput{}, err
 	}
+	byTier, byKind := stats.ByTier, stats.ByKind
+	if byTier == nil {
+		byTier = map[string]int64{}
+	}
+	if byKind == nil {
+		byKind = map[string]int64{}
+	}
 	return toolOK("tenant stats loaded"), TenantStatsOutput{
-		TenantID:    tenantID,
-		MemoryCount: stats.MemoryCount,
+		TenantID:       tenantID,
+		MemoryCount:    stats.MemoryCount,
+		ByTier:         byTier,
+		ByKind:         byKind,
+		TotalRecalls:   stats.TotalRecalls,
+		NewestMemoryAt: stats.NewestMemoryAt,
 	}, nil
 }
 
@@ -831,10 +846,18 @@ func mapMemoryItems(items []domain.Memory) []MemoryItem {
 			CreatedAt:      m.CreatedAt,
 			UpdatedAt:      m.UpdatedAt,
 			LastAccessedAt: m.LastAccessedAt,
-			LastRecalledAt: m.LastRecalledAt,
+			LastRecalledAt: optionalTime(m.LastRecalledAt),
 		})
 	}
 	return out
+}
+
+// optionalTime returns nil for the zero time so never-recalled memories omit the field.
+func optionalTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func dedupeTags(tags []string) []string {

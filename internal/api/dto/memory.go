@@ -68,7 +68,7 @@ type MemoryResponse struct {
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 	LastAccessedAt time.Time          `json:"last_accessed_at"`
-	LastRecalledAt time.Time          `json:"last_recalled_at"`
+	LastRecalledAt *time.Time         `json:"last_recalled_at,omitempty"`
 }
 
 // ListMemoryResponse is one page of memories, newest first. NextOffset is

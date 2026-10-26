@@ -54,7 +54,8 @@ Memory tool highlights:
 - `memory_search` supports optional retrieval filters: `min_score` (`0..1`) and `tiers` (`working|episodic|semantic`)
 - `memory_get` takes `memory_id` and returns the memory under `memory`; an unknown ID or an ID from another tenant is a tool error
 - `memory_update` takes `memory_id` plus at least one of `content`, `tags` (empty list clears), `tier` (`auto|working|episodic|semantic`), `importance` (`0..1`) and returns the updated `memory`. Use it to correct a stored fact instead of storing a duplicate; changing `content` re-indexes search and embeddings
-- memory item outputs include `source`, `created_by`, `recall_count`, `last_accessed_at`, `last_recalled_at`
+- `tenant_stats` returns `memory_count`, `by_tier`, `by_kind`, `total_recalls`, and `newest_memory_at` (null for an empty tenant), matching `GET /v1/tenants/:id/stats`
+- memory item outputs include `source`, `created_by`, `recall_count`, `last_accessed_at`, `last_recalled_at` (omitted when never recalled)
 
 Tenant-aware tools (`memory_*`, `tenant_stats`, `tenant_exists`) resolve tenant in this order:
 

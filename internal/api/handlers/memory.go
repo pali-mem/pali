@@ -387,6 +387,14 @@ func (h *MemoryHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, toMemoryResponse(*updated))
 }
 
+// optionalTime returns nil for the zero time so never-recalled memories omit the field.
+func optionalTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 func toMemoryResponse(m domain.Memory) dto.MemoryResponse {
 	return dto.MemoryResponse{
 		ID:             m.ID,
@@ -403,7 +411,7 @@ func toMemoryResponse(m domain.Memory) dto.MemoryResponse {
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,
 		LastAccessedAt: m.LastAccessedAt,
-		LastRecalledAt: m.LastRecalledAt,
+		LastRecalledAt: optionalTime(m.LastRecalledAt),
 	}
 }
 
