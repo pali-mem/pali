@@ -448,6 +448,8 @@ cleanup() {
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 wait_for_health() {
   local url="$1"
@@ -649,7 +651,10 @@ if [[ "$START_SERVER" -eq 1 ]]; then
 
   echo "==> Starting retrieval quality server on ${BASE_URL}"
   export GOCACHE="${GOCACHE:-$tmp_dir/gocache}"
-  go run ./cmd/pali -config "$cfg_path" >"$server_log" 2>&1 &
+  # Build and run the binary directly: killing `go run` leaves the compiled child listening.
+  server_bin="$tmp_dir/pali"
+  go build -o "$server_bin" ./cmd/pali
+  "$server_bin" -config "$cfg_path" >"$server_log" 2>&1 &
   server_pid="$!"
 
   if ! wait_for_health "$BASE_URL" 30; then
