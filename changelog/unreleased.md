@@ -21,6 +21,8 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
 - Docs: coding-agent setup guide, benchmarks methodology page, design proposals for observational memory,
   a LongMemEval-S protocol, and per-tenant scoring weights (`docs/internal/`).
 - Test that fails when a `Config` field is never read outside `internal/config`.
+- MCP `tenant_stats` returns `by_tier`, `by_kind`, `total_recalls`, and `newest_memory_at`, matching REST.
+- Env-gated live tests for Qdrant, pgvector, and Neo4j, and `make test-backends` to run them against docker containers.
 - Dashboard: memories page is paginated (50 per page, newest first) and keeps tier/kind filters across pages.
 - Dashboard: memory detail page can edit content, tags, tier, and importance (`POST /dashboard/memories/:id/edit`),
   and shows recall count, last recalled, and last accessed. Like the existing create/delete routes, the dashboard has
@@ -36,6 +38,18 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
 - Retrieval: entity-hint, graph-bridge, and aggregation searches look up entity facts in one batched repository call
   (SQLite and Neo4j) instead of one query per entity/relation pair. On LoCoMo-500 this cuts entity-fact lookups from
   about 19 to about 1.2 per search. Rankings are unchanged (per-query diff over 6,468 searches).
+- SQLite vector store: embeddings are stored as float32 blobs instead of JSON. One query over 10,000 vectors went
+  from 417 ms to 27 ms (256 dimensions) and from 1.33 s to 82 ms (768 dimensions) on an Apple M1 Pro. Existing JSON
+  rows are converted at startup (results unchanged: 1,046 searches compared on a real database). Older Pali versions
+  skip converted rows in dense search, so downgrading needs a re-embed.
+- MCP instructions and the Claude Code SessionStart protocol point agents to `memory_get`/`memory_update` for
+  corrections instead of storing a duplicate.
+- Search: recency normalization no longer stretches tiny time gaps to the full recency weight. The recency range is
+  floored at one hour of decay (0.005), so memories stored within the same hour (one batch import) get proportionally
+  small recency differences. Identical LoCoMo-500 runs now differ on 5–10 of 231 queries instead of 7–49 (parser
+  off) and 0–1 of 136 instead of 13–15 (heuristic parser). Retrieval metrics change within noise except LoCoMo-500
+  parser-off top-1, 0.363 → 0.348, which the base only reached through a store-order boost that varied per run.
+- Search: the entity-fact aggregation route orders equal-score results by memory ID.
 - Internal: `SearchWithFilters` split into named stages; duplicated comparator, filter, and lookup-limit helpers
   consolidated. No ranking change.
 
@@ -47,6 +61,13 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
   contain those fragments. Side effect: unresolved first-person facts get no query view.
 - Rerank: an explicit `RerankOptions.Blend` of 0 is no longer replaced by the 0.40 default; values are clamped to
   [0, 1]. Defaults are unchanged.
+- `PATCH /v1/memory/:id` / `memory_update`: changing content no longer leaves stale derived data. The memory's own
+  entity facts are removed; for a `raw_turn` with the parser or structured dual-write enabled, extraction runs again
+  on the new text and derived observations/events the new text does not produce again are deleted.
+- Never-recalled memories no longer report `last_recalled_at` as 1970-01-01: REST and MCP omit the field, and the
+  Go SDK leaves it as the zero time.
+- `scripts/retrieval_quality.sh` no longer leaves an orphaned server process.
+- Deleting a memory now also removes its entity facts and graph node on Neo4j (SQLite already cascaded).
 
 - Dashboard: never-recalled memories show "Never" instead of 1970-01-01.
 

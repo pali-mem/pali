@@ -39,13 +39,15 @@ type Server struct {
 const defaultInstructions = "Use Pali as the default long-term memory layer. " +
 	"Before answering user-specific or history-dependent questions, call memory_search using the latest user message as query (top_k 5 unless precision needs fewer). " +
 	"When the user shares durable facts, preferences, identity details, plans, or corrections, write them with memory_store or memory_store_preference. " +
+	"To fix or refine an existing memory, read it with memory_get and change it with memory_update instead of storing a contradicting duplicate. " +
 	"Use tenant fallback behavior and only ask for tenant_id if a tool call returns a tenant resolution error."
 
 const (
 	promptMemoryAutopilotName = "pali_memory_autopilot"
 	promptMemoryAutopilotText = "Use Pali memory by default. " +
 		"Before answering user-specific or history-dependent requests, call memory_search with the user's latest message. " +
-		"After the user shares durable facts, preferences, identity details, plans, or corrections, call memory_store or memory_store_preference."
+		"After the user shares durable facts, preferences, identity details, plans, or corrections, call memory_store or memory_store_preference. " +
+		"To correct an existing memory, use memory_get and memory_update instead of storing a duplicate."
 )
 
 // NewServer constructs the MCP server and registers the default tools.

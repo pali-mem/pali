@@ -73,6 +73,8 @@ func TestServerExposesMemoryAutopilotGuidance(t *testing.T) {
 	require.NotNil(t, initResult)
 	require.Contains(t, initResult.Instructions, "memory_search")
 	require.Contains(t, initResult.Instructions, "memory_store")
+	require.Contains(t, initResult.Instructions, "memory_get")
+	require.Contains(t, initResult.Instructions, "memory_update")
 
 	prompts, err := session.ListPrompts(ctx, &sdkmcp.ListPromptsParams{})
 	require.NoError(t, err)
@@ -95,6 +97,7 @@ func TestServerExposesMemoryAutopilotGuidance(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, text.Text, "memory_search")
 	require.Contains(t, text.Text, "memory_store")
+	require.Contains(t, text.Text, "memory_update")
 }
 
 func TestServerToolFlow(t *testing.T) {
@@ -201,6 +204,10 @@ func TestServerMemoryGetAndUpdate(t *testing.T) {
 	got := decodeStructured[tools.MemoryGetOutput](t, res)
 	require.Equal(t, memoryID, got.Memory.ID)
 	require.Equal(t, "Jane graduates on May 22, 2027", got.Memory.Content)
+	require.Nil(t, got.Memory.LastRecalledAt, "never-recalled memory must omit last_recalled_at")
+	rawGet, err := json.Marshal(res.StructuredContent)
+	require.NoError(t, err)
+	require.NotContains(t, string(rawGet), "last_recalled_at")
 
 	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
 		Name:      "memory_get",
@@ -259,6 +266,54 @@ func TestServerMemoryGetAndUpdate(t *testing.T) {
 	caps := decodeStructured[tools.CapabilitiesHelpOutput](t, res)
 	require.Contains(t, caps.CanonicalToolNames, "memory_get")
 	require.Contains(t, caps.CanonicalToolNames, "memory_update")
+}
+
+func TestServerTenantStatsIncludesBreakdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	server, cleanup := newTestMCPServer(t)
+	defer cleanup()
+
+	session, stop := connectInMemorySession(ctx, t, server)
+	defer stop()
+
+	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name:      "tenant_create",
+		Arguments: map[string]any{"id": "tenant_stats", "name": "Stats"},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "tenant_stats", Arguments: map[string]any{"tenant_id": "tenant_stats"}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	empty := decodeStructured[tools.TenantStatsOutput](t, res)
+	require.Zero(t, empty.MemoryCount)
+	require.NotNil(t, empty.ByTier)
+	require.NotNil(t, empty.ByKind)
+	require.Nil(t, empty.NewestMemoryAt)
+
+	for _, tier := range []string{"semantic", "semantic", "episodic"} {
+		res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{
+			Name:      "memory_store",
+			Arguments: map[string]any{"tenant_id": "tenant_stats", "content": "stats memory " + tier, "tier": tier},
+		})
+		require.NoError(t, err)
+		require.False(t, res.IsError, toolResultText(res))
+	}
+
+	res, err = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "tenant_stats", Arguments: map[string]any{"tenant_id": "tenant_stats"}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	stats := decodeStructured[tools.TenantStatsOutput](t, res)
+	require.Equal(t, "tenant_stats", stats.TenantID)
+	require.EqualValues(t, 3, stats.MemoryCount)
+	require.EqualValues(t, 2, stats.ByTier["semantic"])
+	require.EqualValues(t, 1, stats.ByTier["episodic"])
+	require.EqualValues(t, 3, stats.ByKind["raw_turn"])
+	require.NotNil(t, stats.NewestMemoryAt)
+	require.Zero(t, stats.TotalRecalls)
 }
 
 func TestServerUsesConfigDefaultTenantWhenInputMissing(t *testing.T) {

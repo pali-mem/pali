@@ -331,6 +331,28 @@ func (r *EntityFactRepository) InvalidateEntityRelation(
 	return nil
 }
 
+// DeleteByMemoryIDs removes the entity facts sourced from the given memories.
+func (r *EntityFactRepository) DeleteByMemoryIDs(ctx context.Context, tenantID string, memoryIDs []string) error {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return domain.ErrInvalidInput
+	}
+	if len(memoryIDs) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(memoryIDs)+1)
+	args = append(args, tenantID)
+	for _, id := range memoryIDs {
+		args = append(args, id)
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(memoryIDs)), ",")
+	query := "DELETE FROM entity_facts WHERE tenant_id = ? AND memory_id IN (" + placeholders + ")"
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete entity facts by memory: %w", err)
+	}
+	return nil
+}
+
 func normalizeEntityFactKey(value string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }

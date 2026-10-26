@@ -6,7 +6,7 @@ DOCS_VENV ?= .venv/docs
 DOCS_PYTHON := $(DOCS_VENV)/bin/python
 DOCS_STAMP := $(DOCS_VENV)/.requirements.stamp
 
-.PHONY: init serve run mcp mcp-serve setup build install release-assets test test-integration test-e2e test-all jwt fmt tidy lint benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
+.PHONY: init serve run mcp mcp-serve setup build install release-assets test test-integration test-e2e test-backends test-all jwt fmt tidy lint benchmark bench-setup retrieval-quality retrieval-trend check-wiring docs-deps docs-run docs-build docs-freshness dead-code-sweep release-gate
 
 init:
 	go run ./cmd/pali init -skip-model-download
@@ -44,6 +44,10 @@ test-integration:
 # E2E tests (require running server)
 test-e2e:
 	go test -tags e2e ./test/e2e/...
+
+# Live Qdrant/pgvector/Neo4j tests against throwaway docker containers
+test-backends:
+	bash ./scripts/test_backends.sh
 
 # Everything
 test-all:

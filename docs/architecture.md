@@ -49,7 +49,8 @@ Memory search uses hybrid retrieval + reranking:
      `score = weighted(recency, relevance, importance, query_overlap, route_fit)`
    - recency uses Ebbinghaus-style decay:
      `recency = 0.995 ^ hours_since_last_access`
-   - feature signals are normalized to `[0,1]`
+   - feature signals are min-max normalized to `[0,1]` across the candidates; for recency the range is floored at `0.005` (one hour of decay), so candidates stored within the same hour get proportionally small recency differences instead of the full range
+   - equal scores are ordered by memory ID
    - weights are config-driven from `pali.yaml`
 
 After successful search, returned memories are `Touch`-updated (`last_accessed_at`, `last_recalled_at`, `recall_count`) for future recency/recall tracking.

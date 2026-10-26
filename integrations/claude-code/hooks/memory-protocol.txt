@@ -2,6 +2,7 @@ Pali memory is connected to this session through the pali MCP server, scoped to 
 Memory protocol for this session:
 - Before answering questions about earlier decisions, user preferences, or project facts, call memory_search with the question as the query.
 - When a durable decision, preference, convention, or project fact is settled, call memory_store (memory_store_preference for user preferences) with one self-contained sentence.
+- To correct or refine an existing memory, find it with memory_search, read it with memory_get, and change it with memory_update instead of storing a contradicting duplicate.
 - Never store secrets: API keys, tokens, passwords, credentials, or private personal data.
 - Do not store transient task state, raw logs, or content already in the repository.
 - If memory_search returns nothing relevant, say so and continue; do not invent remembered facts.

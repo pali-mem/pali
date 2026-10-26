@@ -718,6 +718,10 @@ func scanMemory(scan func(dest ...any) error) (domain.Memory, error) {
 	if err != nil {
 		return domain.Memory{}, fmt.Errorf("parse last_recalled_at: %w", err)
 	}
+	// The column stores the Unix epoch for "never recalled"; surface that as the zero time.
+	if m.LastRecalledAt.Unix() <= 0 {
+		m.LastRecalledAt = time.Time{}
+	}
 	return m, nil
 }
 

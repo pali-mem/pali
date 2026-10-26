@@ -25,12 +25,14 @@ Status meanings:
 |---|---|---|---|
 | SQLite metadata + FTS5 | `database.sqlite_dsn` | Supported | on |
 | SQLite vector store | `vector_backend: sqlite` | Supported | on |
-| Qdrant | `vector_backend: qdrant` | Supported (not live-tested) | off |
-| PostgreSQL + pgvector | `vector_backend: pgvector` | Supported (not live-tested) | off |
+| Qdrant | `vector_backend: qdrant` | Supported | off |
+| PostgreSQL + pgvector | `vector_backend: pgvector` | Supported | off |
 | SQLite entity facts | `entity_fact_backend: sqlite` | Supported | on |
 | Neo4j entity facts | `entity_fact_backend: neo4j` | Experimental | off |
 
-The SQLite vector store reads and decodes every stored vector for the tenant on each query. It is fine for small and medium tenants; use Qdrant or pgvector for large ones.
+Qdrant, pgvector, and Neo4j have live tests (`make test-backends`, which starts `qdrant/qdrant`, `pgvector/pgvector:pg16`, and `neo4j:5` in docker). They are not run in CI.
+
+The SQLite vector store scans every stored vector for the tenant on each query (no ANN index). Vectors are stored as float32 blobs; on an Apple M1 Pro one query over 10,000 vectors takes about 27 ms at 256 dimensions and 82 ms at 768. Use Qdrant or pgvector for larger tenants.
 
 ## Embeddings
 

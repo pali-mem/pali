@@ -75,6 +75,37 @@ func TestRankMemoriesRoutedQueryDoesNotPromoteZeroRelevance(t *testing.T) {
 	require.Greater(t, byID["good"], byID["decoy"])
 }
 
+// Recency min-max must not turn a store-timing gap of milliseconds into a
+// full-weight recency swing, but a gap of days still uses the full range.
+func TestRankMemoriesRecencyIgnoresMillisecondGaps(t *testing.T) {
+	query := "pottery workshop with caroline"
+	profile := classifyQuery(query)
+	plan := buildQueryPlan(query, profile)
+	now := time.Now().UTC()
+	signal := candidateSignal{DenseScore: 0.5, DenseRank: 1, LexicalScore: 0.5, LexicalRank: 1, RRFScore: 0.5}
+
+	scoreGap := func(olderAccess time.Time) float64 {
+		memories := []domain.Memory{
+			{ID: "newer", Kind: domain.MemoryKindRawTurn, Content: "Melanie went to a pottery workshop with Caroline.", Importance: 0.5, LastAccessedAt: now},
+			{ID: "older", Kind: domain.MemoryKindRawTurn, Content: "Melanie went to a pottery workshop with Caroline.", Importance: 0.5, LastAccessedAt: olderAccess},
+		}
+		signals := map[string]candidateSignal{"newer": signal, "older": signal}
+		scored := rankMemories(memories, signals, 2, query, profile, plan, defaultRankingOptions(), defaultRetrievalBehaviorOptions())
+		byID := map[string]float64{}
+		for _, s := range scored {
+			byID[s.Memory.ID] = s.Score
+		}
+		return byID["newer"] - byID["older"]
+	}
+
+	msGap := scoreGap(now.Add(-5 * time.Millisecond))
+	require.GreaterOrEqual(t, msGap, 0.0)
+	require.Less(t, msGap, 1e-5, "milliseconds of store timing must not decide the ranking")
+
+	dayGap := scoreGap(now.Add(-48 * time.Hour))
+	require.Greater(t, dayGap, 0.05, "a two-day gap keeps the full recency weight")
+}
+
 func rerankTestCandidates() []scoredMemory {
 	return []scoredMemory{
 		{Memory: domain.Memory{ID: "generic", Content: "General life update and weekend plans."}, Score: 0.9},
