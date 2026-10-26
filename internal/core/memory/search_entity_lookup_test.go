@@ -138,3 +138,40 @@ func TestListEntityFactsByRelationsFallbackMatchesBatchOrder(t *testing.T) {
 	require.Len(t, got, 3)
 	require.Equal(t, []string{"bridge", "pottery", "pottery"}, []string{got[0].MemoryID, got[1].MemoryID, got[2].MemoryID})
 }
+
+// Tied aggregation results come out in ID order whatever order the entity
+// facts (and so GetByIDs) return them in.
+func TestSearchByEntityFactsBreaksScoreTiesByID(t *testing.T) {
+	now := time.Now().UTC()
+	memory := func(id string) domain.Memory {
+		return domain.Memory{
+			ID:             id,
+			TenantID:       "tenant_1",
+			Kind:           domain.MemoryKindObservation,
+			Content:        "Melanie enjoys pottery.",
+			Importance:     0.5,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastAccessedAt: now,
+		}
+	}
+	for _, order := range [][]string{{"m_c", "m_a", "m_b"}, {"m_b", "m_c", "m_a"}} {
+		repo := &retrievalRepoStub{memoriesByID: map[string]domain.Memory{}, searchResults: []domain.Memory{}}
+		facts := make([]domain.EntityFact, 0, len(order))
+		for _, id := range order {
+			repo.memoriesByID[id] = memory(id)
+			facts = append(facts, domain.EntityFact{TenantID: "tenant_1", Entity: "melanie", Relation: "activity", Value: "pottery", MemoryID: id})
+		}
+		// Rerank off so the aggregation sort alone decides the order.
+		svc := NewService(repo, retrievalTenantRepoStub{}, nil, nil, retrievalScorerStub{},
+			WithEntityFactRepository(&retrievalEntityFactRepoStub{facts: facts}),
+			RerankOptions{Enabled: false})
+		got, err := svc.SearchWithFilters(context.Background(), "tenant_1", "what activities does melanie do?", 5, SearchOptions{})
+		require.NoError(t, err)
+		ids := make([]string, 0, len(got))
+		for _, m := range got {
+			ids = append(ids, m.ID)
+		}
+		require.Equal(t, []string{"m_a", "m_b", "m_c"}, ids, "fact order %v", order)
+	}
+}

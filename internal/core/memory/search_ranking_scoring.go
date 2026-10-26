@@ -195,6 +195,13 @@ func retrievalSignalWeights(query string, profile queryProfile, signal candidate
 	}
 }
 
+// minRecencyRange is the smallest recency spread that min-max normalization
+// stretches to the full [0,1] range: the decay over one hour at the present,
+// 1 - 0.995^1. Candidates stored within a shorter span (e.g. one batch load
+// milliseconds apart) get proportionally small recency differences instead of
+// a full-weight swing decided by store timing.
+const minRecencyRange = 0.005
+
 func rankMemories(
 	memories []domain.Memory,
 	signalByID map[string]candidateSignal,
@@ -303,7 +310,7 @@ func rankMemories(
 		overlap := queryOverlapScore(queryTokens, docTokens)
 		dependency := orderedBigramCoverage(query, m.Content)
 
-		rec := scoring.MinMax(recencyRaw[i], minRec, maxRec)
+		rec := scoring.MinMaxWithFloor(recencyRaw[i], minRec, maxRec, minRecencyRange)
 		rel := scoring.MinMax(relevanceRaw[i], minRel, maxRel)
 		imp := scoring.MinMax(importanceRaw[i], minImp, maxImp)
 

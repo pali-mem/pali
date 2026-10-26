@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"slices"
 	"strings"
 
 	"github.com/pali-mem/pali/internal/domain"
@@ -85,19 +84,7 @@ func (s *Service) searchByEntityFacts(
 		}
 	}
 	profile := classifyQuery(query)
-	scored := rankMemories(filtered, signalByID, max(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval)
-	// Unlike sortScoredByScore this has no ID tie-break; adding one would
-	// reorder tied aggregation results.
-	slices.SortFunc(scored, func(a, b scoredMemory) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		default:
-			return 0
-		}
-	})
+	scored := sortScoredByScore(rankMemories(filtered, signalByID, max(topK, len(filtered)), query, profile, plan, s.ranking, s.retrieval))
 	if shouldApplyPairwiseRerank(profile, s.multiHop) {
 		scored = s.rerankScoredCandidates(scored, query, topK)
 	}
