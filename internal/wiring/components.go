@@ -2,6 +2,7 @@
 package wiring
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -30,7 +31,11 @@ func BuildVectorStore(cfg config.Config, db *sql.DB) (domain.VectorStore, func()
 
 	switch backend {
 	case "sqlite":
-		return sqlitevec.NewStore(db), func() error { return nil }, nil
+		store := sqlitevec.NewStore(db)
+		if err := store.MigrateLegacyEmbeddings(context.Background()); err != nil {
+			return nil, nil, fmt.Errorf("migrate sqlite embeddings: %w", err)
+		}
+		return store, func() error { return nil }, nil
 	case "qdrant":
 		timeout := time.Duration(cfg.Qdrant.TimeoutMS) * time.Millisecond
 		client, err := qdrantstore.NewClient(cfg.Qdrant.BaseURL, cfg.Qdrant.APIKey, cfg.Qdrant.Collection, timeout)

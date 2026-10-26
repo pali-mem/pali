@@ -36,6 +36,10 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
 - Retrieval: entity-hint, graph-bridge, and aggregation searches look up entity facts in one batched repository call
   (SQLite and Neo4j) instead of one query per entity/relation pair. On LoCoMo-500 this cuts entity-fact lookups from
   about 19 to about 1.2 per search. Rankings are unchanged (per-query diff over 6,468 searches).
+- SQLite vector store: embeddings are stored as float32 blobs instead of JSON. One query over 10,000 vectors went
+  from 417 ms to 27 ms (256 dimensions) and from 1.33 s to 82 ms (768 dimensions) on an Apple M1 Pro. Existing JSON
+  rows are converted at startup (results unchanged: 1,046 searches compared on a real database). Older Pali versions
+  skip converted rows in dense search, so downgrading needs a re-embed.
 - Internal: `SearchWithFilters` split into named stages; duplicated comparator, filter, and lookup-limit helpers
   consolidated. No ranking change.
 

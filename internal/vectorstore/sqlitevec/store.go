@@ -3,6 +3,7 @@ package sqlitevec
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -29,17 +30,12 @@ func (s *Store) Upsert(ctx context.Context, tenantID, memoryID string, embedding
 		return domain.ErrInvalidInput
 	}
 
-	raw, err := json.Marshal(embedding)
-	if err != nil {
-		return fmt.Errorf("marshal embedding: %w", err)
-	}
-
 	if _, err := s.db.ExecContext(
 		ctx,
 		UpsertEmbeddingSQL,
 		tenantID,
 		memoryID,
-		string(raw),
+		encodeEmbedding(embedding),
 		time.Now().UTC().Format(time.RFC3339Nano),
 	); err != nil {
 		return fmt.Errorf("upsert embedding: %w", err)
@@ -67,16 +63,12 @@ func (s *Store) UpsertBatch(ctx context.Context, upserts []domain.VectorUpsert) 
 		if strings.TrimSpace(entry.TenantID) == "" || strings.TrimSpace(entry.MemoryID) == "" || len(entry.Embedding) == 0 {
 			return domain.ErrInvalidInput
 		}
-		raw, err := json.Marshal(entry.Embedding)
-		if err != nil {
-			return fmt.Errorf("marshal embedding[%d]: %w", i, err)
-		}
 		if _, err := tx.ExecContext(
 			ctx,
 			UpsertEmbeddingSQL,
 			entry.TenantID,
 			entry.MemoryID,
-			string(raw),
+			encodeEmbedding(entry.Embedding),
 			now,
 		); err != nil {
 			return fmt.Errorf("upsert embedding[%d]: %w", i, err)
@@ -118,19 +110,22 @@ func (s *Store) Search(ctx context.Context, tenantID string, embedding []float32
 	}()
 
 	candidates := make([]domain.VectorstoreCandidate, 0, topK)
+	var buf []float32
 	for rows.Next() {
 		var (
 			memoryID string
-			raw      string
+			blob     []byte
+			legacy   string
 		)
-		if err := rows.Scan(&memoryID, &raw); err != nil {
+		if err := rows.Scan(&memoryID, &blob, &legacy); err != nil {
 			return nil, fmt.Errorf("scan embedding row: %w", err)
 		}
 
-		var vec []float32
-		if err := json.Unmarshal([]byte(raw), &vec); err != nil {
-			return nil, fmt.Errorf("unmarshal embedding row: %w", err)
+		vec, err := decodeStoredEmbedding(blob, legacy, buf)
+		if err != nil {
+			return nil, err
 		}
+		buf = vec
 		if len(vec) == 0 {
 			continue
 		}
@@ -160,6 +155,95 @@ func (s *Store) Search(ctx context.Context, tenantID string, embedding []float32
 		return candidates[:topK], nil
 	}
 	return candidates, nil
+}
+
+// MigrateLegacyEmbeddings converts JSON embeddings written before the blob
+// column existed. It is idempotent and cheap once nothing is left to convert.
+func (s *Store) MigrateLegacyEmbeddings(ctx context.Context) error {
+	const batchSize = 500
+	for {
+		rows, err := s.db.QueryContext(ctx, ListLegacyEmbeddingsSQL, batchSize)
+		if err != nil {
+			return fmt.Errorf("list legacy embeddings: %w", err)
+		}
+		type legacyRow struct {
+			tenantID, memoryID string
+			blob               []byte
+		}
+		batch := make([]legacyRow, 0, batchSize)
+		for rows.Next() {
+			var row legacyRow
+			var raw string
+			if err := rows.Scan(&row.tenantID, &row.memoryID, &raw); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan legacy embedding: %w", err)
+			}
+			var vec []float32
+			if err := json.Unmarshal([]byte(raw), &vec); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("unmarshal legacy embedding %s: %w", row.memoryID, err)
+			}
+			row.blob = encodeEmbedding(vec)
+			batch = append(batch, row)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("iterate legacy embeddings: %w", err)
+		}
+		_ = rows.Close()
+		if len(batch) == 0 {
+			return nil
+		}
+
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin legacy embedding conversion: %w", err)
+		}
+		for _, row := range batch {
+			if _, err := tx.ExecContext(ctx, ConvertLegacyEmbeddingSQL, row.blob, row.tenantID, row.memoryID); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("convert legacy embedding %s: %w", row.memoryID, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit legacy embedding conversion: %w", err)
+		}
+		if len(batch) < batchSize {
+			return nil
+		}
+	}
+}
+
+func encodeEmbedding(embedding []float32) []byte {
+	out := make([]byte, 4*len(embedding))
+	for i, v := range embedding {
+		binary.LittleEndian.PutUint32(out[4*i:], math.Float32bits(v))
+	}
+	return out
+}
+
+// decodeStoredEmbedding decodes a blob, or the legacy JSON when the blob is
+// NULL, reusing buf's storage when it is large enough.
+func decodeStoredEmbedding(blob []byte, legacy string, buf []float32) ([]float32, error) {
+	if blob == nil {
+		var vec []float32
+		if err := json.Unmarshal([]byte(legacy), &vec); err != nil {
+			return nil, fmt.Errorf("unmarshal embedding row: %w", err)
+		}
+		return vec, nil
+	}
+	if len(blob)%4 != 0 {
+		return nil, fmt.Errorf("embedding blob has %d bytes, not a multiple of 4", len(blob))
+	}
+	n := len(blob) / 4
+	if cap(buf) < n {
+		buf = make([]float32, n)
+	}
+	buf = buf[:n]
+	for i := range buf {
+		buf[i] = math.Float32frombits(binary.LittleEndian.Uint32(blob[4*i:]))
+	}
+	return buf, nil
 }
 
 func cosineSimilarity(a, b []float32) float64 {

@@ -62,6 +62,7 @@ var migrationStatements = []string{
 		tokenize='porter unicode61'
 	);`,
 	`ALTER TABLE memories ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';`,
+	`ALTER TABLE memory_embeddings ADD COLUMN embedding_blob BLOB;`,
 	`ALTER TABLE memories ADD COLUMN source TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE memories ADD COLUMN created_by TEXT NOT NULL DEFAULT 'auto';`,
 	`ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'raw_turn';`,

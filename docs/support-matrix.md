@@ -30,7 +30,7 @@ Status meanings:
 | SQLite entity facts | `entity_fact_backend: sqlite` | Supported | on |
 | Neo4j entity facts | `entity_fact_backend: neo4j` | Experimental | off |
 
-The SQLite vector store reads and decodes every stored vector for the tenant on each query. It is fine for small and medium tenants; use Qdrant or pgvector for large ones.
+The SQLite vector store scans every stored vector for the tenant on each query (no ANN index). Vectors are stored as float32 blobs; on an Apple M1 Pro one query over 10,000 vectors takes about 27 ms at 256 dimensions and 82 ms at 768. Use Qdrant or pgvector for larger tenants.
 
 ## Embeddings
 
