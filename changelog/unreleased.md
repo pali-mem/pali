@@ -47,6 +47,10 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
   contain those fragments. Side effect: unresolved first-person facts get no query view.
 - Rerank: an explicit `RerankOptions.Blend` of 0 is no longer replaced by the 0.40 default; values are clamped to
   [0, 1]. Defaults are unchanged.
+- `PATCH /v1/memory/:id` / `memory_update`: changing content no longer leaves stale derived data. The memory's own
+  entity facts are removed; for a `raw_turn` with the parser or structured dual-write enabled, extraction runs again
+  on the new text and derived observations/events the new text does not produce again are deleted.
+- Deleting a memory now also removes its entity facts and graph node on Neo4j (SQLite already cascaded).
 
 - Dashboard: never-recalled memories show "Never" instead of 1970-01-01.
 
