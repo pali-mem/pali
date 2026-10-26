@@ -259,6 +259,12 @@ type EntityFactInvalidationRepository interface {
 	) error
 }
 
+// EntityFactMemoryDeleteRepository is an optional extension for repositories
+// that can remove the entity facts sourced from specific memories.
+type EntityFactMemoryDeleteRepository interface {
+	DeleteByMemoryIDs(ctx context.Context, tenantID string, memoryIDs []string) error
+}
+
 // EntityFactGraphRepository is an optional extension for repositories that
 // can traverse graph neighborhoods around seed entities.
 // EntityFactGraphRepository traverses entity neighborhoods.

@@ -139,6 +139,18 @@ RETURN
 	coalesce(f.created_at_ns, 0) AS created_at_ns
 `
 
+const deleteEntityFactsByMemoryCypher = `
+MATCH (f:PaliEntityFact {tenant_id: $tenant_id})
+WHERE f.memory_id IN $memory_ids
+DETACH DELETE f
+`
+
+const deleteMemoryNodesCypher = `
+MATCH (m:PaliMemory {tenant_id: $tenant_id})
+WHERE m.id IN $memory_ids
+DETACH DELETE m
+`
+
 const invalidateEntityFactsByRelationCypher = `
 MATCH (f:PaliEntityFact {
 	tenant_id: $tenant_id,
@@ -711,6 +723,49 @@ func (r *EntityFactRepository) ListByEntityPaths(
 		return nil, fmt.Errorf("neo4j entity fact path query returned unexpected type: %T", raw)
 	}
 	return candidates, nil
+}
+
+// DeleteByMemoryIDs removes the entity facts and memory nodes for the given
+// memories. Neo4j has no foreign keys, so memory deletes call this explicitly.
+func (r *EntityFactRepository) DeleteByMemoryIDs(ctx context.Context, tenantID string, memoryIDs []string) error {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return domain.ErrInvalidInput
+	}
+	if len(memoryIDs) == 0 {
+		return nil
+	}
+	if r == nil || r.driver == nil {
+		return fmt.Errorf("neo4j entity fact repository is not initialized")
+	}
+	session := r.driver.NewSession(ctx, neo4j.SessionConfig{
+		DatabaseName: r.database,
+		AccessMode:   neo4j.AccessModeWrite,
+	})
+	defer func() {
+		_ = session.Close(ctx)
+	}()
+
+	params := map[string]any{
+		"tenant_id":  tenantID,
+		"memory_ids": memoryIDs,
+	}
+	_, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+		for _, cypher := range []string{deleteEntityFactsByMemoryCypher, deleteMemoryNodesCypher} {
+			result, runErr := tx.Run(ctx, cypher, params)
+			if runErr != nil {
+				return nil, runErr
+			}
+			if _, consumeErr := result.Consume(ctx); consumeErr != nil {
+				return nil, consumeErr
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return fmt.Errorf("neo4j delete entity facts by memory: %w", err)
+	}
+	return nil
 }
 
 // InvalidateEntityRelation marks stale facts for one entity relation.

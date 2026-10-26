@@ -173,7 +173,7 @@ func (s *Service) storeBatchWithoutParser(ctx context.Context, items []preparedS
 	}
 
 	for _, memory := range stored {
-		if err := s.writeCanonicalStructuredDerived(ctx, memory); err != nil {
+		if _, err := s.writeCanonicalStructuredDerived(ctx, memory); err != nil {
 			return nil, err
 		}
 	}
@@ -522,27 +522,30 @@ func (s *Service) applyParsedFact(
 	return &stored, nil
 }
 
-func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored domain.Memory) error {
+// writeCanonicalStructuredDerived dual-writes heuristic observations/events for
+// a raw turn and returns the IDs of the derived memories it wrote or reused.
+func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored domain.Memory) ([]string, error) {
 	if !s.structured.Enabled || stored.Kind != domain.MemoryKindRawTurn {
-		return nil
+		return nil, nil
 	}
 	if !s.structured.DualWriteObservations && !s.structured.DualWriteEvents {
-		return nil
+		return nil, nil
 	}
 	heuristic := NewHeuristicInfoParser()
 	facts, err := heuristic.Parse(ctx, stored.Content, structuredCanonicalParseLimit(s.structured))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	facts = filterCanonicalStructuredFacts(prepareParsedFactsForStore(stored.Content, facts, s.parser.AnswerSpanRetentionEnabled), s.structured)
 	if len(facts) == 0 {
-		return nil
+		return nil, nil
 	}
 	embeddingByContent, err := s.precomputeParserEmbeddings(ctx, stored.Content, facts)
 	if err != nil {
 		embeddingByContent = nil
 	}
 
+	ids := make([]string, 0, len(facts))
 	for factIdx, fact := range facts {
 		memory, err := s.applyParsedFact(
 			ctx,
@@ -557,18 +560,19 @@ func (s *Service) writeCanonicalStructuredDerived(ctx context.Context, stored do
 			embeddingByContent,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if memory == nil {
 			continue
 		}
+		ids = append(ids, memory.ID)
 		if entityFact, ok := buildEntityFactRecord(*memory, fact); ok {
 			if err := s.storeEntityFacts(ctx, []domain.EntityFact{entityFact}); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return ids, nil
 }
 
 func filterCanonicalStructuredFacts(facts []ParsedFact, opts StructuredMemoryOptions) []ParsedFact {

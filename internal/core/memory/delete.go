@@ -8,7 +8,7 @@ import (
 	"github.com/pali-mem/pali/internal/domain"
 )
 
-// Delete removes a memory and its vector embedding.
+// Delete removes a memory, its vector embedding, and its entity facts.
 func (s *Service) Delete(ctx context.Context, tenantID, memoryID string) error {
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(memoryID) == "" {
 		return domain.ErrInvalidInput
@@ -58,5 +58,18 @@ func (s *Service) Delete(ctx context.Context, tenantID, memoryID string) error {
 		domain.MemoryIndexStateTombstoned,
 		nil,
 	)
+	if err := s.deleteEntityFactsForMemories(ctx, tenantID, []string{memoryID}); err != nil {
+		return fmt.Errorf("memory deleted but entity fact cleanup failed: %w", err)
+	}
 	return nil
+}
+
+// deleteEntityFactsForMemories removes entity facts sourced from the given
+// memories. SQLite also cascades on memory delete; Neo4j does not.
+func (s *Service) deleteEntityFactsForMemories(ctx context.Context, tenantID string, memoryIDs []string) error {
+	repo, ok := s.entityRepo.(domain.EntityFactMemoryDeleteRepository)
+	if !ok || repo == nil {
+		return nil
+	}
+	return repo.DeleteByMemoryIDs(ctx, tenantID, memoryIDs)
 }
