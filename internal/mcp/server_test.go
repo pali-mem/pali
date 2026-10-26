@@ -73,6 +73,8 @@ func TestServerExposesMemoryAutopilotGuidance(t *testing.T) {
 	require.NotNil(t, initResult)
 	require.Contains(t, initResult.Instructions, "memory_search")
 	require.Contains(t, initResult.Instructions, "memory_store")
+	require.Contains(t, initResult.Instructions, "memory_get")
+	require.Contains(t, initResult.Instructions, "memory_update")
 
 	prompts, err := session.ListPrompts(ctx, &sdkmcp.ListPromptsParams{})
 	require.NoError(t, err)
@@ -95,6 +97,7 @@ func TestServerExposesMemoryAutopilotGuidance(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, text.Text, "memory_search")
 	require.Contains(t, text.Text, "memory_store")
+	require.Contains(t, text.Text, "memory_update")
 }
 
 func TestServerToolFlow(t *testing.T) {

@@ -176,7 +176,8 @@ func (t *Toolset) Register(s *sdkmcp.Server) error {
 						Text: "You have access to Pali, a long-term memory system. Follow this workflow for every interaction:\n\n" +
 							"1. BEFORE answering: call memory_search with the user's message as the query (top_k 5). Use the results to inform your response.\n" +
 							"2. WHILE responding: if the user shares facts, preferences, identity details, plans, or corrections, call memory_store or memory_store_preference to persist them.\n" +
-							"3. Do NOT ask the user whether to remember something — just store it silently.",
+							"3. To correct an existing memory, use memory_get and memory_update instead of storing a duplicate.\n" +
+							"4. Do NOT ask the user whether to remember something — just store it silently.",
 					},
 				},
 			},
