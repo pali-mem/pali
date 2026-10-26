@@ -44,6 +44,12 @@ Working notes for the next release. Fold into `CHANGELOG.md` at tag time.
   skip converted rows in dense search, so downgrading needs a re-embed.
 - MCP instructions and the Claude Code SessionStart protocol point agents to `memory_get`/`memory_update` for
   corrections instead of storing a duplicate.
+- Search: recency normalization no longer stretches tiny time gaps to the full recency weight. The recency range is
+  floored at one hour of decay (0.005), so memories stored within the same hour (one batch import) get proportionally
+  small recency differences. Identical LoCoMo-500 runs now differ on 5–10 of 231 queries instead of 7–49 (parser
+  off) and 0–1 of 136 instead of 13–15 (heuristic parser). Retrieval metrics change within noise except LoCoMo-500
+  parser-off top-1, 0.363 → 0.348, which the base only reached through a store-order boost that varied per run.
+- Search: the entity-fact aggregation route orders equal-score results by memory ID.
 - Internal: `SearchWithFilters` split into named stages; duplicated comparator, filter, and lookup-limit helpers
   consolidated. No ranking change.
 
