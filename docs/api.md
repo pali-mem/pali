@@ -300,7 +300,9 @@ Notes:
 - `tier`: `auto | working | episodic | semantic`, validated like `POST /v1/memory`. `auto` resolves to `semantic` or `episodic` from the updated content and tags.
 - `importance` must be within `[0,1]`. It is not rescored when `content` changes.
 - Changing `content` rewrites the full-text index and re-embeds the memory synchronously, so the configured vector backend (sqlite, qdrant, or pgvector) stays consistent. If the vector write fails after the row was saved, the response is `500`; retrying the same request re-embeds and repairs the index.
-- For `raw_turn` memories with the default identity, the dedupe key follows the new content. Observations and entity facts that were derived from the old content are not rewritten.
+- For `raw_turn` memories with the default identity, the dedupe key follows the new content.
+- Changing `content` removes the memory's own entity facts. For a `raw_turn`, when the parser (or structured dual-write) is enabled, extraction runs again on the new content in the same request, the same way `POST /v1/memory` does, and observations/events derived from the old content that the new content does not produce again are deleted with their entity facts. A derived memory with the same entity/relation/value is kept. With an LLM parser this makes the request as slow as a store.
+- Updating only `tags`, `tier`, or `importance` leaves derived memories and entity facts unchanged.
 - `created_at`, `kind`, `source`, and `created_by` cannot be changed.
 
 Response (`200`) is the updated memory object.
