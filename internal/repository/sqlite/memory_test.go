@@ -98,6 +98,7 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.Len(t, aliasResults, 1)
 	require.Equal(t, stored.ID, aliasResults[0].ID)
 
+	require.True(t, byID[0].LastRecalledAt.IsZero(), "never-recalled memory must read back as zero time")
 	before := byID[0].LastAccessedAt
 	beforeRecalled := byID[0].LastRecalledAt
 	time.Sleep(10 * time.Millisecond)
@@ -108,6 +109,7 @@ func TestMemoryRepositoryStoreSearchDelete(t *testing.T) {
 	require.True(t, afterTouch[0].LastAccessedAt.After(before) || afterTouch[0].LastAccessedAt.Equal(before))
 	require.True(t, afterTouch[0].LastRecalledAt.After(beforeRecalled) || afterTouch[0].LastRecalledAt.Equal(beforeRecalled))
 	require.Equal(t, 1, afterTouch[0].RecallCount)
+	require.False(t, afterTouch[0].LastRecalledAt.IsZero())
 
 	require.NoError(t, memRepo.Delete(ctx, "tenant_1", stored.ID))
 

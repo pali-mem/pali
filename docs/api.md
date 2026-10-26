@@ -278,6 +278,8 @@ Response (`200`):
 }
 ```
 
+`last_recalled_at` is omitted for memories that have never been recalled.
+
 `next_offset` is the `offset` to request for the next page and is omitted on the last page. Invalid `limit`, `offset`, `tier`, or `kind` values return `400`.
 
 ## Update memory

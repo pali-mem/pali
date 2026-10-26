@@ -70,7 +70,7 @@ func TestClaudeCodePluginFiles(t *testing.T) {
 	if n := len(strings.Split(strings.TrimSpace(string(text)), "\n")); n > 15 {
 		t.Fatalf("protocol is %d lines, want at most 15", n)
 	}
-	for _, want := range []string{"memory_search", "memory_store", "Never store secrets"} {
+	for _, want := range []string{"memory_search", "memory_store", "memory_get", "memory_update", "Never store secrets"} {
 		if !strings.Contains(string(text), want) {
 			t.Errorf("protocol missing %q", want)
 		}

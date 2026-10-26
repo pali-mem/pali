@@ -99,6 +99,7 @@ type MemoryResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	LastAccessedAt time.Time `json:"last_accessed_at"`
+	// LastRecalledAt is the zero time when the memory has never been recalled.
 	LastRecalledAt time.Time `json:"last_recalled_at"`
 }
 

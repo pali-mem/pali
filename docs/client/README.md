@@ -165,4 +165,4 @@ Notes:
 - `importance`
 - `recall_count`
 - `last_accessed_at`
-- `last_recalled_at`
+- `last_recalled_at` (zero `time.Time` means never recalled)
